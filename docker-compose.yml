@@ -1,15 +1,15 @@
 services:
-  db:
+  database:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: papyrus
-      POSTGRES_PASSWORD: papyrus
-      POSTGRES_DB: papyrus
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U papyrus"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -21,9 +21,9 @@ services:
       - "${PORT:-8080}:8080"
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://papyrus:papyrus@db:5432/papyrus
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@database:5432/${POSTGRES_DB}
     depends_on:
-      db:
+      database:
         condition: service_healthy
     command: >
       sh -c "alembic upgrade head && papyrus-server"
