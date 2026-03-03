@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/v1"
 
     # CORS
-    cors_origins: list[str] = ["*"]
+    cors_origins: list[str] = []
 
     # Database
     database_url: str = "postgresql+asyncpg://papyrus:papyrus@localhost:5432/papyrus"
