@@ -45,6 +45,4 @@ jobs:
       - name: Test
         run: uv run pytest --cov=papyrus --cov-report=term-missing
         env:
-          SECRET_KEY: ${{ secrets.SECRET_KEY || 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }}
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost/test
           TEST_DATABASE_URL: postgresql+asyncpg://papyrus:papyrus@localhost:5432/papyrus_test
