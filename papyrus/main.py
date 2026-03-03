@@ -1,17 +1,37 @@
 """FastAPI application factory and configuration."""
 
+import logging
+import structlog
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from papyrus.api.routes import api_router
 from papyrus.config import get_settings
 from papyrus.core.exceptions import AppError
 
 settings = get_settings()
+limiter = Limiter(key_func=get_remote_address)
+
+
+def configure_logging() -> None:
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(),
+    )
 
 
 @asynccontextmanager
@@ -24,6 +44,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    configure_logging()
+
     app = FastAPI(
         title="Papyrus Server API",
         version="1.0.0",
@@ -78,6 +100,9 @@ Rate limits are enforced per user:
         },
         lifespan=lifespan,
     )
+
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
     # CORS middleware
     app.add_middleware(
