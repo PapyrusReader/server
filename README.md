@@ -10,6 +10,18 @@ Install dependencies:
 uv sync --extra dev
 ```
 
+Run the database:
+
+```bash
+docker compose up database
+```
+
+Run database migrations:
+
+```bash
+uv run alembic upgrade head
+```
+
 Run the server:
 
 ```bash

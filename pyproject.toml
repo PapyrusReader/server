@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "REST API server for Papyrus, a cross platform book management application."
 requires-python = ">=3.12"
 license = { text = "AGPL-3.0" }
-authors = [{ name = "Papyrus Team" }]
+authors = [{ name = "Papyrus" }]
 readme = "README.md"
 
 dependencies = [
