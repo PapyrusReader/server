@@ -9,6 +9,20 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: papyrus
+          POSTGRES_PASSWORD: papyrus
+          POSTGRES_DB: papyrus_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
 
@@ -33,3 +47,4 @@ jobs:
         env:
           SECRET_KEY: ${{ secrets.SECRET_KEY || 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' }}
           DATABASE_URL: postgresql+asyncpg://test:test@localhost/test
+          TEST_DATABASE_URL: postgresql+asyncpg://papyrus:papyrus@localhost:5432/papyrus_test

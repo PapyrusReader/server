@@ -41,6 +41,7 @@ class Settings(BaseSettings):
         if v == "change-me-in-production-use-openssl-rand-hex-32" or len(v) < 32:
             raise ValueError("SECRET_KEY must be set to a secure random value of at least 32 characters")
         return v
+
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
 
