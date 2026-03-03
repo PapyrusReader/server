@@ -2,22 +2,22 @@
 
 from datetime import UTC, datetime
 
-from fastapi.testclient import TestClient
+from httpx import AsyncClient
 
 
-def test_list_reading_sessions(client: TestClient, auth_headers: dict[str, str]):
+async def test_list_reading_sessions(client: AsyncClient, auth_headers: dict[str, str]):
     """Test listing reading sessions."""
-    response = client.get("/v1/progress/sessions", headers=auth_headers)
+    response = await client.get("/v1/progress/sessions", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert "sessions" in data
     assert "pagination" in data
 
 
-def test_create_reading_session(client: TestClient, auth_headers: dict[str, str], book_id: str):
+async def test_create_reading_session(client: AsyncClient, auth_headers: dict[str, str], book_id: str):
     """Test creating a reading session."""
     now = datetime.now(UTC)
-    response = client.post(
+    response = await client.post(
         "/v1/progress/sessions",
         headers=auth_headers,
         json={
@@ -33,9 +33,9 @@ def test_create_reading_session(client: TestClient, auth_headers: dict[str, str]
     assert data["book_id"] == book_id
 
 
-def test_get_reading_statistics(client: TestClient, auth_headers: dict[str, str]):
+async def test_get_reading_statistics(client: AsyncClient, auth_headers: dict[str, str]):
     """Test getting reading statistics."""
-    response = client.get("/v1/progress/statistics", headers=auth_headers)
+    response = await client.get("/v1/progress/statistics", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert "period" in data
@@ -44,9 +44,9 @@ def test_get_reading_statistics(client: TestClient, auth_headers: dict[str, str]
     assert "books_breakdown" in data
 
 
-def test_get_reading_statistics_with_date_range(client: TestClient, auth_headers: dict[str, str]):
+async def test_get_reading_statistics_with_date_range(client: AsyncClient, auth_headers: dict[str, str]):
     """Test getting reading statistics with date range."""
-    response = client.get(
+    response = await client.get(
         "/v1/progress/statistics",
         headers=auth_headers,
         params={
