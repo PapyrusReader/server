@@ -15,11 +15,12 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
     "alembic>=1.14.0",
-    "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
-    "httpx>=0.28.0",
+    "PyJWT[crypto]>=2.10.0",
+    "pwdlib[bcrypt]>=0.2.0",
     "python-multipart>=0.0.18",
     "aiofiles>=24.1.0",
+    "slowapi>=0.1.9",
+    "structlog>=25.0.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +31,7 @@ dev = [
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "polyfactory>=2.18.0",
 ]
 
 [project.scripts]
