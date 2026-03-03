@@ -1,6 +1,6 @@
 import os
 
-os.environ.setdefault("SECRET_KEY", "a" * 32)
+os.environ.setdefault("SECRET_KEY", "test-only-secret-key-do-not-use-in-production")
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost/test")
 
 from collections.abc import AsyncGenerator
