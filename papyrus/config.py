@@ -1,58 +1,43 @@
-"""Application configuration using Pydantic Settings."""
-
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=False,
     )
 
-    # Application
-    app_name: str = "Papyrus Server API"
-    app_version: str = "1.0.0"
-    debug: bool = False
-
-    # Server
-    host: str = "0.0.0.0"
-    port: int = 8080
-    api_prefix: str = "/v1"
-
-    # CORS
-    cors_origins: list[str] = []
-
-    # Database
-    database_url: str = "postgresql+asyncpg://papyrus:papyrus@localhost:5432/papyrus"
-
-    # Security
+    debug: bool
+    host: str
+    port: int
+    api_prefix: str
+    cors_origins: list[str]
+    postgres_user: str
+    postgres_password: str
+    postgres_host: str
+    postgres_port: int
+    postgres_db: str
     secret_key: str
-    algorithm: str = "HS256"
+    algorithm: str
+    access_token_expire_minutes: int
+    refresh_token_expire_days: int
+    rate_limit_auth: int
+    rate_limit_general: int
+    rate_limit_upload: int
+    rate_limit_batch: int
 
-    @field_validator("secret_key")
-    @classmethod
-    def secret_key_must_be_set(cls, v: str) -> str:
-        if v == "change-me-in-production-use-openssl-rand-hex-32" or len(v) < 32:
-            raise ValueError("SECRET_KEY must be set to a secure random value of at least 32 characters")
-        return v
-
-    access_token_expire_minutes: int = 60
-    refresh_token_expire_days: int = 30
-
-    # Rate Limiting
-    rate_limit_auth: int = 5  # requests per minute
-    rate_limit_general: int = 100  # requests per minute
-    rate_limit_upload: int = 10  # requests per minute
-    rate_limit_batch: int = 20  # requests per minute
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def database_url(self) -> str:
+        return (
+            f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
 
 
 @lru_cache
 def get_settings() -> Settings:
-    """Get cached settings instance."""
-    return Settings()
+    return Settings()  # type: ignore
