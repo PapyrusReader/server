@@ -5,15 +5,15 @@ from uuid import uuid4
 from fastapi import APIRouter, Response, status
 
 from papyrus.api.deps import CurrentUserId
-from papyrus.schemas import (
+from papyrus.schemas.auth import (
     AuthTokens,
     GoogleOAuthRequest,
     LoginRequest,
     RefreshTokenRequest,
     RegisterRequest,
     RegisterResponse,
-    User,
 )
+from papyrus.schemas.user import User
 from papyrus.schemas.auth import (
     ForgotPasswordRequest,
     LogoutRequest,

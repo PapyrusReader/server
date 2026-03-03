@@ -8,15 +8,13 @@ from fastapi import APIRouter, Response, status
 from pydantic import BaseModel
 
 from papyrus.api.deps import CurrentUserId, Pagination
-from papyrus.schemas import (
+from papyrus.schemas.annotation import (
     Annotation,
     AnnotationList,
     CreateAnnotationRequest,
     UpdateAnnotationRequest,
 )
-from papyrus.schemas import (
-    Pagination as PaginationSchema,
-)
+from papyrus.schemas.common import Pagination as PaginationSchema
 
 router = APIRouter()
 

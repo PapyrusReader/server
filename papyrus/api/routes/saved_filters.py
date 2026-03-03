@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Response, status
 
 from papyrus.api.deps import CurrentUserId
-from papyrus.schemas import (
+from papyrus.schemas.saved_filter import (
     CreateSavedFilterRequest,
     FilterType,
     SavedFilter,

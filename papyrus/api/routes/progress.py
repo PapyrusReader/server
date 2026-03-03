@@ -7,14 +7,12 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Query
 
 from papyrus.api.deps import CurrentUserId, Pagination
-from papyrus.schemas import (
+from papyrus.schemas.common import Pagination as PaginationSchema
+from papyrus.schemas.progress import (
     CreateReadingSessionRequest,
     ReadingSession,
     ReadingSessionList,
     ReadingStatistics,
-)
-from papyrus.schemas import (
-    Pagination as PaginationSchema,
 )
 from papyrus.schemas.progress import (
     BookBreakdown,
