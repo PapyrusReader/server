@@ -1,45 +1,26 @@
 # Papyrus server
 
-REST API server for Papyrus - a cross-platform book management application.
-
-## Features
-
-- User authentication (email/password and Google OAuth)
-- Book management with metadata fetching
-- Reading progress tracking
-- Annotations, notes, and bookmarks
-- Shelves, tags, and series organization
-- Reading goals and statistics
-- Cross-device synchronization
-- Multiple storage backend support
-
-## Requirements
-
-- Python 3.12+
-- PostgreSQL 15+
+REST API server for Papyrus, a cross platform book management application.
 
 ## Installation
 
-```bash
-# Install dependencies
-pip install -e ".[dev]"
+Install dependencies:
 
-# Run the server
-uvicorn papyrus.main:app --reload
+```bash
+uv sync --extra dev
+```
+
+Run the server:
+
+```bash
+uv run uvicorn papyrus.main:app --reload
 ```
 
 ## Development
 
+Run tests:
+
 ```bash
-# Run tests
-pytest
-
-# Run with coverage
-pytest --cov
-
-# Format code
-ruff format .
-
-# Lint code
-ruff check .
+uv run pytest
+uv run pytest --cov
 ```
