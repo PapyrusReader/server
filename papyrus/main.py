@@ -129,12 +129,15 @@ Rate limits are enforced per user:
 app = create_app()
 
 
-if __name__ == "__main__":
+def run() -> None:
     import uvicorn
-
     uvicorn.run(
         "papyrus.main:app",
-        host="0.0.0.0",
-        port=8080,
-        reload=True,
+        host=settings.host,
+        port=settings.port,
+        reload=settings.debug,
     )
+
+
+if __name__ == "__main__":
+    run()
