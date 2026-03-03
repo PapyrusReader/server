@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,8 +32,15 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://papyrus:papyrus@localhost:5432/papyrus"
 
     # Security
-    secret_key: str = "change-me-in-production-use-openssl-rand-hex-32"
+    secret_key: str
     algorithm: str = "HS256"
+
+    @field_validator("secret_key")
+    @classmethod
+    def secret_key_must_be_set(cls, v: str) -> str:
+        if v == "change-me-in-production-use-openssl-rand-hex-32" or len(v) < 32:
+            raise ValueError("SECRET_KEY must be set to a secure random value of at least 32 characters")
+        return v
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 30
 
