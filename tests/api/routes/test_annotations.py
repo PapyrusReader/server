@@ -33,6 +33,7 @@ async def test_create_annotation(client: AsyncClient, auth_headers: dict[str, st
             "end_position": "epubcfi(/6/4[chap01]!/4/2/1:42)",
         },
     )
+
     assert response.status_code == 201
     data = response.json()
     assert data["selected_text"] == "This is a highlighted passage."
@@ -51,6 +52,7 @@ async def test_update_annotation(client: AsyncClient, auth_headers: dict[str, st
         headers=auth_headers,
         json={"note": "Updated note"},
     )
+
     assert response.status_code == 200
 
 
@@ -67,6 +69,7 @@ async def test_export_annotations_json(client: AsyncClient, auth_headers: dict[s
         headers=auth_headers,
         json={"format": "json"},
     )
+
     assert response.status_code == 200
     data = response.json()
     assert data["format"] == "json"
@@ -80,6 +83,7 @@ async def test_export_annotations_markdown(client: AsyncClient, auth_headers: di
         headers=auth_headers,
         json={"format": "markdown"},
     )
+
     assert response.status_code == 200
     data = response.json()
     assert data["format"] == "markdown"

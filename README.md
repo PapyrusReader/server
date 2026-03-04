@@ -2,7 +2,7 @@
 
 REST API server for Papyrus, a cross platform book management application.
 
-## Installation
+## Getting started
 
 Install dependencies:
 
@@ -33,6 +33,5 @@ uv run uvicorn papyrus.main:app --reload
 Run tests:
 
 ```bash
-uv run pytest
-uv run pytest --cov
+uv run pytest --cov --cov-report html
 ```
