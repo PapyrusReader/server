@@ -76,9 +76,12 @@ def goal_id() -> str:
     return str(uuid4())
 
 
+_pg_host = os.environ.get("POSTGRES_HOST", "localhost")
+_pg_port = os.environ.get("POSTGRES_PORT", "5432")
+
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
-    "postgresql+asyncpg://papyrus:papyrus@localhost:5432/papyrus_test",
+    f"postgresql+asyncpg://papyrus:papyrus@{_pg_host}:{_pg_port}/papyrus_test",
 )
 
 
@@ -86,12 +89,15 @@ TEST_DATABASE_URL = os.environ.get(
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
     engine = create_async_engine(TEST_DATABASE_URL)
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    async with session_maker() as session:
-        async with session.begin():
-            yield session
-            await session.rollback()
+
+    async with session_maker() as session, session.begin():
+        yield session
+        await session.rollback()
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+
     await engine.dispose()
