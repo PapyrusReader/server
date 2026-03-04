@@ -103,7 +103,7 @@ async def setup_test_db() -> None:
     )
     try:
         try:
-            await conn.execute(f"CREATE ROLE papyrus WITH LOGIN PASSWORD '{pg_password}'")
+            await conn.execute("CREATE ROLE papyrus WITH LOGIN PASSWORD 'papyrus'")
         except asyncpg.DuplicateObjectError:
             pass  # Role already exists
 
