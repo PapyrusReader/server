@@ -1,14 +1,15 @@
 import os
 
 os.environ.setdefault("SECRET_KEY", "test-only-secret-key-do-not-use-in-production")
-os.environ.setdefault("POSTGRES_USER", "test")
-os.environ.setdefault("POSTGRES_PASSWORD", "test")
+os.environ.setdefault("POSTGRES_USER", "postgres")
+os.environ.setdefault("POSTGRES_PASSWORD", "postgres")
 os.environ.setdefault("POSTGRES_HOST", "localhost")
-os.environ.setdefault("POSTGRES_DB", "test")
+os.environ.setdefault("POSTGRES_DB", "papyrus_test")
 
 from collections.abc import AsyncGenerator
 from uuid import uuid4
 
+import asyncpg
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -85,8 +86,37 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def setup_test_db() -> None:
+    """Create the test database and role if they do not exist."""
+    pg_user = os.environ.get("POSTGRES_USER", "postgres")
+    pg_password = os.environ.get("POSTGRES_PASSWORD", "postgres")
+    pg_host = os.environ.get("POSTGRES_HOST", "localhost")
+    pg_port = int(os.environ.get("POSTGRES_PORT", "5432"))
+
+    conn = await asyncpg.connect(
+        user=pg_user,
+        password=pg_password,
+        host=pg_host,
+        port=pg_port,
+        database="postgres",
+    )
+    try:
+        await conn.execute("CREATE ROLE papyrus WITH LOGIN PASSWORD 'papyrus'")
+    except asyncpg.DuplicateObjectError:
+        pass  # Role already exists
+
+    try:
+        await conn.execute("CREATE DATABASE papyrus_test OWNER papyrus")
+    except asyncpg.DuplicateDatabaseError:
+        pass  # Database already exists
+
+    await conn.execute("GRANT ALL PRIVILEGES ON DATABASE papyrus_test TO papyrus")
+    await conn.close()
+
+
 @pytest_asyncio.fixture
-async def db_session() -> AsyncGenerator[AsyncSession, None]:
+async def db_session(setup_test_db: None) -> AsyncGenerator[AsyncSession, None]:
     engine = create_async_engine(TEST_DATABASE_URL)
     session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
