@@ -102,17 +102,19 @@ async def setup_test_db() -> None:
         database="postgres",
     )
     try:
-        await conn.execute("CREATE ROLE papyrus WITH LOGIN PASSWORD 'papyrus'")
-    except asyncpg.DuplicateObjectError:
-        pass  # Role already exists
+        try:
+            await conn.execute(f"CREATE ROLE papyrus WITH LOGIN PASSWORD '{pg_password}'")
+        except asyncpg.DuplicateObjectError:
+            pass  # Role already exists
 
-    try:
-        await conn.execute("CREATE DATABASE papyrus_test OWNER papyrus")
-    except asyncpg.DuplicateDatabaseError:
-        pass  # Database already exists
+        try:
+            await conn.execute("CREATE DATABASE papyrus_test OWNER papyrus")
+        except asyncpg.DuplicateDatabaseError:
+            pass  # Database already exists
 
-    await conn.execute("GRANT ALL PRIVILEGES ON DATABASE papyrus_test TO papyrus")
-    await conn.close()
+        await conn.execute("GRANT ALL PRIVILEGES ON DATABASE papyrus_test TO papyrus")
+    finally:
+        await conn.close()
 
 
 @pytest_asyncio.fixture
