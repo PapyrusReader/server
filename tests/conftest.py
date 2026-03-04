@@ -86,7 +86,7 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 
-@pytest_asyncio.fixture(scope="session", autouse=True)
+@pytest_asyncio.fixture(scope="session")
 async def setup_test_db() -> None:
     """Create the test database and role if they do not exist."""
     pg_user = os.environ.get("POSTGRES_USER", "postgres")
