@@ -103,16 +103,22 @@ async def update_series(
 ) -> Series:
     """Update series properties."""
     series = _example_series(series_id)
+
     if request.name:
         series.name = request.name
+
     if request.description:
         series.description = request.description
+
     if request.author:
         series.author = request.author
+
     if request.total_books is not None:
         series.total_books = request.total_books
+
     if request.is_complete is not None:
         series.is_complete = request.is_complete
+
     return series
 
 

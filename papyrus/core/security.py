@@ -24,6 +24,7 @@ def _normalize_pem(value: str) -> str:
 @lru_cache
 def _get_powersync_private_key() -> Any:
     settings = get_settings()
+
     if settings.powersync_jwt_private_key is None:
         raise RuntimeError("PowerSync private key is not configured")
 
@@ -92,6 +93,7 @@ def create_state_token(data: dict[str, Any], expires_delta: timedelta | None = N
 
 def decode_token(token: str) -> dict[str, Any] | None:
     settings = get_settings()
+
     try:
         return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm], options={"verify_aud": False})
     except jwt.PyJWTError:
@@ -100,13 +102,16 @@ def decode_token(token: str) -> dict[str, Any] | None:
 
 def decode_state_token(token: str) -> dict[str, Any] | None:
     payload = decode_token(token)
+
     if payload is None or payload.get("type") != "oauth_state":
         return None
+
     return payload
 
 
 def create_powersync_token(user_id: str, expires_delta: timedelta | None = None) -> tuple[str, int]:
     settings = get_settings()
+
     if settings.powersync_jwt_audience is None:
         raise RuntimeError("PowerSync audience is not configured")
 
@@ -121,6 +126,7 @@ def create_powersync_token(user_id: str, expires_delta: timedelta | None = None)
         "exp": expires_at,
         "type": "powersync",
     }
+
     token = jwt.encode(payload, _get_powersync_private_key(), algorithm="RS256", headers=headers)
     return token, int(ttl.total_seconds())
 

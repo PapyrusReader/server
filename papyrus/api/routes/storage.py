@@ -102,12 +102,16 @@ async def update_storage_backend(
 ) -> StorageBackend:
     """Update storage backend configuration."""
     backend = _example_backend(backend_id)
+
     if request.name:
         backend.name = request.name
+
     if request.is_active is not None:
         backend.is_active = request.is_active
+
     if request.base_path:
         backend.base_path = request.base_path
+
     return backend
 
 

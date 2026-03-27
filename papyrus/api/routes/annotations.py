@@ -197,10 +197,13 @@ async def update_annotation(
 ) -> Annotation:
     """Update an annotation's note or color."""
     annotation = _example_annotation(annotation_id)
+
     if request.note is not None:
         annotation.note = request.note
+
     if request.highlight_color:
         annotation.highlight_color = request.highlight_color
+
     return annotation
 
 

@@ -79,12 +79,16 @@ async def update_tag(
 ) -> Tag:
     """Update tag properties."""
     tag = _example_tag(tag_id)
+
     if request.name:
         tag.name = request.name
+
     if request.color:
         tag.color = request.color
+
     if request.description:
         tag.description = request.description
+
     return tag
 
 

@@ -77,6 +77,7 @@ async def create_reading_session(
 ) -> ReadingSession:
     """Record a new reading session."""
     duration = None
+
     if request.end_time and request.start_time:
         duration = int((request.end_time - request.start_time).total_seconds() / 60)
 

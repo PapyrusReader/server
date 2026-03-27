@@ -114,12 +114,16 @@ async def update_shelf(
 ) -> Shelf:
     """Update shelf properties."""
     shelf = _example_shelf(shelf_id)
+
     if request.name:
         shelf.name = request.name
+
     if request.description:
         shelf.description = request.description
+
     if request.color:
         shelf.color = request.color
+
     return shelf
 
 

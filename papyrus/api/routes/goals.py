@@ -106,16 +106,22 @@ async def update_goal(
 ) -> Goal:
     """Update goal properties."""
     goal = _example_goal(goal_id)
+
     if request.title is not None:
         goal.title = request.title
+
     if request.description is not None:
         goal.description = request.description
+
     if request.target_value is not None:
         goal.target_value = request.target_value
+
     if request.end_date is not None:
         goal.end_date = request.end_date
+
     if request.is_active is not None:
         goal.is_active = request.is_active
+
     return goal
 
 

@@ -64,6 +64,7 @@ async def push_changes(
 ) -> SyncPushResponse:
     """Push local changes to the server."""
     accepted = []
+
     for change in request.changes:
         accepted.append(
             SyncAccepted(

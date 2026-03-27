@@ -166,8 +166,10 @@ def _build_google_state(redirect_uri: str, mode: str, user_id: UUID | None = Non
 def _get_client_metadata(client_type: str, device_label: str | None, user_agent: str | None) -> tuple[str, str | None]:
     normalized_client_type = client_type or "unknown"
     normalized_device_label = device_label or user_agent
+
     if normalized_device_label is not None:
         normalized_device_label = normalized_device_label[:255]
+
     return normalized_client_type, normalized_device_label
 
 
@@ -210,10 +212,13 @@ async def _get_user_by_email(session: AsyncSession, email: str) -> User | None:
 
 async def _get_active_user(session: AsyncSession, user_id: UUID) -> User:
     user = await session.get(User, user_id)
+
     if user is None:
         raise NotFoundError("User not found")
+
     if user.disabled_at is not None:
         raise ForbiddenError("User account is disabled")
+
     return user
 
 
@@ -267,6 +272,7 @@ async def _consume_exchange_code(session: AsyncSession, code: str, purpose: str)
         )
     )
     exchange_code = result.scalar_one_or_none()
+
     if exchange_code is None or exchange_code.expires_at <= _now():
         raise UnauthorizedError("Exchange code is invalid or expired")
 
@@ -300,6 +306,7 @@ async def _consume_email_action_token(session: AsyncSession, token: str, action_
         )
     )
     email_token = result.scalar_one_or_none()
+
     if email_token is None or email_token.expires_at <= _now():
         raise ValidationError("Token is invalid or expired")
 
@@ -366,6 +373,7 @@ async def register_user(
     user_agent: str | None,
 ) -> AuthResult:
     normalized_email = _normalize_email(request.email)
+
     if await _get_user_by_email(session, normalized_email) is not None:
         raise ConflictError("An account with this email already exists")
 
@@ -407,10 +415,13 @@ async def login_user(
         .where(User.primary_email == _normalize_email(request.email))
     )
     user = result.scalar_one_or_none()
+
     if user is None or user.password_credential is None:
         raise UnauthorizedError("Invalid email or password")
+
     if user.disabled_at is not None:
         raise ForbiddenError("User account is disabled")
+
     if not verify_password(request.password, user.password_credential.password_hash):
         raise UnauthorizedError("Invalid email or password")
 
@@ -436,10 +447,12 @@ async def refresh_tokens(
         .where(AuthSession.refresh_token_hash == hash_opaque_token(request.refresh_token))
     )
     auth_session = result.scalar_one_or_none()
+
     if auth_session is None or auth_session.revoked_at is not None or auth_session.expires_at <= _now():
         raise UnauthorizedError("Refresh token is invalid or expired")
 
     user = auth_session.user
+
     if user.disabled_at is not None:
         raise ForbiddenError("User account is disabled")
 
@@ -468,6 +481,7 @@ async def logout_current_session(session: AsyncSession, user_id: UUID, session_i
         return
 
     auth_session = await session.get(AuthSession, session_id)
+
     if auth_session is not None and auth_session.user_id == user_id and auth_session.revoked_at is None:
         auth_session.revoked_at = _now()
         await session.commit()
@@ -500,9 +514,11 @@ async def _resolve_google_login_user(session: AsyncSession, identity: GoogleIden
         )
     )
     existing_identity = identity_result.scalar_one_or_none()
+
     if existing_identity is not None:
         if existing_identity.user.disabled_at is not None:
             return None, "account_disabled"
+
         existing_identity.last_used_at = _now()
         existing_identity.email_at_provider = identity.email
         existing_identity.email_verified_at_provider = _now() if identity.email_verified else None
@@ -546,12 +562,15 @@ async def handle_google_callback(
     error: str | None,
 ) -> str:
     state = decode_state_token(state_token or "")
+
     if state is None:
         raise ValidationError("OAuth state is invalid or expired")
 
     redirect_uri = state["redirect_uri"]
+
     if error is not None:
         return _build_redirect_uri(redirect_uri, {"error": error})
+
     if code is None:
         return _build_redirect_uri(redirect_uri, {"error": "missing_code"})
 
@@ -602,6 +621,7 @@ async def exchange_login_code(
     user_agent: str | None,
 ) -> AuthResult:
     exchange_code = await _consume_exchange_code(session, request.code, purpose="login")
+
     if exchange_code.user_id is None:
         raise UnauthorizedError("Exchange code is missing a user")
 
@@ -620,8 +640,10 @@ async def exchange_login_code(
 
 async def complete_google_link(session: AsyncSession, user_id: UUID, code: str) -> User:
     exchange_code = await _consume_exchange_code(session, code, purpose="link_google")
+
     if exchange_code.user_id != user_id:
         raise ForbiddenError("Exchange code does not belong to the authenticated user")
+
     if exchange_code.provider_subject is None:
         raise ValidationError("Exchange code is missing provider identity details")
 
@@ -634,9 +656,11 @@ async def complete_google_link(session: AsyncSession, user_id: UUID, code: str) 
         )
     )
     existing_identity = identity_result.scalar_one_or_none()
+
     if existing_identity is not None:
         if existing_identity.user_id == user_id:
             return user
+
         raise ConflictError("This Google account is already linked to another user")
 
     session.add(
@@ -679,6 +703,7 @@ def get_powersync_jwks_payload() -> dict[str, list[dict[str, object]]]:
 async def resend_verification_email(session: AsyncSession, email: str) -> str:
     normalized_email = _normalize_email(email)
     user = await _get_user_by_email(session, normalized_email)
+
     if user is None or user.primary_email_verified:
         return "If the email is registered, a verification link has been sent"
 
@@ -703,6 +728,7 @@ async def resend_verification_email(session: AsyncSession, email: str) -> str:
 async def verify_email_token(session: AsyncSession, token: str) -> str:
     email_token = await _consume_email_action_token(session, token, EMAIL_VERIFICATION_ACTION)
     user = await _get_active_user(session, email_token.user_id)
+
     user.primary_email_verified = True
     await session.commit()
     return "Email verified successfully"
@@ -711,6 +737,7 @@ async def verify_email_token(session: AsyncSession, token: str) -> str:
 async def begin_password_reset(session: AsyncSession, email: str) -> str:
     normalized_email = _normalize_email(email)
     user = await _get_user_by_email(session, normalized_email)
+
     if user is None:
         return "If the email is registered, a reset link has been sent"
 
@@ -740,6 +767,7 @@ async def reset_password(session: AsyncSession, token: str, new_password: str) -
         select(PasswordCredential).where(PasswordCredential.user_id == user.user_id)
     )
     credential = credential_result.scalar_one_or_none()
+
     if credential is None:
         credential = PasswordCredential(user_id=user.user_id, password_hash=hash_password(new_password))
         session.add(credential)

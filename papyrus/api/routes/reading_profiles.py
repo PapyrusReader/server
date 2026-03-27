@@ -121,8 +121,10 @@ async def update_reading_profile(
 ) -> ReadingProfile:
     """Update a reading profile."""
     profile = _example_profile(profile_id)
+
     for field, value in request.model_dump(exclude_unset=True).items():
         setattr(profile, field, value)
+
     return profile
 
 

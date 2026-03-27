@@ -49,6 +49,7 @@ def _auth_tokens_response(result: auth_service.AuthResult) -> AuthTokens:
 def _public_callback_url(request: Request, route_name: str) -> str:
     route_url = str(request.url_for(route_name))
     public_base_url = get_settings().public_base_url
+
     if public_base_url is None:
         return route_url
 
@@ -180,6 +181,7 @@ async def logout_user(
         await auth_service.logout_all_sessions(db, user_id)
     else:
         await auth_service.logout_current_session(db, user_id, session_id)
+
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

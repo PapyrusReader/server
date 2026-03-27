@@ -46,6 +46,7 @@ async def get_current_auth_session(
     """Load and validate the current authenticated session from the database."""
     user_id = payload.get("sub")
     session_id = payload.get("sid")
+
     if not user_id or not session_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -65,6 +66,7 @@ async def get_current_auth_session(
         select(AuthSession).options(selectinload(AuthSession.user)).where(AuthSession.session_id == session_uuid)
     )
     auth_session = result.scalar_one_or_none()
+
     if auth_session is None or auth_session.user_id != user_uuid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

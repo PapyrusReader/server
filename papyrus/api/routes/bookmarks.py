@@ -105,10 +105,13 @@ async def update_bookmark(
 ) -> Bookmark:
     """Update a bookmark's note or color."""
     bookmark = _example_bookmark(bookmark_id)
+
     if request.note is not None:
         bookmark.note = request.note
+
     if request.color:
         bookmark.color = request.color
+
     return bookmark
 
 

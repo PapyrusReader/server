@@ -18,6 +18,8 @@
 - Put business rules, query orchestration, and transaction-aware logic in `papyrus/services`, not in route modules.
 - Reuse or extend existing schema modules before creating new top-level packages.
 - Follow existing async patterns with `AsyncSession`, explicit return types, and Pydantic schemas.
+- Use vertical spacing to separate logical steps inside functions. Keep related statements together, but add a blank line when moving between setup, validation, branching, and side effects.
+- Prefer readable spacing over dense blocks. Short guard clauses, temporary assignments, and context-manager branches should usually be visually separated the way `papyrus/services/email.py` is structured.
 - When adding a new router module, register it in `papyrus/api/routes/__init__.py`.
 - Avoid adding dependencies unless the user explicitly asks for them.
 - Keep changes scoped. Do not refactor unrelated areas as part of a focused fix.

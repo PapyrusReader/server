@@ -71,10 +71,13 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_api_prefix(cls, value: str) -> str:
         normalized = value.strip()
+
         if not normalized or normalized == "/":
             return ""
+
         if not normalized.startswith("/"):
             normalized = f"/{normalized}"
+
         return normalized.rstrip("/")
 
     @computed_field  # type: ignore[prop-decorator]

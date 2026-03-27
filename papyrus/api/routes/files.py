@@ -35,8 +35,10 @@ async def upload_file(
 
     # Determine format from filename
     file_format = None
+
     if file.filename:
         ext = file.filename.rsplit(".", 1)[-1].lower()
+
         if ext in ("epub", "pdf", "mobi", "azw3", "txt", "cbr", "cbz"):
             file_format = ext
 

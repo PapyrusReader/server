@@ -99,8 +99,10 @@ async def update_saved_filter(
 ) -> SavedFilter:
     """Update a saved filter."""
     saved_filter = _example_filter(filter_id)
+
     for field, value in request.model_dump(exclude_unset=True).items():
         setattr(saved_filter, field, value)
+
     return saved_filter
 
 

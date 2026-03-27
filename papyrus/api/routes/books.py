@@ -181,6 +181,7 @@ async def batch_create_books(
 ) -> BatchCreateResponse:
     """Create multiple books in a single request."""
     created = []
+
     for book_req in request.books:
         created.append(
             Book(
@@ -269,10 +270,13 @@ async def update_book(
 ) -> Book:
     """Update book metadata fields."""
     book = _example_book(book_id)
+
     if request.title:
         book.title = request.title
+
     if request.author:
         book.author = request.author
+
     return book
 
 

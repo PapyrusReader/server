@@ -20,10 +20,13 @@ def _now() -> datetime:
 
 async def _get_active_user(session: AsyncSession, user_id: UUID) -> User:
     user = await session.get(User, user_id)
+
     if user is None:
         raise NotFoundError("User not found")
+
     if user.disabled_at is not None:
         raise ForbiddenError("User account is disabled")
+
     return user
 
 
@@ -44,6 +47,7 @@ async def update_user_profile(session: AsyncSession, user_id: UUID, request: Upd
 
     if request.display_name is not None:
         user.display_name = request.display_name
+
     if request.avatar_url is not None:
         user.avatar_url = str(request.avatar_url)
 
@@ -56,6 +60,7 @@ async def delete_user_account(session: AsyncSession, user_id: UUID, password: st
     user = await _get_active_user(session, user_id)
 
     credential = await session.get(PasswordCredential, user_id)
+
     if credential is not None and not verify_password(password, credential.password_hash):
         raise UnauthorizedError("Current password is incorrect")
 
@@ -67,8 +72,10 @@ async def delete_user_account(session: AsyncSession, user_id: UUID, password: st
 async def change_user_password(session: AsyncSession, user_id: UUID, current_password: str, new_password: str) -> None:
     user = await _get_active_user(session, user_id)
     credential = await session.get(PasswordCredential, user.user_id)
+
     if credential is None:
         raise ValidationError("Password authentication is not enabled for this user")
+
     if not verify_password(current_password, credential.password_hash):
         raise UnauthorizedError("Current password is incorrect")
 

@@ -129,12 +129,16 @@ async def update_note(
 ) -> Note:
     """Update a note's content."""
     note = _example_note(note_id)
+
     if request.title is not None:
         note.title = request.title
+
     if request.content is not None:
         note.content = request.content
+
     if request.is_pinned is not None:
         note.is_pinned = request.is_pinned
+
     return note
 
 
