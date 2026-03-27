@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from papyrus.config import get_settings
 from papyrus.core.database import get_db
 from papyrus.core.security import create_access_token, generate_opaque_token, hash_opaque_token, hash_password
-from papyrus.main import app
+from papyrus.main import create_app
+from papyrus.main import settings as app_settings
 from papyrus.models import AuthSession, Base, PasswordCredential, User
 
 
@@ -155,19 +156,48 @@ async def test_session_maker(setup_test_db: None) -> AsyncGenerator[async_sessio
 
 
 @pytest_asyncio.fixture
-async def client(
+async def prod_client(
+    monkeypatch: pytest.MonkeyPatch,
     test_session_maker: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncClient, None]:
+    monkeypatch.setattr(app_settings, "debug", False)
+    prod_app = create_app()
+
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with test_session_maker() as session:
             yield session
 
-    app.dependency_overrides[get_db] = override_get_db
+    prod_app.dependency_overrides[get_db] = override_get_db
     try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        async with AsyncClient(transport=ASGITransport(app=prod_app), base_url="http://test") as c:
             yield c
     finally:
-        app.dependency_overrides.clear()
+        prod_app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def debug_client(
+    monkeypatch: pytest.MonkeyPatch,
+    test_session_maker: async_sessionmaker[AsyncSession],
+) -> AsyncGenerator[AsyncClient, None]:
+    monkeypatch.setattr(app_settings, "debug", True)
+    debug_app = create_app()
+
+    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        async with test_session_maker() as session:
+            yield session
+
+    debug_app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=debug_app), base_url="http://test") as c:
+            yield c
+    finally:
+        debug_app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def client(prod_client: AsyncClient) -> AsyncGenerator[AsyncClient, None]:
+    yield prod_client
 
 
 @pytest_asyncio.fixture
