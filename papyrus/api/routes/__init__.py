@@ -1,12 +1,13 @@
 """API routes package."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, FastAPI
 
 from papyrus.api.routes import (
     annotations,
     auth,
     bookmarks,
     books,
+    dev_auth_sandbox,
     files,
     goals,
     notes,
@@ -39,3 +40,8 @@ api_router.include_router(storage.router, prefix="/storage", tags=["Storage"])
 api_router.include_router(files.router, prefix="/files", tags=["Files"])
 api_router.include_router(reading_profiles.router, prefix="/reading-profiles", tags=["Reading Profiles"])
 api_router.include_router(saved_filters.router, prefix="/saved-filters", tags=["Saved Filters"])
+
+
+def include_debug_routers(app: FastAPI) -> None:
+    """Register development-only routes."""
+    app.include_router(dev_auth_sandbox.router)

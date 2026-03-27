@@ -14,7 +14,7 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
-from papyrus.api.routes import api_router
+from papyrus.api.routes import api_router, include_debug_routers
 from papyrus.config import get_settings
 from papyrus.core.exceptions import AppError
 
@@ -145,6 +145,9 @@ Rate limits are enforced per user:
         )
 
     app.include_router(api_router, prefix=settings.api_prefix)
+
+    if settings.debug:
+        include_debug_routers(app)
 
     @app.get("/health", tags=["Health"])
     async def health_check() -> dict[str, str]:

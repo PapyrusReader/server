@@ -7,7 +7,7 @@ import ssl
 from email.message import EmailMessage
 
 from papyrus.config import get_settings
-from papyrus.core.exceptions import ValidationError
+from papyrus.core.exceptions import ServiceUnavailableError, ValidationError
 
 
 def is_email_delivery_configured() -> bool:
@@ -42,28 +42,31 @@ def send_email(recipient: str, subject: str, body: str) -> None:
     if smtp_host is None:
         raise ValidationError("Email delivery is not configured on this server")
 
-    if settings.smtp_use_ssl:
-        context = ssl.create_default_context()
+    try:
+        if settings.smtp_use_ssl:
+            context = ssl.create_default_context()
 
-        with smtplib.SMTP_SSL(
-            smtp_host,
-            settings.smtp_port,
-            context=context,
-            timeout=10,
-        ) as smtp:
+            with smtplib.SMTP_SSL(
+                smtp_host,
+                settings.smtp_port,
+                context=context,
+                timeout=10,
+            ) as smtp:
+                if settings.smtp_username and settings.smtp_password:
+                    smtp.login(settings.smtp_username, settings.smtp_password)
+
+                smtp.send_message(message)
+
+            return
+
+        with smtplib.SMTP(smtp_host, settings.smtp_port, timeout=10) as smtp:
+            if settings.smtp_use_tls:
+                context = ssl.create_default_context()
+                smtp.starttls(context=context)
+
             if settings.smtp_username and settings.smtp_password:
                 smtp.login(settings.smtp_username, settings.smtp_password)
 
             smtp.send_message(message)
-
-        return
-
-    with smtplib.SMTP(smtp_host, settings.smtp_port, timeout=10) as smtp:
-        if settings.smtp_use_tls:
-            context = ssl.create_default_context()
-            smtp.starttls(context=context)
-
-        if settings.smtp_username and settings.smtp_password:
-            smtp.login(settings.smtp_username, settings.smtp_password)
-
-        smtp.send_message(message)
+    except (OSError, smtplib.SMTPException) as exc:
+        raise ServiceUnavailableError("Email delivery failed") from exc

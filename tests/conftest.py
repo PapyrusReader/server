@@ -212,6 +212,7 @@ async def auth_user(
 
     return {
         "user_id": str(user_uuid),
+        "session_id": str(auth_session.session_id),
         "access_token": access_token,
         "refresh_token": refresh_token,
         "password": "current_password",

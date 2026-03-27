@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
+from uuid import UUID
 
 import jwt
 import pytest
@@ -13,8 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.config import get_settings
 from papyrus.core import security as security_module
+from papyrus.core.exceptions import ServiceUnavailableError
 from papyrus.core.security import generate_opaque_token, hash_opaque_token
-from papyrus.models import EmailActionToken, User, UserIdentity
+from papyrus.models import AuthExchangeCode, EmailActionToken, User, UserIdentity
 from papyrus.services import auth as auth_service
 from papyrus.services import email as email_service
 
@@ -338,6 +340,17 @@ async def test_google_oauth_does_not_auto_link_existing_email(
     assert parse_qs(urlparse(redirect_location).query)["error"][0] == "account_exists"
 
 
+async def test_google_oauth_start_requires_configuration(client: AsyncClient):
+    """Test Google OAuth start returns a controlled error when not configured."""
+    response = await client.get(
+        "/v1/auth/oauth/google/start",
+        params={"redirect_uri": "papyrus://auth/callback"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
 async def test_google_link_flow_links_identity_to_existing_user(
     client: AsyncClient,
     auth_headers: dict[str, str],
@@ -422,6 +435,16 @@ async def test_powersync_jwks_returns_signing_key(
     assert len(body["keys"]) == 1
 
 
+async def test_powersync_token_requires_signing_configuration(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    """Test PowerSync token minting fails cleanly without signing config."""
+    response = await client.post("/v1/auth/powersync-token", headers=auth_headers)
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
 async def test_verify_email(client: AsyncClient, db_session: AsyncSession):
     """Test email verification endpoint."""
     user = User(display_name="Needs Verification", primary_email="verify@example.com")
@@ -442,6 +465,28 @@ async def test_verify_email(client: AsyncClient, db_session: AsyncSession):
     response = await client.post("/v1/auth/verify-email", json={"token": plain_token})
     assert response.status_code == 200
     assert response.json()["message"] == "Email verified successfully"
+
+
+async def test_verify_email_rejects_expired_token(client: AsyncClient, db_session: AsyncSession):
+    """Test email verification rejects expired tokens."""
+    user = User(display_name="Needs Verification", primary_email="verify@example.com")
+    db_session.add(user)
+    await db_session.flush()
+
+    plain_token = generate_opaque_token()
+    db_session.add(
+        EmailActionToken(
+            user_id=user.user_id,
+            action_type=auth_service.EMAIL_VERIFICATION_ACTION,
+            token_hash=hash_opaque_token(plain_token),
+            expires_at=datetime.now(UTC) - timedelta(minutes=1),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.post("/v1/auth/verify-email", json={"token": plain_token})
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
 async def test_resend_verification_sends_email_when_configured(
@@ -520,6 +565,39 @@ async def test_forgot_password_sends_email_when_configured(
     assert "Reset token:" in body
 
 
+async def test_forgot_password_send_failure_returns_service_unavailable(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Test SMTP failures surface as controlled app errors."""
+    register_response = await client.post(
+        "/v1/auth/register",
+        json={
+            "email": "test@example.com",
+            "password": "SecureP@ss123",
+            "display_name": "Test User",
+        },
+    )
+    assert register_response.status_code == 201
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "email_delivery_enabled", True)
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.test")
+    monkeypatch.setattr(settings, "smtp_from_email", "noreply@example.test")
+    monkeypatch.setattr(
+        email_service,
+        "send_email",
+        lambda recipient, subject, body: (_ for _ in ()).throw(ServiceUnavailableError("Email delivery failed")),
+    )
+
+    response = await client.post(
+        "/v1/auth/forgot-password",
+        json={"email": "test@example.com"},
+    )
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
+
+
 async def test_reset_password(client: AsyncClient, db_session: AsyncSession):
     """Test password reset endpoint."""
     user = User(display_name="Resettable User", primary_email="reset@example.com")
@@ -546,3 +624,117 @@ async def test_reset_password(client: AsyncClient, db_session: AsyncSession):
     )
     assert response.status_code == 200
     assert response.json()["message"] == "Password has been reset successfully"
+
+
+async def test_reset_password_revokes_existing_access_token(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    auth_user: dict[str, str],
+    db_session: AsyncSession,
+):
+    """Test password reset revokes any existing authenticated session."""
+    plain_token = generate_opaque_token()
+    db_session.add(
+        EmailActionToken(
+            user_id=UUID(auth_user["user_id"]),
+            action_type=auth_service.PASSWORD_RESET_ACTION,
+            token_hash=hash_opaque_token(plain_token),
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        "/v1/auth/reset-password",
+        json={
+            "token": plain_token,
+            "password": "NewSecureP@ss123",
+        },
+    )
+    assert response.status_code == 200
+
+    protected_response = await client.get("/v1/users/me", headers=auth_headers)
+    assert protected_response.status_code == 401
+
+
+async def test_reset_password_rejects_expired_token(client: AsyncClient, db_session: AsyncSession):
+    """Test password reset rejects expired tokens."""
+    user = User(display_name="Resettable User", primary_email="reset@example.com")
+    db_session.add(user)
+    await db_session.flush()
+
+    plain_token = generate_opaque_token()
+    db_session.add(
+        EmailActionToken(
+            user_id=user.user_id,
+            action_type=auth_service.PASSWORD_RESET_ACTION,
+            token_hash=hash_opaque_token(plain_token),
+            expires_at=datetime.now(UTC) - timedelta(minutes=1),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        "/v1/auth/reset-password",
+        json={
+            "token": plain_token,
+            "password": "NewSecureP@ss123",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+async def test_exchange_code_rejects_expired_code(client: AsyncClient, db_session: AsyncSession):
+    """Test OAuth exchange rejects expired codes."""
+    user = User(display_name="OAuth User", primary_email="oauth@example.com")
+    db_session.add(user)
+    await db_session.flush()
+
+    plain_code = generate_opaque_token()
+    db_session.add(
+        AuthExchangeCode(
+            code_hash=hash_opaque_token(plain_code),
+            purpose="login",
+            user_id=user.user_id,
+            provider="google",
+            redirect_uri="papyrus://auth/callback",
+            expires_at=datetime.now(UTC) - timedelta(minutes=1),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        "/v1/auth/exchange-code",
+        json={"code": plain_code, "client_type": "web"},
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHORIZED"
+
+
+async def test_exchange_code_rejects_reused_code(client: AsyncClient, db_session: AsyncSession):
+    """Test OAuth exchange rejects a code after it has been consumed."""
+    user = User(display_name="OAuth User", primary_email="oauth@example.com")
+    db_session.add(user)
+    await db_session.flush()
+
+    plain_code = generate_opaque_token()
+    db_session.add(
+        AuthExchangeCode(
+            code_hash=hash_opaque_token(plain_code),
+            purpose="login",
+            user_id=user.user_id,
+            provider="google",
+            redirect_uri="papyrus://auth/callback",
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
+            used_at=datetime.now(UTC),
+        )
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        "/v1/auth/exchange-code",
+        json={"code": plain_code, "client_type": "web"},
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "UNAUTHORIZED"

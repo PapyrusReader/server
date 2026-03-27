@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: papyrus
+          POSTGRES_PASSWORD: papyrus
+          POSTGRES_DB: papyrus
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U papyrus"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DEBUG: false
+      HOST: 127.0.0.1
+      PORT: 8080
+      API_PREFIX: /v1
+      CORS_ORIGINS: '["http://localhost:3000"]'
+      SECRET_KEY: test-secret-key
+      ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: 60
+      REFRESH_TOKEN_EXPIRE_DAYS: 30
+      RATE_LIMIT_AUTH: 5
+      RATE_LIMIT_GENERAL: 100
+      RATE_LIMIT_UPLOAD: 10
+      RATE_LIMIT_BATCH: 20
+      POSTGRES_USER: papyrus
+      POSTGRES_PASSWORD: papyrus
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: papyrus
+      TEST_POSTGRES_USER: papyrus
+      TEST_POSTGRES_PASSWORD: papyrus
+      TEST_POSTGRES_HOST: 127.0.0.1
+      TEST_POSTGRES_PORT: 5432
+      TEST_POSTGRES_DB: papyrus_test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Ruff
+        run: uv run ruff check .
+
+      - name: Mypy
+        run: uv run mypy .
+
+      - name: Pytest
+        run: uv run pytest

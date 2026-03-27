@@ -55,6 +55,17 @@ class ConflictError(AppError):
         super().__init__(message=message, code="CONFLICT", status_code=409, details=details)
 
 
+class ServiceUnavailableError(AppError):
+    """Temporary dependency or infrastructure failure."""
+
+    def __init__(
+        self,
+        message: str = "Service temporarily unavailable",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message=message, code="SERVICE_UNAVAILABLE", status_code=503, details=details)
+
+
 class RateLimitError(AppError):
     """Rate limit exceeded."""
 
