@@ -45,9 +45,7 @@ class ExportAnnotationsResponse(BaseModel):
     filename: str
 
 
-def _example_annotation(
-    annotation_id: UUID | None = None, book_id: UUID | None = None
-) -> Annotation:
+def _example_annotation(annotation_id: UUID | None = None, book_id: UUID | None = None) -> Annotation:
     """Create an example annotation for responses."""
     return Annotation(
         annotation_id=annotation_id or uuid4(),

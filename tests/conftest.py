@@ -1,20 +1,16 @@
 import os
-
-os.environ.setdefault("SECRET_KEY", "test-only-secret-key-do-not-use-in-production")
-os.environ.setdefault("POSTGRES_USER", "postgres")
-os.environ.setdefault("POSTGRES_PASSWORD", "postgres")
-os.environ.setdefault("POSTGRES_HOST", "localhost")
-os.environ.setdefault("POSTGRES_DB", "papyrus_test")
-
 from collections.abc import AsyncGenerator
+from contextlib import suppress
 from uuid import uuid4
 
 import asyncpg
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from papyrus.config import get_settings
 from papyrus.core.security import create_access_token
 from papyrus.main import app
 from papyrus.models import Base
@@ -77,44 +73,78 @@ def goal_id() -> str:
     return str(uuid4())
 
 
-_pg_host = os.environ.get("POSTGRES_HOST", "localhost")
-_pg_port = os.environ.get("POSTGRES_PORT", "5432")
+settings = get_settings()
 
-TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    f"postgresql+asyncpg://papyrus:papyrus@{_pg_host}:{_pg_port}/papyrus_test",
-)
+ADMIN_POSTGRES_USER = settings.postgres_user
+ADMIN_POSTGRES_PASSWORD = settings.postgres_password
+ADMIN_POSTGRES_HOST = settings.postgres_host
+ADMIN_POSTGRES_PORT = settings.postgres_port
+TEST_DATABASE_NAME = os.environ.get("TEST_POSTGRES_DB", f"{settings.postgres_db}_test")
+
+raw_test_database_url = os.environ.get("TEST_DATABASE_URL")
+
+if raw_test_database_url:
+    TEST_DATABASE_URL = make_url(raw_test_database_url)
+else:
+    TEST_DATABASE_URL = URL.create(
+        drivername="postgresql+asyncpg",
+        username=os.environ.get("TEST_POSTGRES_USER", settings.postgres_user),
+        password=os.environ.get("TEST_POSTGRES_PASSWORD", settings.postgres_password),
+        host=os.environ.get("TEST_POSTGRES_HOST", settings.postgres_host),
+        port=int(os.environ.get("TEST_POSTGRES_PORT", str(settings.postgres_port))),
+        database=TEST_DATABASE_NAME,
+    )
+
+
+def _quote_ident(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
+def _quote_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+@pytest.fixture(scope="session")
+def test_database_name() -> str:
+    return TEST_DATABASE_URL.database or TEST_DATABASE_NAME
 
 
 @pytest_asyncio.fixture(scope="session")
 async def setup_test_db() -> None:
     """Create the test database and role if they do not exist."""
-    pg_user = os.environ.get("POSTGRES_USER", "postgres")
-    pg_password = os.environ.get("POSTGRES_PASSWORD", "postgres")
-    pg_host = os.environ.get("POSTGRES_HOST", "localhost")
-    pg_port = int(os.environ.get("POSTGRES_PORT", "5432"))
+    test_db_user = TEST_DATABASE_URL.username
+    test_db_password = TEST_DATABASE_URL.password
+    test_db_name = TEST_DATABASE_URL.database
 
-    conn = await asyncpg.connect(
-        user=pg_user,
-        password=pg_password,
-        host=pg_host,
-        port=pg_port,
+    if test_db_user is None or test_db_password is None or test_db_name is None:
+        raise RuntimeError(
+            "Test database configuration is incomplete. Provide credentials through .env or "
+            "TEST_DATABASE_URL/TEST_POSTGRES_* overrides."
+        )
+
+    connection = await asyncpg.connect(
+        user=ADMIN_POSTGRES_USER,
+        password=ADMIN_POSTGRES_PASSWORD,
+        host=ADMIN_POSTGRES_HOST,
+        port=ADMIN_POSTGRES_PORT,
         database="postgres",
     )
+
     try:
-        try:
-            await conn.execute("CREATE ROLE papyrus WITH LOGIN PASSWORD 'papyrus'")
-        except asyncpg.DuplicateObjectError:
-            pass  # Role already exists
+        if test_db_user != ADMIN_POSTGRES_USER:
+            with suppress(asyncpg.DuplicateObjectError):
+                await connection.execute(
+                    f"CREATE ROLE {_quote_ident(test_db_user)} WITH LOGIN PASSWORD {_quote_literal(test_db_password)}"
+                )
 
-        try:
-            await conn.execute("CREATE DATABASE papyrus_test OWNER papyrus")
-        except asyncpg.DuplicateDatabaseError:
-            pass  # Database already exists
+        with suppress(asyncpg.DuplicateDatabaseError):
+            await connection.execute(f"CREATE DATABASE {_quote_ident(test_db_name)} OWNER {_quote_ident(test_db_user)}")
 
-        await conn.execute("GRANT ALL PRIVILEGES ON DATABASE papyrus_test TO papyrus")
+        await connection.execute(
+            f"GRANT ALL PRIVILEGES ON DATABASE {_quote_ident(test_db_name)} TO {_quote_ident(test_db_user)}"
+        )
     finally:
-        await conn.close()
+        await connection.close()
 
 
 @pytest_asyncio.fixture
