@@ -1,6 +1,7 @@
 import os
 from collections.abc import AsyncGenerator
 from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import asyncpg
@@ -11,26 +12,15 @@ from sqlalchemy.engine import URL, make_url
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from papyrus.config import get_settings
-from papyrus.core.security import create_access_token
+from papyrus.core.database import get_db
+from papyrus.core.security import create_access_token, generate_opaque_token, hash_opaque_token, hash_password
 from papyrus.main import app
-from papyrus.models import Base
-
-
-@pytest_asyncio.fixture
-async def client() -> AsyncGenerator[AsyncClient, None]:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        yield c
+from papyrus.models import AuthSession, Base, PasswordCredential, User
 
 
 @pytest.fixture
 def user_id() -> str:
     return str(uuid4())
-
-
-@pytest.fixture
-def auth_headers(user_id: str) -> dict[str, str]:
-    token = create_access_token({"sub": user_id})
-    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
@@ -148,18 +138,79 @@ async def setup_test_db() -> None:
 
 
 @pytest_asyncio.fixture
-async def db_session(setup_test_db: None) -> AsyncGenerator[AsyncSession, None]:
+async def test_session_maker(setup_test_db: None) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
     engine = create_async_engine(TEST_DATABASE_URL)
-    session_maker = async_sessionmaker(engine, expire_on_commit=False)
+    session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    async with session_maker() as session, session.begin():
+    try:
+        yield session_maker
+    finally:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def client(test_session_maker: async_sessionmaker[AsyncSession]) -> AsyncGenerator[AsyncClient, None]:
+    async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
+        async with test_session_maker() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            yield c
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def db_session(test_session_maker: async_sessionmaker[AsyncSession]) -> AsyncGenerator[AsyncSession, None]:
+    async with test_session_maker() as session:
         yield session
-        await session.rollback()
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
 
-    await engine.dispose()
+@pytest_asyncio.fixture
+async def auth_user(test_session_maker: async_sessionmaker[AsyncSession]) -> dict[str, str]:
+    user_uuid = uuid4()
+    refresh_token = generate_opaque_token()
+
+    async with test_session_maker() as session:
+        user = User(
+            user_id=user_uuid,
+            display_name="Example User",
+            primary_email="user@example.com",
+            primary_email_verified=True,
+            last_login_at=datetime.now(UTC),
+        )
+        session.add(user)
+        session.add(PasswordCredential(user_id=user_uuid, password_hash=hash_password("current_password")))
+        await session.flush()
+
+        auth_session = AuthSession(
+            user_id=user_uuid,
+            refresh_token_hash=hash_opaque_token(refresh_token),
+            client_type="test",
+            device_label="pytest",
+            expires_at=datetime.now(UTC) + timedelta(days=30),
+            last_seen_at=datetime.now(UTC),
+        )
+        session.add(auth_session)
+        await session.commit()
+
+        access_token = create_access_token({"sub": str(user_uuid), "sid": str(auth_session.session_id)})
+
+    return {
+        "user_id": str(user_uuid),
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "password": "current_password",
+    }
+
+
+@pytest_asyncio.fixture
+async def auth_headers(auth_user: dict[str, str]) -> dict[str, str]:
+    return {"Authorization": f"Bearer {auth_user['access_token']}"}

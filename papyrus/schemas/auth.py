@@ -1,8 +1,10 @@
 """Authentication-related schemas."""
 
-from uuid import UUID
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
+
+ClientType = Literal["mobile", "desktop", "web", "unknown"]
 
 
 class RegisterRequest(BaseModel):
@@ -11,14 +13,8 @@ class RegisterRequest(BaseModel):
     email: EmailStr = Field(..., examples=["user@example.com"])
     password: str = Field(..., min_length=8, examples=["SecureP@ss123"])
     display_name: str = Field(..., min_length=1, max_length=100, examples=["John Doe"])
-
-
-class RegisterResponse(BaseModel):
-    """User registration response."""
-
-    user_id: UUID
-    email: EmailStr
-    message: str = Field(default="Account created. Please verify your email.")
+    client_type: ClientType = "unknown"
+    device_label: str | None = Field(default=None, max_length=255)
 
 
 class LoginRequest(BaseModel):
@@ -26,12 +22,34 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: str
+    client_type: ClientType = "unknown"
+    device_label: str | None = Field(default=None, max_length=255)
 
 
-class GoogleOAuthRequest(BaseModel):
-    """Google OAuth login request."""
+class OAuthStartRequest(BaseModel):
+    """OAuth flow bootstrap request."""
 
-    id_token: str = Field(..., description="Google OAuth ID token")
+    redirect_uri: str = Field(..., description="App callback URI for the browser flow")
+
+
+class AuthorizationUrlResponse(BaseModel):
+    """Authorization URL returned to the client for browser login."""
+
+    authorization_url: str
+
+
+class OAuthExchangeRequest(BaseModel):
+    """Exchange a one-time code for Papyrus tokens."""
+
+    code: str = Field(..., description="One-time exchange code returned from the browser callback")
+    client_type: ClientType = "unknown"
+    device_label: str | None = Field(default=None, max_length=255)
+
+
+class OAuthLinkCompleteRequest(BaseModel):
+    """Consume a one-time exchange code to link a provider."""
+
+    code: str = Field(..., description="One-time exchange code returned from the browser callback")
 
 
 class RefreshTokenRequest(BaseModel):
@@ -47,7 +65,14 @@ class AuthTokens(BaseModel):
     refresh_token: str
     token_type: str = "Bearer"
     expires_in: int = Field(..., description="Access token expiry in seconds", examples=[3600])
-    user: "User | None" = None
+    user: "User"
+
+
+class PowerSyncTokenResponse(BaseModel):
+    """Short-lived PowerSync token response."""
+
+    token: str
+    expires_in: int
 
 
 class LogoutRequest(BaseModel):
@@ -60,6 +85,12 @@ class VerifyEmailRequest(BaseModel):
     """Email verification request."""
 
     token: str = Field(..., description="Email verification token")
+
+
+class ResendVerificationRequest(BaseModel):
+    """Resend verification email request."""
+
+    email: EmailStr
 
 
 class ForgotPasswordRequest(BaseModel):

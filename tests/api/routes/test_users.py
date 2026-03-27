@@ -3,14 +3,14 @@
 from httpx import AsyncClient
 
 
-async def test_get_current_user(client: AsyncClient, auth_headers: dict[str, str]):
+async def test_get_current_user(client: AsyncClient, auth_headers: dict[str, str], auth_user: dict[str, str]):
     """Test getting current user profile."""
     response = await client.get("/v1/users/me", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
-    assert "user_id" in data
-    assert "email" in data
-    assert "display_name" in data
+    assert data["user_id"] == auth_user["user_id"]
+    assert data["email"] == "user@example.com"
+    assert data["display_name"] == "Example User"
 
 
 async def test_update_current_user(client: AsyncClient, auth_headers: dict[str, str]):
@@ -25,13 +25,13 @@ async def test_update_current_user(client: AsyncClient, auth_headers: dict[str, 
     assert data["display_name"] == "Updated Name"
 
 
-async def test_delete_current_user(client: AsyncClient, auth_headers: dict[str, str]):
+async def test_delete_current_user(client: AsyncClient, auth_headers: dict[str, str], auth_user: dict[str, str]):
     """Test deleting current user account."""
     response = await client.request(
         "DELETE",
         "/v1/users/me",
         headers=auth_headers,
-        json={"password": "current_password"},
+        json={"password": auth_user["password"]},
     )
     assert response.status_code == 204
 
@@ -57,13 +57,13 @@ async def test_update_user_preferences(client: AsyncClient, auth_headers: dict[s
     assert data["notifications_enabled"] is False
 
 
-async def test_change_password(client: AsyncClient, auth_headers: dict[str, str]):
+async def test_change_password(client: AsyncClient, auth_headers: dict[str, str], auth_user: dict[str, str]):
     """Test changing user password."""
     response = await client.post(
         "/v1/users/me/change-password",
         headers=auth_headers,
         json={
-            "current_password": "old_password",
+            "current_password": auth_user["password"],
             "new_password": "NewSecureP@ss123",
         },
     )

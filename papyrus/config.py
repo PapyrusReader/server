@@ -10,7 +10,7 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
     )
 
-    debug: bool
+    debug: bool = False
     host: str
     port: int
     api_prefix: str
@@ -28,6 +28,36 @@ class Settings(BaseSettings):
     rate_limit_general: int
     rate_limit_upload: int
     rate_limit_batch: int
+    public_base_url: str | None = None
+    google_oauth_client_id: str | None = None
+    google_oauth_client_secret: str | None = None
+    oauth_state_expire_minutes: int = 10
+    auth_exchange_code_expire_minutes: int = 5
+    email_verification_token_expire_minutes: int = 1440
+    password_reset_token_expire_minutes: int = 60
+    email_delivery_enabled: bool = False
+    powersync_jwt_private_key: str | None = None
+    powersync_jwt_public_key: str | None = None
+    powersync_jwt_key_id: str = "papyrus-powersync-v1"
+    powersync_jwt_audience: str | None = None
+    powersync_token_expire_minutes: int = 5
+
+    @field_validator("debug", mode="before")
+    @classmethod
+    def normalize_debug(cls, value: bool | str) -> bool:
+        if isinstance(value, bool):
+            return value
+
+        normalized = value.strip().lower()
+        truthy = {"1", "true", "yes", "on", "debug", "development", "dev"}
+        falsy = {"0", "false", "no", "off", "release", "production", "prod"}
+
+        if normalized in truthy:
+            return True
+        if normalized in falsy:
+            return False
+
+        raise ValueError("debug must be a boolean-compatible value")
 
     @field_validator("api_prefix")
     @classmethod

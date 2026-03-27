@@ -15,7 +15,6 @@ class User(BaseModel):
     email: EmailStr | None = None
     display_name: str
     avatar_url: HttpUrl | str | None = None
-    is_anonymous: bool = False
     email_verified: bool = False
     created_at: datetime
     last_login_at: datetime | None = None

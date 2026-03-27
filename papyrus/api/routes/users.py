@@ -1,15 +1,19 @@
 """User routes."""
 
-from datetime import UTC, datetime
+from typing import Annotated
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.api.deps import CurrentUserId
+from papyrus.core.database import get_db
 from papyrus.schemas.auth import ChangePasswordRequest
 from papyrus.schemas.common import MessageResponse
 from papyrus.schemas.user import DeleteAccountRequest, UpdateUserRequest, User, UserPreferences
+from papyrus.services import users as user_service
 
 router = APIRouter()
+DBSession = Annotated[AsyncSession, Depends(get_db)]
 
 
 @router.get(
@@ -17,18 +21,10 @@ router = APIRouter()
     response_model=User,
     summary="Get current user profile",
 )
-async def get_current_user(user_id: CurrentUserId) -> User:
+async def get_current_user(user_id: CurrentUserId, db: DBSession) -> User:
     """Return the authenticated user's profile information."""
-    return User(
-        user_id=user_id,
-        email="user@example.com",
-        display_name="Example User",
-        avatar_url=None,
-        is_anonymous=False,
-        email_verified=True,
-        created_at=datetime.now(UTC),
-        last_login_at=datetime.now(UTC),
-    )
+    user = await user_service.get_user_profile(db, user_id)
+    return User.model_validate(user)
 
 
 @router.patch(
@@ -39,18 +35,11 @@ async def get_current_user(user_id: CurrentUserId) -> User:
 async def update_current_user(
     user_id: CurrentUserId,
     request: UpdateUserRequest,
+    db: DBSession,
 ) -> User:
     """Update the authenticated user's profile information."""
-    return User(
-        user_id=user_id,
-        email="user@example.com",
-        display_name=request.display_name or "Example User",
-        avatar_url=request.avatar_url,
-        is_anonymous=False,
-        email_verified=True,
-        created_at=datetime.now(UTC),
-        last_login_at=datetime.now(UTC),
-    )
+    user = await user_service.update_user_profile(db, user_id, request)
+    return User.model_validate(user)
 
 
 @router.delete(
@@ -61,8 +50,10 @@ async def update_current_user(
 async def delete_current_user(
     user_id: CurrentUserId,
     request: DeleteAccountRequest,
+    db: DBSession,
 ) -> Response:
-    """Permanently delete the user account and all associated data."""
+    """Disable the user account and revoke active sessions."""
+    await user_service.delete_user_account(db, user_id, request.password)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -102,6 +93,8 @@ async def update_user_preferences(
 async def change_password(
     user_id: CurrentUserId,
     request: ChangePasswordRequest,
+    db: DBSession,
 ) -> MessageResponse:
-    """Change the user's password. Requires current password verification."""
+    """Change the user's password and revoke existing sessions."""
+    await user_service.change_user_password(db, user_id, request.current_password, request.new_password)
     return MessageResponse(message="Password changed successfully")

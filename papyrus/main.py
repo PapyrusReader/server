@@ -73,14 +73,15 @@ e-book reader application. It provides endpoints for:
 ## Authentication
 
 Most endpoints require authentication via JWT Bearer token. Obtain tokens
-through the `{auth_base_path}/login` or `{auth_base_path}/oauth/google` endpoints.
+through the `{auth_base_path}/register`, `{auth_base_path}/login`, or the
+browser-based `{auth_base_path}/oauth/google/start` flow.
 
 ```
 Authorization: Bearer <access_token>
 ```
 
-Access tokens expire after 1 hour. Use the refresh token to obtain new
-access tokens via `{auth_base_path}/refresh`.
+Access tokens expire after `{settings.access_token_expire_minutes}` minutes.
+Use the refresh token to obtain new access tokens via `{auth_base_path}/refresh`.
 
 ## Rate Limiting
 

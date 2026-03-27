@@ -1,6 +1,6 @@
 """API dependencies for dependency injection."""
 
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, status
@@ -11,10 +11,10 @@ from papyrus.core.security import decode_token
 security = HTTPBearer()
 
 
-async def get_current_user_id(
+async def get_current_access_token_payload(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
-) -> UUID:
-    """Extract and validate user ID from JWT token."""
+) -> dict[str, Any]:
+    """Extract and validate the current access token payload."""
     token = credentials.credentials
     payload = decode_token(token)
 
@@ -30,6 +30,13 @@ async def get_current_user_id(
             detail={"code": "INVALID_TOKEN_TYPE", "message": "Not an access token"},
         )
 
+    return payload
+
+
+async def get_current_user_id(
+    payload: Annotated[dict[str, Any], Depends(get_current_access_token_payload)],
+) -> UUID:
+    """Extract the current user ID from the validated access token payload."""
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(
@@ -40,7 +47,19 @@ async def get_current_user_id(
     return UUID(user_id)
 
 
+async def get_current_session_id(
+    payload: Annotated[dict[str, Any], Depends(get_current_access_token_payload)],
+) -> UUID | None:
+    """Extract the current session ID from the validated access token payload."""
+    session_id = payload.get("sid")
+    if session_id is None:
+        return None
+    return UUID(session_id)
+
+
 CurrentUserId = Annotated[UUID, Depends(get_current_user_id)]
+CurrentAccessTokenPayload = Annotated[dict[str, Any], Depends(get_current_access_token_payload)]
+CurrentSessionId = Annotated[UUID | None, Depends(get_current_session_id)]
 
 
 class PaginationParams:
