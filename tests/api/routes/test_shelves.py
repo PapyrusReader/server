@@ -59,9 +59,7 @@ async def test_list_shelf_books(client: AsyncClient, auth_headers: dict[str, str
     assert "books" in data
 
 
-async def test_add_book_to_shelf(
-    client: AsyncClient, auth_headers: dict[str, str], shelf_id: str, book_id: str
-):
+async def test_add_book_to_shelf(client: AsyncClient, auth_headers: dict[str, str], shelf_id: str, book_id: str):
     """Test adding a book to a shelf."""
     response = await client.post(
         f"/v1/shelves/{shelf_id}/books/{book_id}",
@@ -70,9 +68,7 @@ async def test_add_book_to_shelf(
     assert response.status_code == 204
 
 
-async def test_remove_book_from_shelf(
-    client: AsyncClient, auth_headers: dict[str, str], shelf_id: str, book_id: str
-):
+async def test_remove_book_from_shelf(client: AsyncClient, auth_headers: dict[str, str], shelf_id: str, book_id: str):
     """Test removing a book from a shelf."""
     response = await client.delete(
         f"/v1/shelves/{shelf_id}/books/{book_id}",

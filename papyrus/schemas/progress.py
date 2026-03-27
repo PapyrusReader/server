@@ -21,9 +21,7 @@ class ReadingSession(BaseModel):
     start_position: float | None = None
     end_position: float | None = None
     pages_read: int | None = None
-    duration_minutes: int | None = Field(
-        None, description="Calculated from start_time and end_time"
-    )
+    duration_minutes: int | None = Field(None, description="Calculated from start_time and end_time")
     device_type: str | None = None
     device_name: str | None = None
     created_at: datetime | None = None

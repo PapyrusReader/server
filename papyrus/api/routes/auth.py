@@ -7,20 +7,18 @@ from fastapi import APIRouter, Response, status
 from papyrus.api.deps import CurrentUserId
 from papyrus.schemas.auth import (
     AuthTokens,
+    ForgotPasswordRequest,
     GoogleOAuthRequest,
     LoginRequest,
+    LogoutRequest,
     RefreshTokenRequest,
     RegisterRequest,
     RegisterResponse,
-)
-from papyrus.schemas.user import User
-from papyrus.schemas.auth import (
-    ForgotPasswordRequest,
-    LogoutRequest,
     ResetPasswordRequest,
     VerifyEmailRequest,
 )
 from papyrus.schemas.common import MessageResponse
+from papyrus.schemas.user import User
 
 router = APIRouter()
 

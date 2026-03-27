@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import computed_field
+from pydantic import computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     rate_limit_upload: int
     rate_limit_batch: int
 
+    @field_validator("api_prefix")
+    @classmethod
+    def normalize_api_prefix(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized or normalized == "/":
+            return ""
+        if not normalized.startswith("/"):
+            normalized = f"/{normalized}"
+        return normalized.rstrip("/")
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:
@@ -40,4 +50,4 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()  # type: ignore
+    return Settings()

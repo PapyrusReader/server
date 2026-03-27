@@ -10,13 +10,14 @@ from papyrus.schemas.sync import (
     CreateMetadataServerConfigRequest,
     MetadataServerConfig,
     ServerType,
+    SyncAccepted,
     SyncChanges,
     SyncConflictResponse,
     SyncPushRequest,
     SyncPushResponse,
     SyncStatus,
+    SyncStatusEnum,
 )
-from papyrus.schemas.sync import SyncAccepted, SyncStatusEnum
 
 router = APIRouter()
 

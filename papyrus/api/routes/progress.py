@@ -9,14 +9,12 @@ from fastapi import APIRouter, Query
 from papyrus.api.deps import CurrentUserId, Pagination
 from papyrus.schemas.common import Pagination as PaginationSchema
 from papyrus.schemas.progress import (
+    BookBreakdown,
     CreateReadingSessionRequest,
+    DailyBreakdown,
     ReadingSession,
     ReadingSessionList,
     ReadingStatistics,
-)
-from papyrus.schemas.progress import (
-    BookBreakdown,
-    DailyBreakdown,
     StatisticsPeriod,
     StatisticsTotals,
 )
@@ -104,9 +102,7 @@ async def create_reading_session(
 )
 async def get_reading_statistics(
     user_id: CurrentUserId,
-    start_date: Annotated[
-        date | None, Query(description="Start date for statistics period")
-    ] = None,
+    start_date: Annotated[date | None, Query(description="Start date for statistics period")] = None,
     end_date: Annotated[date | None, Query(description="End date for statistics period")] = None,
 ) -> ReadingStatistics:
     """Return reading statistics for the specified period."""

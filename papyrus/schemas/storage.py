@@ -61,9 +61,7 @@ class CreateStorageBackendRequest(BaseModel):
     backend_type: StorageBackendType
     name: str = Field(..., max_length=100)
     is_primary: bool = False
-    connection_config: dict[str, Any] | None = Field(
-        None, description="Type-specific connection settings"
-    )
+    connection_config: dict[str, Any] | None = Field(None, description="Type-specific connection settings")
     credentials: dict[str, Any] | None = Field(None, description="OAuth tokens or API keys")
     base_path: str | None = None
 

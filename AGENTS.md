@@ -21,6 +21,7 @@
 - When adding a new router module, register it in `papyrus/api/routes/__init__.py`.
 - Avoid adding dependencies unless the user explicitly asks for them.
 - Keep changes scoped. Do not refactor unrelated areas as part of a focused fix.
+- Do not leave inline comments. Sufficiently complex behavior that requires explanation should be documented using docstrings.
 
 ## Runbook
 

@@ -47,11 +47,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     configure_logging()
+    auth_base_path = f"{settings.api_prefix}/auth" if settings.api_prefix else "/auth"
 
     app = FastAPI(
         title="Papyrus Server API",
         version="1.0.0",
-        description="""
+        description=f"""
 REST API for Papyrus - a cross-platform book management application.
 
 ## Overview
@@ -72,14 +73,14 @@ e-book reader application. It provides endpoints for:
 ## Authentication
 
 Most endpoints require authentication via JWT Bearer token. Obtain tokens
-through the `/auth/login` or `/auth/oauth/google` endpoints.
+through the `{auth_base_path}/login` or `{auth_base_path}/oauth/google` endpoints.
 
 ```
 Authorization: Bearer <access_token>
 ```
 
 Access tokens expire after 1 hour. Use the refresh token to obtain new
-access tokens via `/auth/refresh`.
+access tokens via `{auth_base_path}/refresh`.
 
 ## Rate Limiting
 
@@ -104,9 +105,8 @@ Rate limits are enforced per user:
     )
 
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
 
-    # CORS middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -115,7 +115,6 @@ Rate limits are enforced per user:
         allow_headers=["*"],
     )
 
-    # Exception handlers
     @app.exception_handler(AppError)
     async def app_exception_handler(request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(
@@ -133,6 +132,7 @@ Rate limits are enforced per user:
     async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         if isinstance(exc, (FastAPIHTTPException, RequestValidationError)):
             raise exc
+
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -143,10 +143,8 @@ Rate limits are enforced per user:
             },
         )
 
-    # Include API router
-    app.include_router(api_router, prefix="/v1")
+    app.include_router(api_router, prefix=settings.api_prefix)
 
-    # Health check endpoint
     @app.get("/health", tags=["Health"])
     async def health_check() -> dict[str, str]:
         """Check API health status."""

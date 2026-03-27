@@ -13,9 +13,7 @@ async def test_database_is_reachable(db_session: AsyncSession):
 
 
 @pytest.mark.integration
-async def test_setup_creates_database_idempotently(
-    db_session: AsyncSession, test_database_name: str
-):
+async def test_setup_creates_database_idempotently(db_session: AsyncSession, test_database_name: str):
     """Verify we are connected to the correct test database."""
     result = await db_session.execute(text("SELECT current_database()"))
     assert result.scalar() == test_database_name

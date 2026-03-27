@@ -5,10 +5,9 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Response, status
 
 from papyrus.api.deps import CurrentUserId
-from papyrus.schemas.user import UpdateUserRequest, User, UserPreferences
 from papyrus.schemas.auth import ChangePasswordRequest
 from papyrus.schemas.common import MessageResponse
-from papyrus.schemas.user import DeleteAccountRequest
+from papyrus.schemas.user import DeleteAccountRequest, UpdateUserRequest, User, UserPreferences
 
 router = APIRouter()
 
