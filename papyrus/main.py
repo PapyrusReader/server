@@ -149,6 +149,28 @@ Rate limits are enforced per user:
     if settings.debug:
         include_debug_routers(app)
 
+    @app.get("/", tags=["Index"])
+    async def index(request: Request) -> dict[str, object]:
+        """Return the available page-style endpoints for this server."""
+        pages: list[dict[str, str]] = []
+
+        if app.docs_url is not None:
+            pages.append({"name": "docs", "path": app.docs_url})
+
+        if app.redoc_url is not None:
+            pages.append({"name": "redoc", "path": app.redoc_url})
+
+        if app.openapi_url is not None:
+            pages.append({"name": "openapi", "path": app.openapi_url})
+
+        if any(route.path == "/__dev/auth-sandbox" for route in request.app.routes):
+            pages.append({"name": "auth_sandbox", "path": "/__dev/auth-sandbox"})
+
+        return {
+            "name": "Papyrus Server API",
+            "pages": pages,
+        }
+
     @app.get("/health", tags=["Health"])
     async def health_check() -> dict[str, str]:
         """Check API health status."""
