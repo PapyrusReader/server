@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Response, status
 
 from papyrus.api.deps import CurrentUserId
-from papyrus.schemas import CreateTagRequest, Tag, TagList, UpdateTagRequest
+from papyrus.schemas.tag import CreateTagRequest, Tag, TagList, UpdateTagRequest
 
 router = APIRouter()
 

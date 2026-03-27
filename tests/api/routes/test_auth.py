@@ -1,11 +1,11 @@
 """Tests for authentication endpoints."""
 
-from fastapi.testclient import TestClient
+from httpx import AsyncClient
 
 
-def test_register_user(client: TestClient):
+async def test_register_user(client: AsyncClient):
     """Test user registration endpoint."""
-    response = client.post(
+    response = await client.post(
         "/v1/auth/register",
         json={
             "email": "test@example.com",
@@ -20,9 +20,9 @@ def test_register_user(client: TestClient):
     assert "message" in data
 
 
-def test_login_user(client: TestClient):
+async def test_login_user(client: AsyncClient):
     """Test user login endpoint."""
-    response = client.post(
+    response = await client.post(
         "/v1/auth/login",
         json={
             "email": "test@example.com",
@@ -37,9 +37,9 @@ def test_login_user(client: TestClient):
     assert "expires_in" in data
 
 
-def test_google_oauth(client: TestClient):
+async def test_google_oauth(client: AsyncClient):
     """Test Google OAuth login endpoint."""
-    response = client.post(
+    response = await client.post(
         "/v1/auth/oauth/google",
         json={"id_token": "fake_google_id_token"},
     )
@@ -49,9 +49,9 @@ def test_google_oauth(client: TestClient):
     assert "refresh_token" in data
 
 
-def test_refresh_token(client: TestClient):
+async def test_refresh_token(client: AsyncClient):
     """Test token refresh endpoint."""
-    response = client.post(
+    response = await client.post(
         "/v1/auth/refresh",
         json={"refresh_token": "fake_refresh_token"},
     )
@@ -61,9 +61,9 @@ def test_refresh_token(client: TestClient):
     assert "refresh_token" in data
 
 
-def test_logout_user(client: TestClient, auth_headers: dict[str, str]):
+async def test_logout_user(client: AsyncClient, auth_headers: dict[str, str]):
     """Test user logout endpoint."""
-    response = client.post(
+    response = await client.post(
         "/v1/auth/logout",
         headers=auth_headers,
         json={"all_devices": False},
@@ -71,9 +71,9 @@ def test_logout_user(client: TestClient, auth_headers: dict[str, str]):
     assert response.status_code == 204
 
 
-def test_verify_email(client: TestClient):
+async def test_verify_email(client: AsyncClient):
     """Test email verification endpoint."""
-    response = client.post(
+    response = await client.post(
         "/v1/auth/verify-email",
         json={"token": "verification_token"},
     )
@@ -82,9 +82,9 @@ def test_verify_email(client: TestClient):
     assert "message" in data
 
 
-def test_forgot_password(client: TestClient):
+async def test_forgot_password(client: AsyncClient):
     """Test forgot password endpoint."""
-    response = client.post(
+    response = await client.post(
         "/v1/auth/forgot-password",
         json={"email": "test@example.com"},
     )
@@ -93,9 +93,9 @@ def test_forgot_password(client: TestClient):
     assert "message" in data
 
 
-def test_reset_password(client: TestClient):
+async def test_reset_password(client: AsyncClient):
     """Test password reset endpoint."""
-    response = client.post(
+    response = await client.post(
         "/v1/auth/reset-password",
         json={
             "token": "reset_token",

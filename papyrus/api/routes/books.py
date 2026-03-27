@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query, Response, UploadFile, status
 from pydantic import BaseModel
 
 from papyrus.api.deps import CurrentUserId, Pagination
-from papyrus.schemas import (
+from papyrus.schemas.book import (
     Book,
     BookCreate,
     BookList,
@@ -16,13 +16,11 @@ from papyrus.schemas import (
     MetadataSearchResult,
     ReadingProgress,
     ReadingStatus,
-    Shelf,
-    Tag,
     UpdateProgressRequest,
 )
-from papyrus.schemas import (
-    Pagination as PaginationSchema,
-)
+from papyrus.schemas.common import Pagination as PaginationSchema
+from papyrus.schemas.shelf import Shelf
+from papyrus.schemas.tag import Tag
 
 router = APIRouter()
 

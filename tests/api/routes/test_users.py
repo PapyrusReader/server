@@ -1,11 +1,11 @@
 """Tests for user endpoints."""
 
-from fastapi.testclient import TestClient
+from httpx import AsyncClient
 
 
-def test_get_current_user(client: TestClient, auth_headers: dict[str, str]):
+async def test_get_current_user(client: AsyncClient, auth_headers: dict[str, str]):
     """Test getting current user profile."""
-    response = client.get("/v1/users/me", headers=auth_headers)
+    response = await client.get("/v1/users/me", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert "user_id" in data
@@ -13,9 +13,9 @@ def test_get_current_user(client: TestClient, auth_headers: dict[str, str]):
     assert "display_name" in data
 
 
-def test_update_current_user(client: TestClient, auth_headers: dict[str, str]):
+async def test_update_current_user(client: AsyncClient, auth_headers: dict[str, str]):
     """Test updating current user profile."""
-    response = client.patch(
+    response = await client.patch(
         "/v1/users/me",
         headers=auth_headers,
         json={"display_name": "Updated Name"},
@@ -25,9 +25,9 @@ def test_update_current_user(client: TestClient, auth_headers: dict[str, str]):
     assert data["display_name"] == "Updated Name"
 
 
-def test_delete_current_user(client: TestClient, auth_headers: dict[str, str]):
+async def test_delete_current_user(client: AsyncClient, auth_headers: dict[str, str]):
     """Test deleting current user account."""
-    response = client.request(
+    response = await client.request(
         "DELETE",
         "/v1/users/me",
         headers=auth_headers,
@@ -36,17 +36,17 @@ def test_delete_current_user(client: TestClient, auth_headers: dict[str, str]):
     assert response.status_code == 204
 
 
-def test_get_user_preferences(client: TestClient, auth_headers: dict[str, str]):
+async def test_get_user_preferences(client: AsyncClient, auth_headers: dict[str, str]):
     """Test getting user preferences."""
-    response = client.get("/v1/users/me/preferences", headers=auth_headers)
+    response = await client.get("/v1/users/me/preferences", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert "theme" in data
 
 
-def test_update_user_preferences(client: TestClient, auth_headers: dict[str, str]):
+async def test_update_user_preferences(client: AsyncClient, auth_headers: dict[str, str]):
     """Test updating user preferences."""
-    response = client.put(
+    response = await client.put(
         "/v1/users/me/preferences",
         headers=auth_headers,
         json={"theme": "light", "notifications_enabled": False},
@@ -57,9 +57,9 @@ def test_update_user_preferences(client: TestClient, auth_headers: dict[str, str
     assert data["notifications_enabled"] is False
 
 
-def test_change_password(client: TestClient, auth_headers: dict[str, str]):
+async def test_change_password(client: AsyncClient, auth_headers: dict[str, str]):
     """Test changing user password."""
-    response = client.post(
+    response = await client.post(
         "/v1/users/me/change-password",
         headers=auth_headers,
         json={
@@ -72,7 +72,7 @@ def test_change_password(client: TestClient, auth_headers: dict[str, str]):
     assert "message" in data
 
 
-def test_unauthorized_access(client: TestClient):
+async def test_unauthorized_access(client: AsyncClient):
     """Test that endpoints require authentication."""
-    response = client.get("/v1/users/me")
+    response = await client.get("/v1/users/me")
     assert response.status_code == 401  # No auth header

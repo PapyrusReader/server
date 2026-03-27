@@ -1,10 +1,10 @@
 [project]
 name = "papyrus-server"
-version = "1.0.0"
-description = "REST API server for Papyrus - a cross-platform book management application"
+version = "0.1.0"
+description = "REST API server for Papyrus, a cross platform book management application."
 requires-python = ">=3.12"
 license = { text = "AGPL-3.0" }
-authors = [{ name = "Papyrus Team" }]
+authors = [{ name = "Papyrus" }]
 readme = "README.md"
 
 dependencies = [
@@ -15,11 +15,12 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.36",
     "asyncpg>=0.30.0",
     "alembic>=1.14.0",
-    "python-jose[cryptography]>=3.3.0",
-    "passlib[bcrypt]>=1.7.4",
-    "httpx>=0.28.0",
+    "PyJWT[crypto]>=2.10.0",
+    "pwdlib[bcrypt]>=0.2.0",
     "python-multipart>=0.0.18",
     "aiofiles>=24.1.0",
+    "slowapi>=0.1.9",
+    "structlog>=25.0.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +31,7 @@ dev = [
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    "polyfactory>=3.0.0",
 ]
 
 [project.scripts]
@@ -47,14 +49,19 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-v --tb=short"
+markers = [
+    "integration: tests that require a running database",
+]
 
 [tool.ruff]
 target-version = "py312"
-line-length = 100
+line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM"]
 ignore = ["E501"]
+
+[tool.ruff.format]
 
 [tool.mypy]
 python_version = "3.12"
@@ -62,8 +69,8 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["jose.*", "passlib.*"]
-ignore_missing_imports = true
+module = ["tests.*"]
+ignore_errors = true
 
 [tool.coverage.run]
 source = ["papyrus"]

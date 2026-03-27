@@ -7,7 +7,7 @@ from fastapi import APIRouter, Response, status
 from pydantic import BaseModel
 
 from papyrus.api.deps import CurrentUserId
-from papyrus.schemas import (
+from papyrus.schemas.storage import (
     ConnectionStatus,
     CreateStorageBackendRequest,
     StorageBackend,

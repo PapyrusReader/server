@@ -1,17 +1,39 @@
 """FastAPI application factory and configuration."""
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+import structlog
 from fastapi import FastAPI, Request, status
+from fastapi.exceptions import HTTPException as FastAPIHTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from papyrus.api.routes import api_router
 from papyrus.config import get_settings
 from papyrus.core.exceptions import AppError
 
 settings = get_settings()
+limiter = Limiter(key_func=get_remote_address)
+
+
+def configure_logging() -> None:
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        context_class=dict,
+        logger_factory=structlog.PrintLoggerFactory(),
+    )
 
 
 @asynccontextmanager
@@ -24,6 +46,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
+    configure_logging()
+
     app = FastAPI(
         title="Papyrus Server API",
         version="1.0.0",
@@ -79,6 +103,9 @@ Rate limits are enforced per user:
         lifespan=lifespan,
     )
 
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
     # CORS middleware
     app.add_middleware(
         CORSMiddleware,
@@ -104,6 +131,8 @@ Rate limits are enforced per user:
 
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+        if isinstance(exc, (FastAPIHTTPException, RequestValidationError)):
+            raise exc
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
@@ -129,12 +158,16 @@ Rate limits are enforced per user:
 app = create_app()
 
 
-if __name__ == "__main__":
+def run() -> None:
     import uvicorn
 
     uvicorn.run(
         "papyrus.main:app",
-        host="0.0.0.0",
-        port=8080,
-        reload=True,
+        host=settings.host,
+        port=settings.port,
+        reload=settings.debug,
     )
+
+
+if __name__ == "__main__":
+    run()

@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, File, Response, UploadFile, status
 
 from papyrus.api.deps import CurrentUserId
-from papyrus.schemas import FileInfo
+from papyrus.schemas.file import FileInfo
 
 router = APIRouter()
 

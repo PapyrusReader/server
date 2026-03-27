@@ -1,76 +1,135 @@
-"""Pytest configuration and fixtures."""
+import os
 
+os.environ.setdefault("SECRET_KEY", "test-only-secret-key-do-not-use-in-production")
+os.environ.setdefault("POSTGRES_USER", "postgres")
+os.environ.setdefault("POSTGRES_PASSWORD", "postgres")
+os.environ.setdefault("POSTGRES_HOST", "localhost")
+os.environ.setdefault("POSTGRES_DB", "papyrus_test")
+
+from collections.abc import AsyncGenerator
 from uuid import uuid4
 
+import asyncpg
 import pytest
-from fastapi.testclient import TestClient
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from papyrus.core.security import create_access_token
 from papyrus.main import app
+from papyrus.models import Base
 
 
-@pytest.fixture
-def client() -> TestClient:
-    """Create a test client for the application."""
-    return TestClient(app)
+@pytest_asyncio.fixture
+async def client() -> AsyncGenerator[AsyncClient, None]:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
 
 
 @pytest.fixture
 def user_id() -> str:
-    """Generate a test user ID."""
     return str(uuid4())
 
 
 @pytest.fixture
 def auth_headers(user_id: str) -> dict[str, str]:
-    """Create authorization headers with a valid JWT token."""
     token = create_access_token({"sub": user_id})
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture
 def book_id() -> str:
-    """Generate a test book ID."""
     return str(uuid4())
 
 
 @pytest.fixture
 def shelf_id() -> str:
-    """Generate a test shelf ID."""
     return str(uuid4())
 
 
 @pytest.fixture
 def tag_id() -> str:
-    """Generate a test tag ID."""
     return str(uuid4())
 
 
 @pytest.fixture
 def series_id() -> str:
-    """Generate a test series ID."""
     return str(uuid4())
 
 
 @pytest.fixture
 def annotation_id() -> str:
-    """Generate a test annotation ID."""
     return str(uuid4())
 
 
 @pytest.fixture
 def note_id() -> str:
-    """Generate a test note ID."""
     return str(uuid4())
 
 
 @pytest.fixture
 def bookmark_id() -> str:
-    """Generate a test bookmark ID."""
     return str(uuid4())
 
 
 @pytest.fixture
 def goal_id() -> str:
-    """Generate a test goal ID."""
     return str(uuid4())
+
+
+_pg_host = os.environ.get("POSTGRES_HOST", "localhost")
+_pg_port = os.environ.get("POSTGRES_PORT", "5432")
+
+TEST_DATABASE_URL = os.environ.get(
+    "TEST_DATABASE_URL",
+    f"postgresql+asyncpg://papyrus:papyrus@{_pg_host}:{_pg_port}/papyrus_test",
+)
+
+
+@pytest_asyncio.fixture(scope="session")
+async def setup_test_db() -> None:
+    """Create the test database and role if they do not exist."""
+    pg_user = os.environ.get("POSTGRES_USER", "postgres")
+    pg_password = os.environ.get("POSTGRES_PASSWORD", "postgres")
+    pg_host = os.environ.get("POSTGRES_HOST", "localhost")
+    pg_port = int(os.environ.get("POSTGRES_PORT", "5432"))
+
+    conn = await asyncpg.connect(
+        user=pg_user,
+        password=pg_password,
+        host=pg_host,
+        port=pg_port,
+        database="postgres",
+    )
+    try:
+        try:
+            await conn.execute("CREATE ROLE papyrus WITH LOGIN PASSWORD 'papyrus'")
+        except asyncpg.DuplicateObjectError:
+            pass  # Role already exists
+
+        try:
+            await conn.execute("CREATE DATABASE papyrus_test OWNER papyrus")
+        except asyncpg.DuplicateDatabaseError:
+            pass  # Database already exists
+
+        await conn.execute("GRANT ALL PRIVILEGES ON DATABASE papyrus_test TO papyrus")
+    finally:
+        await conn.close()
+
+
+@pytest_asyncio.fixture
+async def db_session(setup_test_db: None) -> AsyncGenerator[AsyncSession, None]:
+    engine = create_async_engine(TEST_DATABASE_URL)
+    session_maker = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with session_maker() as session, session.begin():
+        yield session
+        await session.rollback()
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+    await engine.dispose()

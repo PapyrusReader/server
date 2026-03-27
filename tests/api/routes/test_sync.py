@@ -3,30 +3,30 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
+from httpx import AsyncClient
 
 
-def test_get_sync_status(client: TestClient, auth_headers: dict[str, str]):
+async def test_get_sync_status(client: AsyncClient, auth_headers: dict[str, str]):
     """Test getting sync status."""
-    response = client.get("/v1/sync/status", headers=auth_headers)
+    response = await client.get("/v1/sync/status", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert "status" in data
 
 
-def test_pull_changes(client: TestClient, auth_headers: dict[str, str]):
+async def test_pull_changes(client: AsyncClient, auth_headers: dict[str, str]):
     """Test pulling changes from server."""
-    response = client.get("/v1/sync/changes", headers=auth_headers)
+    response = await client.get("/v1/sync/changes", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert "changes" in data
     assert "server_timestamp" in data
 
 
-def test_push_changes(client: TestClient, auth_headers: dict[str, str]):
+async def test_push_changes(client: AsyncClient, auth_headers: dict[str, str]):
     """Test pushing changes to server."""
     now = datetime.now(UTC)
-    response = client.post(
+    response = await client.post(
         "/v1/sync/changes",
         headers=auth_headers,
         json={
@@ -48,29 +48,29 @@ def test_push_changes(client: TestClient, auth_headers: dict[str, str]):
     assert "rejected" in data
 
 
-def test_get_sync_conflicts(client: TestClient, auth_headers: dict[str, str]):
+async def test_get_sync_conflicts(client: AsyncClient, auth_headers: dict[str, str]):
     """Test getting sync conflicts."""
-    response = client.get("/v1/sync/conflicts", headers=auth_headers)
+    response = await client.get("/v1/sync/conflicts", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert "conflicts" in data
 
 
-def test_force_sync(client: TestClient, auth_headers: dict[str, str]):
+async def test_force_sync(client: AsyncClient, auth_headers: dict[str, str]):
     """Test forcing a full sync."""
-    response = client.post("/v1/sync/force", headers=auth_headers)
+    response = await client.post("/v1/sync/force", headers=auth_headers)
     assert response.status_code == 204
 
 
-def test_get_metadata_server_config(client: TestClient, auth_headers: dict[str, str]):
+async def test_get_metadata_server_config(client: AsyncClient, auth_headers: dict[str, str]):
     """Test getting metadata server configuration."""
-    response = client.get("/v1/sync/config", headers=auth_headers)
+    response = await client.get("/v1/sync/config", headers=auth_headers)
     assert response.status_code == 200
 
 
-def test_create_metadata_server_config(client: TestClient, auth_headers: dict[str, str]):
+async def test_create_metadata_server_config(client: AsyncClient, auth_headers: dict[str, str]):
     """Test creating metadata server configuration."""
-    response = client.post(
+    response = await client.post(
         "/v1/sync/config",
         headers=auth_headers,
         json={
@@ -82,13 +82,13 @@ def test_create_metadata_server_config(client: TestClient, auth_headers: dict[st
     assert response.status_code == 201
 
 
-def test_delete_metadata_server_config(client: TestClient, auth_headers: dict[str, str]):
+async def test_delete_metadata_server_config(client: AsyncClient, auth_headers: dict[str, str]):
     """Test deleting metadata server configuration."""
-    response = client.delete("/v1/sync/config", headers=auth_headers)
+    response = await client.delete("/v1/sync/config", headers=auth_headers)
     assert response.status_code == 204
 
 
-def test_test_metadata_server_connection(client: TestClient, auth_headers: dict[str, str]):
+async def test_test_metadata_server_connection(client: AsyncClient, auth_headers: dict[str, str]):
     """Test testing metadata server connection."""
-    response = client.post("/v1/sync/config/test", headers=auth_headers)
+    response = await client.post("/v1/sync/config/test", headers=auth_headers)
     assert response.status_code == 200

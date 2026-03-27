@@ -6,7 +6,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Response, status
 
 from papyrus.api.deps import CurrentUserId
-from papyrus.schemas import (
+from papyrus.schemas.sync import (
     CreateMetadataServerConfigRequest,
     MetadataServerConfig,
     ServerType,

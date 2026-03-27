@@ -1,35 +1,37 @@
 # Papyrus server
 
-REST API server for the Papyrus project.
+REST API server for Papyrus, a cross platform book management application.
 
-## Requirements
-
-- Python 3.12+.
-- PostgreSQL 15+.
-
-## Installation
+## Getting started
 
 Install dependencies:
 
 ```bash
-pip install -e ".[dev]"
+uv sync --extra dev
+```
+
+Run the database:
+
+```bash
+docker compose up database
+```
+
+Run database migrations:
+
+```bash
+uv run alembic upgrade head
 ```
 
 Run the server:
 
 ```bash
-uvicorn papyrus.main:app --reload
+uv run uvicorn papyrus.main:app --reload
 ```
 
 ## Development
 
-```bash
-pytest --cov
-```
-
-Formatting and linting:
+Run tests:
 
 ```bash
-ruff format .
-ruff check .
+uv run pytest --cov --cov-report html
 ```
