@@ -16,6 +16,7 @@ from papyrus.core import security as security_module
 from papyrus.core.security import generate_opaque_token, hash_opaque_token
 from papyrus.models import EmailActionToken, User, UserIdentity
 from papyrus.services import auth as auth_service
+from papyrus.services import email as email_service
 
 
 @pytest.fixture
@@ -48,6 +49,22 @@ def configured_powersync(monkeypatch: pytest.MonkeyPatch) -> bytes:
     yield public_pem
     security_module._get_powersync_private_key.cache_clear()
     security_module._get_powersync_public_key.cache_clear()
+
+
+@pytest.fixture
+def configured_email_delivery(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str, str]]:
+    settings = get_settings()
+    monkeypatch.setattr(settings, "email_delivery_enabled", True)
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.test")
+    monkeypatch.setattr(settings, "smtp_from_email", "noreply@example.test")
+
+    sent_messages: list[tuple[str, str, str]] = []
+
+    def fake_send_email(recipient: str, subject: str, body: str) -> None:
+        sent_messages.append((recipient, subject, body))
+
+    monkeypatch.setattr(email_service, "send_email", fake_send_email)
+    return sent_messages
 
 
 async def test_register_user_returns_tokens(client: AsyncClient):
@@ -178,6 +195,12 @@ async def test_logout_current_session_revokes_refresh_token(client: AsyncClient)
     refresh_response = await client.post("/v1/auth/refresh", json={"refresh_token": auth_payload["refresh_token"]})
     assert refresh_response.status_code == 401
 
+    protected_response = await client.get(
+        "/v1/users/me",
+        headers={"Authorization": f"Bearer {auth_payload['access_token']}"},
+    )
+    assert protected_response.status_code == 401
+
 
 async def test_logout_all_revokes_other_sessions(client: AsyncClient):
     """Test logout-all revokes all refresh-token backed sessions."""
@@ -211,6 +234,17 @@ async def test_logout_all_revokes_other_sessions(client: AsyncClient):
     )
     assert first_refresh_response.status_code == 401
     assert second_refresh_response.status_code == 401
+
+    first_protected_response = await client.get(
+        "/v1/users/me",
+        headers={"Authorization": f"Bearer {first_auth['access_token']}"},
+    )
+    second_protected_response = await client.get(
+        "/v1/users/me",
+        headers={"Authorization": f"Bearer {second_auth['access_token']}"},
+    )
+    assert first_protected_response.status_code == 401
+    assert second_protected_response.status_code == 401
 
 
 async def test_google_oauth_flow_creates_user_and_exchanges_code(
@@ -410,6 +444,34 @@ async def test_verify_email(client: AsyncClient, db_session: AsyncSession):
     assert response.json()["message"] == "Email verified successfully"
 
 
+async def test_resend_verification_sends_email_when_configured(
+    client: AsyncClient,
+    configured_email_delivery: list[tuple[str, str, str]],
+):
+    """Test resend verification sends an email when SMTP is configured."""
+    register_response = await client.post(
+        "/v1/auth/register",
+        json={
+            "email": "test@example.com",
+            "password": "SecureP@ss123",
+            "display_name": "Test User",
+        },
+    )
+    assert register_response.status_code == 201
+
+    response = await client.post(
+        "/v1/auth/resend-verification",
+        json={"email": "test@example.com"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "If the email is registered, a verification link has been sent"
+    assert len(configured_email_delivery) == 1
+    recipient, subject, body = configured_email_delivery[0]
+    assert recipient == "test@example.com"
+    assert subject == "Verify your Papyrus email address"
+    assert "Verification token:" in body
+
+
 async def test_forgot_password_returns_configuration_message(client: AsyncClient):
     """Test forgot password endpoint without SMTP configuration."""
     register_response = await client.post(
@@ -428,6 +490,34 @@ async def test_forgot_password_returns_configuration_message(client: AsyncClient
     )
     assert response.status_code == 200
     assert response.json()["message"] == "Password reset is not configured on this server"
+
+
+async def test_forgot_password_sends_email_when_configured(
+    client: AsyncClient,
+    configured_email_delivery: list[tuple[str, str, str]],
+):
+    """Test forgot password issues a token and sends an email when SMTP is configured."""
+    register_response = await client.post(
+        "/v1/auth/register",
+        json={
+            "email": "test@example.com",
+            "password": "SecureP@ss123",
+            "display_name": "Test User",
+        },
+    )
+    assert register_response.status_code == 201
+
+    response = await client.post(
+        "/v1/auth/forgot-password",
+        json={"email": "test@example.com"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "If the email is registered, a reset link has been sent"
+    assert len(configured_email_delivery) == 1
+    recipient, subject, body = configured_email_delivery[0]
+    assert recipient == "test@example.com"
+    assert subject == "Reset your Papyrus password"
+    assert "Reset token:" in body
 
 
 async def test_reset_password(client: AsyncClient, db_session: AsyncSession):

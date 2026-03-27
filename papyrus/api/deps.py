@@ -1,12 +1,18 @@
 """API dependencies for dependency injection."""
 
+from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from papyrus.core.database import get_db
 from papyrus.core.security import decode_token
+from papyrus.models import AuthSession
 
 security = HTTPBearer()
 
@@ -33,33 +39,70 @@ async def get_current_access_token_payload(
     return payload
 
 
-async def get_current_user_id(
+async def get_current_auth_session(
     payload: Annotated[dict[str, Any], Depends(get_current_access_token_payload)],
-) -> UUID:
-    """Extract the current user ID from the validated access token payload."""
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AuthSession:
+    """Load and validate the current authenticated session from the database."""
     user_id = payload.get("sub")
-    if not user_id:
+    session_id = payload.get("sid")
+    if not user_id or not session_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"code": "INVALID_TOKEN", "message": "Token missing user ID"},
+            detail={"code": "INVALID_TOKEN", "message": "Token missing session context"},
         )
 
-    return UUID(user_id)
+    try:
+        session_uuid = UUID(str(session_id))
+        user_uuid = UUID(str(user_id))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "INVALID_TOKEN", "message": "Token contains malformed identifiers"},
+        ) from exc
+
+    result = await db.execute(
+        select(AuthSession).options(selectinload(AuthSession.user)).where(AuthSession.session_id == session_uuid)
+    )
+    auth_session = result.scalar_one_or_none()
+    if auth_session is None or auth_session.user_id != user_uuid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "INVALID_SESSION", "message": "Session is invalid"},
+        )
+
+    if auth_session.revoked_at is not None or auth_session.expires_at <= datetime.now(UTC):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "SESSION_REVOKED", "message": "Session is expired or revoked"},
+        )
+
+    if auth_session.user.disabled_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "ACCOUNT_DISABLED", "message": "User account is disabled"},
+        )
+
+    return auth_session
+
+
+async def get_current_user_id(
+    auth_session: Annotated[AuthSession, Depends(get_current_auth_session)],
+) -> UUID:
+    """Extract the current user ID from the validated session."""
+    return auth_session.user_id
 
 
 async def get_current_session_id(
-    payload: Annotated[dict[str, Any], Depends(get_current_access_token_payload)],
-) -> UUID | None:
-    """Extract the current session ID from the validated access token payload."""
-    session_id = payload.get("sid")
-    if session_id is None:
-        return None
-    return UUID(session_id)
+    auth_session: Annotated[AuthSession, Depends(get_current_auth_session)],
+) -> UUID:
+    """Extract the current session ID from the validated session."""
+    return auth_session.session_id
 
 
 CurrentUserId = Annotated[UUID, Depends(get_current_user_id)]
 CurrentAccessTokenPayload = Annotated[dict[str, Any], Depends(get_current_access_token_payload)]
-CurrentSessionId = Annotated[UUID | None, Depends(get_current_session_id)]
+CurrentSessionId = Annotated[UUID, Depends(get_current_session_id)]
 
 
 class PaginationParams:

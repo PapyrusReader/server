@@ -71,6 +71,9 @@ async def test_change_password(client: AsyncClient, auth_headers: dict[str, str]
     data = response.json()
     assert "message" in data
 
+    protected_response = await client.get("/v1/users/me", headers=auth_headers)
+    assert protected_response.status_code == 401
+
 
 async def test_unauthorized_access(client: AsyncClient):
     """Test that endpoints require authentication."""

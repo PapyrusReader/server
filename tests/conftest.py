@@ -143,6 +143,7 @@ async def test_session_maker(setup_test_db: None) -> AsyncGenerator[async_sessio
     session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
     try:
@@ -154,7 +155,9 @@ async def test_session_maker(setup_test_db: None) -> AsyncGenerator[async_sessio
 
 
 @pytest_asyncio.fixture
-async def client(test_session_maker: async_sessionmaker[AsyncSession]) -> AsyncGenerator[AsyncClient, None]:
+async def client(
+    test_session_maker: async_sessionmaker[AsyncSession],
+) -> AsyncGenerator[AsyncClient, None]:
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
         async with test_session_maker() as session:
             yield session
@@ -168,13 +171,17 @@ async def client(test_session_maker: async_sessionmaker[AsyncSession]) -> AsyncG
 
 
 @pytest_asyncio.fixture
-async def db_session(test_session_maker: async_sessionmaker[AsyncSession]) -> AsyncGenerator[AsyncSession, None]:
+async def db_session(
+    test_session_maker: async_sessionmaker[AsyncSession],
+) -> AsyncGenerator[AsyncSession, None]:
     async with test_session_maker() as session:
         yield session
 
 
 @pytest_asyncio.fixture
-async def auth_user(test_session_maker: async_sessionmaker[AsyncSession]) -> dict[str, str]:
+async def auth_user(
+    test_session_maker: async_sessionmaker[AsyncSession],
+) -> dict[str, str]:
     user_uuid = uuid4()
     refresh_token = generate_opaque_token()
 

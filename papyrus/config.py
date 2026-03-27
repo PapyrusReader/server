@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     email_verification_token_expire_minutes: int = 1440
     password_reset_token_expire_minutes: int = 60
     email_delivery_enabled: bool = False
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_use_tls: bool = True
+    smtp_use_ssl: bool = False
+    smtp_from_email: str | None = None
+    smtp_from_name: str | None = "Papyrus"
     powersync_jwt_private_key: str | None = None
     powersync_jwt_public_key: str | None = None
     powersync_jwt_key_id: str = "papyrus-powersync-v1"

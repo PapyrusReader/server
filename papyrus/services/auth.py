@@ -30,6 +30,7 @@ from papyrus.core.security import (
 )
 from papyrus.models import AuthExchangeCode, AuthSession, EmailActionToken, PasswordCredential, User, UserIdentity
 from papyrus.schemas.auth import LoginRequest, OAuthExchangeRequest, RefreshTokenRequest, RegisterRequest
+from papyrus.services import email as email_service
 
 GOOGLE_PROVIDER = "google"
 EMAIL_VERIFICATION_ACTION = "verify_email"
@@ -313,6 +314,50 @@ def _default_display_name(identity: GoogleIdentity | None = None, email: str | N
     if email:
         return email.split("@", 1)[0]
     return "Papyrus User"
+
+
+def _build_api_url(path: str) -> str | None:
+    public_base_url = get_settings().public_base_url
+    if public_base_url is None:
+        return None
+
+    base = public_base_url.rstrip("/")
+    prefix = get_settings().api_prefix
+    return f"{base}{prefix}{path}"
+
+
+def _verification_email_body(token: str) -> str:
+    verify_url = _build_api_url("/auth/verify-email")
+    lines = [
+        "Verify your Papyrus email address.",
+        "",
+        f"Verification token: {token}",
+    ]
+    if verify_url is not None:
+        lines.extend(
+            [
+                "",
+                f"Submit this token to: {verify_url}",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _password_reset_email_body(token: str) -> str:
+    reset_url = _build_api_url("/auth/reset-password")
+    lines = [
+        "Use this token to reset your Papyrus password.",
+        "",
+        f"Reset token: {token}",
+    ]
+    if reset_url is not None:
+        lines.extend(
+            [
+                "",
+                f"Submit this token and your new password to: {reset_url}",
+            ]
+        )
+    return "\n".join(lines)
 
 
 async def register_user(
@@ -637,14 +682,19 @@ async def resend_verification_email(session: AsyncSession, email: str) -> str:
     if user is None or user.primary_email_verified:
         return "If the email is registered, a verification link has been sent"
 
-    if not get_settings().email_delivery_enabled:
+    if not email_service.is_email_delivery_configured():
         return "Email verification is not configured on this server"
 
-    await _issue_email_action_token(
+    token = await _issue_email_action_token(
         session,
         user.user_id,
         EMAIL_VERIFICATION_ACTION,
         get_settings().email_verification_token_expire_minutes,
+    )
+    email_service.send_email(
+        normalized_email,
+        "Verify your Papyrus email address",
+        _verification_email_body(token),
     )
     await session.commit()
     return "If the email is registered, a verification link has been sent"
@@ -664,14 +714,19 @@ async def begin_password_reset(session: AsyncSession, email: str) -> str:
     if user is None:
         return "If the email is registered, a reset link has been sent"
 
-    if not get_settings().email_delivery_enabled:
+    if not email_service.is_email_delivery_configured():
         return "Password reset is not configured on this server"
 
-    await _issue_email_action_token(
+    token = await _issue_email_action_token(
         session,
         user.user_id,
         PASSWORD_RESET_ACTION,
         get_settings().password_reset_token_expire_minutes,
+    )
+    email_service.send_email(
+        normalized_email,
+        "Reset your Papyrus password",
+        _password_reset_email_body(token),
     )
     await session.commit()
     return "If the email is registered, a reset link has been sent"
