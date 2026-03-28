@@ -1,0 +1,18 @@
+replication:
+  connections:
+    - type: postgresql
+      uri: !env PS_DATA_SOURCE_URI
+      sslmode: disable
+
+storage:
+  type: postgresql
+  uri: !env PS_STORAGE_URI
+  sslmode: disable
+
+client_auth:
+  jwks_uri: !env PS_JWKS_URI
+  audience:
+    - !env PS_AUDIENCE
+
+sync_config:
+  path: /config/sync-config.yaml

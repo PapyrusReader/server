@@ -17,12 +17,13 @@ async def test_index_lists_available_pages(prod_client: AsyncClient):
 
 
 async def test_index_lists_debug_pages(debug_client: AsyncClient):
-    """Test root index includes the auth sandbox in debug mode."""
+    """Test root index includes the debug sandboxes in debug mode."""
     response = await debug_client.get("/")
     assert response.status_code == 200
     data = response.json()
     pages = {page["name"]: page["path"] for page in data["pages"]}
     assert pages["auth_sandbox"] == "/__dev/auth-sandbox"
+    assert pages["powersync_sandbox"] == "/__dev/powersync-sandbox"
 
 
 async def test_health_check(client: AsyncClient):

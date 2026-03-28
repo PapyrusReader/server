@@ -202,6 +202,10 @@ if TYPE_CHECKING:
     from papyrus.schemas.common import Pagination
     from papyrus.schemas.shelf import ShelfSummary
     from papyrus.schemas.tag import Tag
+else:
+    from papyrus.schemas.common import Pagination
+    from papyrus.schemas.shelf import ShelfSummary
+    from papyrus.schemas.tag import Tag
 
 Book.model_rebuild()
 BookList.model_rebuild()

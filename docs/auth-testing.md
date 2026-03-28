@@ -10,6 +10,8 @@ This repo can now support a full local auth test loop:
 
 For Flutter client integration guidance, see [`flutter-auth-integration.md`](flutter-auth-integration.md).
 
+For the self-hosted PowerSync sync sandbox and two-client validation workflow, see [`powersync-sandbox.md`](powersync-sandbox.md).
+
 ## Local Setup
 
 1. Start local dependencies:

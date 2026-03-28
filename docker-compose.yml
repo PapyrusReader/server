@@ -2,6 +2,7 @@ services:
   database:
     image: postgres:17-alpine
     restart: unless-stopped
+    command: ["postgres", "-c", "wal_level=logical"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -16,12 +17,49 @@ services:
       timeout: 5s
       retries: 5
 
+  powersync-storage:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POWERSYNC_STORAGE_USER}
+      POSTGRES_PASSWORD: ${POWERSYNC_STORAGE_PASSWORD}
+      POSTGRES_DB: ${POWERSYNC_STORAGE_DB}
+    volumes:
+      - powersync_storage_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POWERSYNC_STORAGE_USER} -d ${POWERSYNC_STORAGE_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   mailpit:
     image: axllent/mailpit:v1.26
     restart: unless-stopped
     ports:
       - "1025:1025"
       - "8025:8025"
+
+  powersync:
+    image: journeyapps/powersync-service:latest
+    restart: unless-stopped
+    command: ["start", "-r", "unified"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+      PS_DATA_SOURCE_URI: postgresql://${POWERSYNC_SOURCE_ROLE}:${POWERSYNC_SOURCE_PASSWORD}@database:5432/${POSTGRES_DB}
+      PS_STORAGE_URI: postgresql://${POWERSYNC_STORAGE_USER}:${POWERSYNC_STORAGE_PASSWORD}@powersync-storage:5432/${POWERSYNC_STORAGE_DB}
+      PS_JWKS_URI: ${POWERSYNC_JWKS_URI:-http://host.docker.internal:8080/v1/auth/jwks}
+      PS_AUDIENCE: ${POWERSYNC_JWT_AUDIENCE}
+    volumes:
+      - ./powersync:/config:ro
+    ports:
+      - "${POWERSYNC_SERVICE_PORT:-8081}:8080"
+    depends_on:
+      database:
+        condition: service_healthy
+      powersync-storage:
+        condition: service_healthy
 
   server:
     build: .
@@ -39,3 +77,4 @@ services:
 
 volumes:
   postgres_data:
+  powersync_storage_data:

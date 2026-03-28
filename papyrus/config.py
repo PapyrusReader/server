@@ -52,6 +52,14 @@ class Settings(BaseSettings):
     powersync_jwt_key_id: str = "papyrus-powersync-v1"
     powersync_jwt_audience: str | None = None
     powersync_token_expire_minutes: int = 5
+    powersync_service_url: str = "http://localhost:8081"
+    powersync_service_port: int = 8081
+    powersync_jwks_uri: str | None = None
+    powersync_source_role: str | None = None
+    powersync_source_password: str | None = None
+    powersync_storage_db: str | None = None
+    powersync_storage_user: str | None = None
+    powersync_storage_password: str | None = None
 
     @field_validator("debug", mode="before")
     @classmethod

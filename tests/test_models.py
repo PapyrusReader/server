@@ -6,6 +6,7 @@ from papyrus.models import (
     Base,
     EmailActionToken,
     PasswordCredential,
+    PowerSyncDemoItem,
     User,
     UserIdentity,
 )
@@ -19,12 +20,14 @@ def test_auth_models_are_registered_with_metadata() -> None:
     sessions_table = Base.metadata.tables["auth_sessions"]
     exchange_codes_table = Base.metadata.tables["auth_exchange_codes"]
     email_tokens_table = Base.metadata.tables["email_action_tokens"]
+    powersync_demo_items_table = Base.metadata.tables["powersync_demo_items"]
     assert users_table is User.__table__
     assert identities_table is UserIdentity.__table__
     assert password_credentials_table is PasswordCredential.__table__
     assert sessions_table is AuthSession.__table__
     assert exchange_codes_table is AuthExchangeCode.__table__
     assert email_tokens_table is EmailActionToken.__table__
+    assert powersync_demo_items_table is PowerSyncDemoItem.__table__
 
     assert set(users_table.columns.keys()) == {
         "user_id",
@@ -35,4 +38,12 @@ def test_auth_models_are_registered_with_metadata() -> None:
         "created_at",
         "last_login_at",
         "disabled_at",
+    }
+    assert set(powersync_demo_items_table.columns.keys()) == {
+        "item_id",
+        "owner_user_id",
+        "title",
+        "notes",
+        "created_at",
+        "updated_at",
     }

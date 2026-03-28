@@ -13,7 +13,7 @@ uv sync --extra dev
 Run the database:
 
 ```bash
-docker compose up -d database mailpit
+docker compose up -d database mailpit powersync-storage powersync
 ```
 
 Run database migrations:
@@ -34,6 +34,12 @@ Generate local PowerSync keys for auth testing:
 ./scripts/generate_dev_powersync_keys.sh
 ```
 
+Initialize the local PowerSync source role and publication after migrations:
+
+```bash
+./scripts/setup_local_powersync.sh
+```
+
 ## Development
 
 Run tests:
@@ -49,3 +55,5 @@ Local auth testing supports Mailpit for SMTP capture, a dev auth sandbox at `/__
 See [`docs/auth-testing.md`](docs/auth-testing.md) for the exact `.env` values, Google OAuth setup, and end-to-end test workflow.
 
 For Flutter client integration guidance, see [`docs/flutter-auth-integration.md`](docs/flutter-auth-integration.md).
+
+For the self-hosted PowerSync sandbox and sync validation workflow, see [`docs/powersync-sandbox.md`](docs/powersync-sandbox.md).

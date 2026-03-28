@@ -1,0 +1,16 @@
+config:
+  edition: 2
+
+streams:
+  demo_items:
+    auto_subscribe: true
+    query: |
+      SELECT
+        item_id AS id,
+        owner_user_id::text AS owner_user_id,
+        title,
+        notes,
+        created_at::text AS created_at,
+        updated_at::text AS updated_at
+      FROM powersync_demo_items
+      WHERE owner_user_id::text = auth.user_id()

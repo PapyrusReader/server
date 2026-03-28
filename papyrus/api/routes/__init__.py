@@ -8,6 +8,7 @@ from papyrus.api.routes import (
     bookmarks,
     books,
     dev_auth_sandbox,
+    dev_powersync_sandbox,
     files,
     goals,
     notes,
@@ -45,3 +46,4 @@ api_router.include_router(saved_filters.router, prefix="/saved-filters", tags=["
 def include_debug_routers(app: FastAPI) -> None:
     """Register development-only routes."""
     app.include_router(dev_auth_sandbox.router)
+    app.include_router(dev_powersync_sandbox.router)

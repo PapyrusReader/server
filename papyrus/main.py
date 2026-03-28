@@ -166,6 +166,9 @@ Rate limits are enforced per user:
         if any(route.path == "/__dev/auth-sandbox" for route in request.app.routes):
             pages.append({"name": "auth_sandbox", "path": "/__dev/auth-sandbox"})
 
+        if any(route.path == "/__dev/powersync-sandbox" for route in request.app.routes):
+            pages.append({"name": "powersync_sandbox", "path": "/__dev/powersync-sandbox"})
+
         return {
             "name": "Papyrus Server API",
             "pages": pages,
