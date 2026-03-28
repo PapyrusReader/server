@@ -109,6 +109,7 @@ Rate limits are enforced per user:
 
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
+
     app.mount(
         DEV_PAGES_STATIC_URL,
         StaticFiles(directory=str(DEV_PAGES_DIST_DIR), check_dir=False),
@@ -162,19 +163,19 @@ Rate limits are enforced per user:
         pages: list[dict[str, str]] = []
 
         if app.docs_url is not None:
-            pages.append({"name": "docs", "path": app.docs_url})
+            pages.append({"name": "docs", "path": f"{settings.public_base_url}{app.docs_url}"})
 
         if app.redoc_url is not None:
-            pages.append({"name": "redoc", "path": app.redoc_url})
+            pages.append({"name": "redoc", "path": f"{settings.public_base_url}{app.redoc_url}"})
 
         if app.openapi_url is not None:
-            pages.append({"name": "openapi", "path": app.openapi_url})
+            pages.append({"name": "openapi", "path": f"{settings.public_base_url}{app.openapi_url}"})
 
         if any(route.path == "/__dev/auth-sandbox" for route in request.app.routes):
-            pages.append({"name": "auth_sandbox", "path": "/__dev/auth-sandbox"})
+            pages.append({"name": "auth_sandbox", "path": f"{settings.public_base_url}/__dev/auth-sandbox"})
 
         if any(route.path == "/__dev/powersync-sandbox" for route in request.app.routes):
-            pages.append({"name": "powersync_sandbox", "path": "/__dev/powersync-sandbox"})
+            pages.append({"name": "powersync_sandbox", "path": f"{settings.public_base_url}/__dev/powersync-sandbox"})
 
         return {
             "name": "Papyrus Server API",

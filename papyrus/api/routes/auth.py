@@ -56,15 +56,13 @@ def _public_callback_url(request: Request, route_name: str) -> str:
     route_parts = urlsplit(route_url)
     public_parts = urlsplit(public_base_url.rstrip("/"))
 
-    return urlunsplit(
-        (
-            public_parts.scheme,
-            public_parts.netloc,
-            route_parts.path,
-            route_parts.query,
-            route_parts.fragment,
-        )
-    )
+    return urlunsplit((
+        public_parts.scheme,
+        public_parts.netloc,
+        route_parts.path,
+        route_parts.query,
+        route_parts.fragment,
+    ))
 
 
 @router.post(
