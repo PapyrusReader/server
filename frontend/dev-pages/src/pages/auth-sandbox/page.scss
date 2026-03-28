@@ -1,4 +1,37 @@
+.dev-grid--auth {
+  .dev-panel:nth-child(1),
+  .dev-panel:nth-child(2),
+  .dev-panel:nth-child(3) {
+    grid-column: span 4;
+  }
+
+  .dev-panel:nth-child(4) {
+    grid-column: span 12;
+  }
+
+  .dev-panel:nth-child(5) {
+    grid-column: span 12;
+  }
+}
+
+.dev-page--auth #access-token,
+.dev-page--auth #refresh-token {
+  min-height: 96px;
+}
+
 .dev-page--auth #claims,
 .dev-page--auth #last-response {
-  min-height: 140px;
+  min-height: 180px;
+}
+
+@media (max-width: 1080px) {
+  .dev-grid--auth {
+    .dev-panel:nth-child(1),
+    .dev-panel:nth-child(2),
+    .dev-panel:nth-child(3),
+    .dev-panel:nth-child(4),
+    .dev-panel:nth-child(5) {
+      grid-column: 1 / -1;
+    }
+  }
 }

@@ -1,4 +1,31 @@
+.dev-grid--powersync {
+  .dev-panel:nth-child(1),
+  .dev-panel:nth-child(2),
+  .dev-panel:nth-child(3) {
+    grid-column: span 4;
+  }
+
+  .dev-panel:nth-child(4) {
+    grid-column: span 12;
+  }
+}
+
 .dev-page--powersync #access-token,
 .dev-page--powersync #refresh-token {
-  min-height: 96px;
+  min-height: 110px;
+}
+
+.dev-page--powersync #last-response {
+  min-height: 200px;
+}
+
+@media (max-width: 1080px) {
+  .dev-grid--powersync {
+    .dev-panel:nth-child(1),
+    .dev-panel:nth-child(2),
+    .dev-panel:nth-child(3),
+    .dev-panel:nth-child(4) {
+      grid-column: 1 / -1;
+    }
+  }
 }

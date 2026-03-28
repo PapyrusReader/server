@@ -5,6 +5,7 @@ import { callApi } from "../../lib/api";
 import { getPageConfig } from "../../lib/config";
 import { requireElement } from "../../lib/dom";
 import { escapeHtml } from "../../lib/html";
+import { extractErrorMessage, formatTimestamp, renderJson, setButtonBusy } from "../../lib/feedback";
 import { loadStoredState, saveStoredState } from "../../lib/storage";
 
 interface PowerSyncSandboxConfig {
@@ -26,15 +27,15 @@ interface PowerSyncSandboxConfig {
   db_filename: string;
 }
 
+interface CurrentUser {
+  user_id: string;
+  email?: string | null;
+}
+
 interface AuthTokensPayload {
   access_token?: string;
   refresh_token?: string;
   user?: CurrentUser;
-}
-
-interface CurrentUser {
-  user_id: string;
-  email?: string | null;
 }
 
 interface LocalItem {
@@ -53,6 +54,11 @@ interface PowerSyncSandboxState {
   currentUser?: CurrentUser;
   localItems?: LocalItem[];
   connected?: boolean;
+  lastOutcome?: {
+    kind: "idle" | "success" | "error" | "pending";
+    message: string;
+    at?: string;
+  };
 }
 
 interface WatchResult {
@@ -89,27 +95,121 @@ const refs = {
   localItems: requireElement<HTMLElement>("local-items"),
   serverItems: requireElement<HTMLElement>("server-items"),
   lastResponse: requireElement<HTMLElement>("last-response"),
+  railAuth: requireElement<HTMLElement>("powersync-rail-auth"),
+  railSync: requireElement<HTMLElement>("powersync-rail-sync"),
+  railDb: requireElement<HTMLElement>("powersync-rail-db"),
+  railAction: requireElement<HTMLElement>("powersync-rail-action"),
+  railUpdated: requireElement<HTMLElement>("powersync-rail-updated"),
+  railOutcome: requireElement<HTMLElement>("powersync-rail-outcome"),
+  register: requireElement<HTMLButtonElement>("register"),
+  login: requireElement<HTMLButtonElement>("login"),
+  googleLogin: requireElement<HTMLButtonElement>("google-login"),
+  refresh: requireElement<HTMLButtonElement>("refresh"),
+  logout: requireElement<HTMLButtonElement>("logout"),
+  connect: requireElement<HTMLButtonElement>("connect"),
+  disconnect: requireElement<HTMLButtonElement>("disconnect"),
+  createItem: requireElement<HTMLButtonElement>("create-item"),
+  refreshServer: requireElement<HTMLButtonElement>("refresh-server"),
 };
-
-refs.clientLabel.textContent = `Local database: ${config.db_filename}`;
 
 let powersyncModule: PowerSyncModule | undefined;
 let db: any;
 let localWatch: { unsubscribe?: () => void; close?: () => void } | null = null;
+let currentAction = "Idle";
+const busyActions = new Set<string>();
 
 function persistState(): void {
   saveStoredState(storageKey, state);
 }
 
+function isSignedIn(): boolean {
+  return Boolean(state.accessToken && state.currentUser?.user_id);
+}
+
+function isConnected(): boolean {
+  return Boolean(state.connected && db);
+}
+
+function applyChipState(target: HTMLElement, label: string, kind: "muted" | "success" | "warning" | "danger" | "accent"): void {
+  target.textContent = label;
+  target.className = `dev-chip dev-chip--${kind}`;
+}
+
+function markOutcome(kind: "idle" | "success" | "error" | "pending", message: string): void {
+  state.lastOutcome = {
+    kind,
+    message,
+    at: new Date().toISOString(),
+  };
+  persistState();
+  renderStatus();
+}
+
+function setPendingAction(message: string): void {
+  currentAction = message;
+  renderStatus();
+}
+
+function clearPendingAction(): void {
+  currentAction = "Idle";
+  renderStatus();
+}
+
+function renderStatus(): void {
+  applyChipState(
+    refs.railAuth,
+    isSignedIn() ? `Signed in: ${state.currentUser?.email ?? "user"}` : "Signed out",
+    isSignedIn() ? "success" : "muted",
+  );
+  applyChipState(
+    refs.railSync,
+    isConnected() ? "Connected" : state.connected ? "Reconnecting" : "Disconnected",
+    isConnected() ? "accent" : "warning",
+  );
+  applyChipState(refs.railDb, config.db_filename, "muted");
+  refs.railAction.textContent = busyActions.size > 0 ? currentAction : "Idle";
+  refs.railUpdated.textContent = formatTimestamp(state.lastOutcome?.at);
+  refs.railOutcome.textContent = state.lastOutcome?.message ?? "Authenticate to enable PowerSync operations.";
+
+  refs.clientLabel.textContent = config.db_filename;
+  refs.clientLabel.className = "dev-chip dev-chip--muted";
+  refs.authStatus.textContent = isSignedIn()
+    ? `Authenticated as ${state.currentUser?.email ?? state.currentUser?.user_id}.`
+    : "Sign in to enable PowerSync connection controls.";
+  refs.syncStatus.textContent = isConnected()
+    ? `Connected to ${config.powersync_endpoint}.`
+    : isSignedIn()
+      ? "Ready to connect to PowerSync."
+      : "Authenticate before connecting to PowerSync.";
+}
+
 function renderLastResponse(value: unknown): void {
-  refs.lastResponse.textContent = JSON.stringify(value, null, 2);
+  renderJson(refs.lastResponse, value);
 }
 
 function syncTokenFields(): void {
   refs.accessToken.value = state.accessToken ?? "";
   refs.refreshToken.value = state.refreshToken ?? "";
-  renderAuthStatus();
-  persistState();
+}
+
+function renderControls(): void {
+  const signedIn = isSignedIn();
+  const connected = isConnected();
+  const globalBusy = busyActions.size > 0;
+
+  refs.register.disabled = globalBusy || signedIn;
+  refs.login.disabled = globalBusy || signedIn;
+  refs.googleLogin.disabled = globalBusy || signedIn;
+  refs.refresh.disabled = globalBusy || !state.refreshToken;
+  refs.logout.disabled = globalBusy || !signedIn;
+  refs.connect.disabled = globalBusy || !signedIn || connected;
+  refs.disconnect.disabled = globalBusy || !connected;
+  refs.createItem.disabled = globalBusy || !connected;
+  refs.refreshServer.disabled = globalBusy || !signedIn;
+
+  refs.localItems.querySelectorAll<HTMLButtonElement>("button[data-action]").forEach((button) => {
+    button.disabled = globalBusy || !connected;
+  });
 }
 
 function applyTokens(payload: AuthTokensPayload): void {
@@ -126,33 +226,29 @@ function applyTokens(payload: AuthTokensPayload): void {
   }
 
   syncTokenFields();
+  persistState();
+  renderStatus();
+  renderControls();
 }
 
 function clearTokens(): void {
   delete state.accessToken;
   delete state.refreshToken;
   delete state.currentUser;
+  delete state.connected;
   syncTokenFields();
-}
-
-function renderAuthStatus(): void {
-  if (state.currentUser?.email) {
-    refs.authStatus.textContent = `Signed in as ${state.currentUser.email}`;
-    return;
-  }
-
-  refs.authStatus.textContent = "Signed out.";
-}
-
-function renderSyncStatus(message: string): void {
-  refs.syncStatus.textContent = message;
+  persistState();
+  renderStatus();
+  renderControls();
 }
 
 function renderItems(target: HTMLElement, items: LocalItem[], emptyMessage: string): void {
   if (items.length === 0) {
-    target.innerHTML = `<p class="dev-status">${emptyMessage}</p>`;
+    target.innerHTML = `<div class="dev-item"><p class="dev-status">${escapeHtml(emptyMessage)}</p></div>`;
     return;
   }
+
+  const buttonsDisabled = busyActions.size > 0 || !isConnected() ? "disabled" : "";
 
   target.innerHTML = items
     .map(
@@ -160,14 +256,14 @@ function renderItems(target: HTMLElement, items: LocalItem[], emptyMessage: stri
         <div class="dev-item">
           <strong>${escapeHtml(item.title ?? "Untitled Item")}</strong>
           <div class="dev-status">id: ${escapeHtml(item.item_id ?? item.id)}</div>
-          <div class="dev-status">updated: ${escapeHtml(item.updated_at)}</div>
-          <p>${escapeHtml(item.notes)}</p>
+          <div class="dev-status">updated: ${escapeHtml(item.updated_at ?? "unknown")}</div>
+          <p>${escapeHtml(item.notes ?? "No notes")}</p>
           ${
             target === refs.localItems
               ? `
             <div class="dev-item-actions">
-              <button data-action="update" data-id="${escapeHtml(item.id ?? item.item_id)}">Update</button>
-              <button class="secondary" data-action="delete" data-id="${escapeHtml(item.id ?? item.item_id)}">Delete</button>
+              <button data-action="update" data-id="${escapeHtml(item.id ?? item.item_id)}" ${buttonsDisabled}>Update</button>
+              <button class="secondary" data-action="delete" data-id="${escapeHtml(item.id ?? item.item_id)}" ${buttonsDisabled}>Delete</button>
             </div>
           `
               : ""
@@ -187,7 +283,6 @@ async function callSandboxApi<T = unknown>(url: string, requestInit: RequestInit
 
 async function loadCurrentUser(): Promise<void> {
   if (!state.accessToken) {
-    renderAuthStatus();
     return;
   }
 
@@ -196,9 +291,9 @@ async function loadCurrentUser(): Promise<void> {
   if (response.ok && body && typeof body === "object") {
     state.currentUser = body as CurrentUser;
     persistState();
+    renderStatus();
+    renderControls();
   }
-
-  renderAuthStatus();
 }
 
 async function loadPowerSyncModule(): Promise<PowerSyncModule> {
@@ -221,14 +316,56 @@ function buildSchema(module: PowerSyncModule): unknown {
   return new module.Schema({ demo_items: demoItems });
 }
 
-async function connectPowerSync(): Promise<void> {
-  if (db) {
-    renderSyncStatus("Already connected.");
+function normalizeWatchRows(result: WatchResult | undefined): LocalItem[] {
+  const rows = result?.rows;
+
+  if (Array.isArray(rows)) {
+    return rows;
+  }
+
+  if (rows && "_array" in rows && Array.isArray(rows._array)) {
+    return rows._array;
+  }
+
+  return [];
+}
+
+async function refreshServerItems(): Promise<void> {
+  if (!state.accessToken) {
+    renderItems(refs.serverItems, [], "Sign in to inspect the server source rows.");
     return;
   }
 
-  if (!state.accessToken || !state.currentUser?.user_id) {
-    renderSyncStatus("Authenticate before connecting PowerSync.");
+  const { response, body } = await callSandboxApi<{ items?: LocalItem[] }>(config.items_url, { method: "GET" }, true);
+
+  if (!response.ok || !body || typeof body !== "object" || !Array.isArray(body.items)) {
+    return;
+  }
+
+  renderItems(refs.serverItems, body.items, "No source rows yet.");
+  renderControls();
+}
+
+function startWatchingLocalItems(): void {
+  if (!db) {
+    return;
+  }
+
+  localWatch = db.watch(
+    "SELECT id, owner_user_id, title, notes, created_at, updated_at FROM demo_items ORDER BY updated_at DESC, id DESC",
+    [],
+    {
+      onResult: (result: WatchResult) => {
+        state.localItems = normalizeWatchRows(result);
+        renderItems(refs.localItems, state.localItems ?? [], "No local synced items yet.");
+        renderControls();
+      },
+    },
+  );
+}
+
+async function connectPowerSync(): Promise<void> {
+  if (db || !state.accessToken || !state.currentUser?.user_id) {
     return;
   }
 
@@ -248,14 +385,10 @@ async function connectPowerSync(): Promise<void> {
 
   const connector = {
     async fetchCredentials(): Promise<{ endpoint: string; token: string }> {
-      const { response, body } = await callSandboxApi<{ token?: string }>(
-        config.powersync_token_url,
-        { method: "POST" },
-        true,
-      );
+      const { response, body } = await callSandboxApi<{ token?: string }>(config.powersync_token_url, { method: "POST" }, true);
 
       if (!response.ok || !body || typeof body !== "object" || typeof body.token !== "string") {
-        throw new Error("Failed to fetch PowerSync credentials");
+        throw new Error(extractErrorMessage(body, "Failed to fetch PowerSync credentials"));
       }
 
       return {
@@ -268,6 +401,8 @@ async function connectPowerSync(): Promise<void> {
       let transaction = await database.getNextCrudTransaction();
 
       while (transaction) {
+        markOutcome("pending", "Uploading queued PowerSync changes.");
+
         const { response, body } = await callSandboxApi(
           config.upload_url,
           {
@@ -278,11 +413,7 @@ async function connectPowerSync(): Promise<void> {
         );
 
         if (!response.ok) {
-          throw new Error(
-            typeof body === "object" && body !== null && "error" in body
-              ? String((body as { error?: { message?: string } }).error?.message ?? "Failed to upload PowerSync changes")
-              : "Failed to upload PowerSync changes",
-          );
+          throw new Error(extractErrorMessage(body, "Failed to upload PowerSync changes"));
         }
 
         await transaction.complete();
@@ -290,20 +421,26 @@ async function connectPowerSync(): Promise<void> {
       }
 
       await refreshServerItems();
+      markOutcome("success", "Queued PowerSync changes uploaded.");
     },
   };
 
   await db.connect(connector);
   state.connected = true;
   persistState();
-  renderSyncStatus(`Connected to ${config.powersync_endpoint}`);
+  renderStatus();
   startWatchingLocalItems();
   await refreshServerItems();
+  renderItems(refs.localItems, state.localItems ?? [], "No local synced items yet.");
+  renderControls();
 }
 
 async function disconnectPowerSync(): Promise<void> {
   if (!db) {
-    renderSyncStatus("Disconnected.");
+    delete state.connected;
+    persistState();
+    renderStatus();
+    renderControls();
     return;
   }
 
@@ -315,59 +452,13 @@ async function disconnectPowerSync(): Promise<void> {
   localWatch = null;
   delete state.connected;
   persistState();
-  renderSyncStatus("Disconnected.");
-  renderItems(refs.localItems, [], "No local synced items yet.");
-}
-
-function normalizeWatchRows(result: WatchResult | undefined): LocalItem[] {
-  const rows = result?.rows;
-
-  if (Array.isArray(rows)) {
-    return rows;
-  }
-
-  if (rows && "_array" in rows && Array.isArray(rows._array)) {
-    return rows._array;
-  }
-
-  return [];
-}
-
-function startWatchingLocalItems(): void {
-  if (!db) {
-    return;
-  }
-
-  localWatch = db.watch(
-    "SELECT id, owner_user_id, title, notes, created_at, updated_at FROM demo_items ORDER BY updated_at DESC, id DESC",
-    [],
-    {
-      onResult: (result: WatchResult) => {
-        state.localItems = normalizeWatchRows(result);
-        renderItems(refs.localItems, state.localItems ?? [], "No local synced items yet.");
-      },
-    },
-  );
-}
-
-async function refreshServerItems(): Promise<void> {
-  if (!state.accessToken) {
-    renderItems(refs.serverItems, [], "Authenticate to inspect the source database.");
-    return;
-  }
-
-  const { response, body } = await callSandboxApi<{ items?: LocalItem[] }>(config.items_url, { method: "GET" }, true);
-
-  if (!response.ok || !body || typeof body !== "object" || !Array.isArray(body.items)) {
-    return;
-  }
-
-  renderItems(refs.serverItems, body.items, "No source rows yet.");
+  renderStatus();
+  renderItems(refs.localItems, [], "Connect PowerSync to mirror demo rows locally.");
+  renderControls();
 }
 
 async function createLocalItem(): Promise<void> {
   if (!db || !state.currentUser?.user_id) {
-    renderSyncStatus("Connect PowerSync before creating items.");
     return;
   }
 
@@ -400,6 +491,28 @@ async function deleteLocalItem(itemId: string): Promise<void> {
   await db.execute("DELETE FROM demo_items WHERE id = ?", [itemId]);
 }
 
+async function runButtonAction(
+  actionKey: string,
+  button: HTMLButtonElement,
+  busyLabel: string,
+  pendingMessage: string,
+  runner: () => Promise<void>,
+): Promise<void> {
+  busyActions.add(actionKey);
+  setButtonBusy(button, true, busyLabel);
+  setPendingAction(pendingMessage);
+  renderControls();
+
+  try {
+    await runner();
+  } finally {
+    busyActions.delete(actionKey);
+    setButtonBusy(button, false, busyLabel);
+    clearPendingAction();
+    renderControls();
+  }
+}
+
 async function handleOAuthReturn(): Promise<void> {
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code");
@@ -415,107 +528,148 @@ async function handleOAuthReturn(): Promise<void> {
       }),
     });
 
+    history.replaceState(null, "", config.redirect_uri);
+
     if (response.ok && body && typeof body === "object") {
       applyTokens(body as AuthTokensPayload);
+      markOutcome("success", "Google login completed.");
+      return;
     }
 
-    history.replaceState(null, "", config.redirect_uri);
+    markOutcome("error", extractErrorMessage(body, "Google login failed."));
     return;
   }
 
   if (error) {
-    renderLastResponse({ status: 302, body: { error } });
     history.replaceState(null, "", config.redirect_uri);
+    markOutcome("error", `OAuth callback failed: ${error}`);
   }
 }
 
 function registerHandlers(): void {
-  requireElement<HTMLButtonElement>("register").onclick = async () => {
-    const { body } = await callSandboxApi<AuthTokensPayload>(config.register_url, {
-      method: "POST",
-      body: JSON.stringify({
-        email: refs.email.value,
-        password: refs.password.value,
-        display_name: refs.displayName.value,
-        client_type: refs.clientType.value || "web",
-        device_label: refs.deviceLabel.value || null,
-      }),
+  refs.register.onclick = async () => {
+    await runButtonAction("register", refs.register, "Registering", "Registering user", async () => {
+      const { response, body } = await callSandboxApi<AuthTokensPayload>(config.register_url, {
+        method: "POST",
+        body: JSON.stringify({
+          email: refs.email.value,
+          password: refs.password.value,
+          display_name: refs.displayName.value,
+          client_type: refs.clientType.value || "web",
+          device_label: refs.deviceLabel.value || null,
+        }),
+      });
+
+      if (response.ok && body && typeof body === "object") {
+        applyTokens(body as AuthTokensPayload);
+        await refreshServerItems();
+        markOutcome("success", "Registration succeeded.");
+        return;
+      }
+
+      markOutcome("error", extractErrorMessage(body, "Registration failed."));
     });
-
-    if (body && typeof body === "object") {
-      applyTokens(body as AuthTokensPayload);
-      await refreshServerItems();
-    }
   };
 
-  requireElement<HTMLButtonElement>("login").onclick = async () => {
-    const { body } = await callSandboxApi<AuthTokensPayload>(config.login_url, {
-      method: "POST",
-      body: JSON.stringify({
-        email: refs.email.value,
-        password: refs.password.value,
-        client_type: refs.clientType.value || "web",
-        device_label: refs.deviceLabel.value || null,
-      }),
+  refs.login.onclick = async () => {
+    await runButtonAction("login", refs.login, "Logging in", "Logging in", async () => {
+      const { response, body } = await callSandboxApi<AuthTokensPayload>(config.login_url, {
+        method: "POST",
+        body: JSON.stringify({
+          email: refs.email.value,
+          password: refs.password.value,
+          client_type: refs.clientType.value || "web",
+          device_label: refs.deviceLabel.value || null,
+        }),
+      });
+
+      if (response.ok && body && typeof body === "object") {
+        applyTokens(body as AuthTokensPayload);
+        await refreshServerItems();
+        markOutcome("success", "Login succeeded.");
+        return;
+      }
+
+      markOutcome("error", extractErrorMessage(body, "Login failed."));
     });
-
-    if (body && typeof body === "object") {
-      applyTokens(body as AuthTokensPayload);
-      await refreshServerItems();
-    }
   };
 
-  requireElement<HTMLButtonElement>("refresh").onclick = async () => {
-    const { body } = await callSandboxApi<AuthTokensPayload>(config.refresh_url, {
-      method: "POST",
-      body: JSON.stringify({ refresh_token: state.refreshToken ?? refs.refreshToken.value }),
-    });
-
-    if (body && typeof body === "object") {
-      applyTokens(body as AuthTokensPayload);
-    }
-  };
-
-  requireElement<HTMLButtonElement>("logout").onclick = async () => {
-    await callSandboxApi(config.logout_url, { method: "POST" }, true);
-    await disconnectPowerSync();
-    clearTokens();
-    renderItems(refs.serverItems, [], "Authenticate to inspect the source database.");
-  };
-
-  requireElement<HTMLButtonElement>("google-login").onclick = () => {
+  refs.googleLogin.onclick = () => {
+    markOutcome("pending", "Redirecting to Google login.");
     const url = new URL(config.google_start_url, window.location.origin);
     url.searchParams.set("redirect_uri", config.redirect_uri);
     window.location.assign(url.toString());
   };
 
-  requireElement<HTMLButtonElement>("connect").onclick = () => {
-    void connectPowerSync();
-  };
-  requireElement<HTMLButtonElement>("disconnect").onclick = () => {
-    void disconnectPowerSync();
-  };
-  requireElement<HTMLButtonElement>("create-item").onclick = () => {
-    void createLocalItem();
-  };
-  requireElement<HTMLButtonElement>("refresh-server").onclick = () => {
-    void refreshServerItems();
+  refs.refresh.onclick = async () => {
+    await runButtonAction("refresh", refs.refresh, "Refreshing", "Refreshing session tokens", async () => {
+      const { response, body } = await callSandboxApi<AuthTokensPayload>(config.refresh_url, {
+        method: "POST",
+        body: JSON.stringify({ refresh_token: state.refreshToken }),
+      });
+
+      if (response.ok && body && typeof body === "object") {
+        applyTokens(body as AuthTokensPayload);
+        markOutcome("success", "Tokens refreshed.");
+        return;
+      }
+
+      markOutcome("error", extractErrorMessage(body, "Refresh failed."));
+    });
   };
 
-  refs.accessToken.addEventListener("input", () => {
-    state.accessToken = refs.accessToken.value.trim();
-    syncTokenFields();
-  });
+  refs.logout.onclick = async () => {
+    await runButtonAction("logout", refs.logout, "Logging out", "Logging out", async () => {
+      const { response, body } = await callSandboxApi(config.logout_url, { method: "POST" }, true);
 
-  refs.refreshToken.addEventListener("input", () => {
-    state.refreshToken = refs.refreshToken.value.trim();
-    syncTokenFields();
-  });
+      if (response.ok) {
+        await disconnectPowerSync();
+        clearTokens();
+        renderItems(refs.serverItems, [], "Sign in to inspect the server source rows.");
+        markOutcome("success", "Logged out.");
+        return;
+      }
+
+      markOutcome("error", extractErrorMessage(body, "Logout failed."));
+    });
+  };
+
+  refs.connect.onclick = async () => {
+    await runButtonAction("connect", refs.connect, "Connecting", "Connecting to PowerSync", async () => {
+      try {
+        await connectPowerSync();
+        markOutcome("success", "PowerSync connected.");
+      } catch (error) {
+        markOutcome("error", error instanceof Error ? error.message : "PowerSync connection failed.");
+      }
+    });
+  };
+
+  refs.disconnect.onclick = async () => {
+    await runButtonAction("disconnect", refs.disconnect, "Disconnecting", "Disconnecting PowerSync", async () => {
+      await disconnectPowerSync();
+      markOutcome("success", "PowerSync disconnected.");
+    });
+  };
+
+  refs.createItem.onclick = async () => {
+    await runButtonAction("create-item", refs.createItem, "Creating", "Creating local demo item", async () => {
+      await createLocalItem();
+      markOutcome("success", "Local demo item created.");
+    });
+  };
+
+  refs.refreshServer.onclick = async () => {
+    await runButtonAction("refresh-server", refs.refreshServer, "Refreshing", "Refreshing source snapshot", async () => {
+      await refreshServerItems();
+      markOutcome("success", "Server source snapshot refreshed.");
+    });
+  };
 
   refs.localItems.addEventListener("click", async (event) => {
     const target = event.target;
 
-    if (!(target instanceof HTMLElement)) {
+    if (!(target instanceof HTMLButtonElement)) {
       return;
     }
 
@@ -526,32 +680,52 @@ function registerHandlers(): void {
       return;
     }
 
-    if (action === "update") {
-      await updateLocalItem(itemId);
-      return;
-    }
+    const actionKey = `${action}:${itemId}`;
+    const label = action === "update" ? "Updating" : "Deleting";
+    const pending = action === "update" ? "Updating local demo item" : "Deleting local demo item";
 
-    if (action === "delete") {
+    await runButtonAction(actionKey, target, label, pending, async () => {
+      if (action === "update") {
+        await updateLocalItem(itemId);
+        markOutcome("success", "Local demo item updated.");
+        return;
+      }
+
       await deleteLocalItem(itemId);
-    }
+      markOutcome("success", "Local demo item deleted.");
+    });
   });
 }
 
 async function bootstrap(): Promise<void> {
+  refs.clientLabel.textContent = config.db_filename;
+  syncTokenFields();
+  renderLastResponse({});
+  renderStatus();
+  renderItems(refs.localItems, [], "Connect PowerSync to mirror demo rows locally.");
+  renderItems(refs.serverItems, [], "Sign in to inspect the server source rows.");
+  renderControls();
   registerHandlers();
-  refs.accessToken.value = state.accessToken ?? "";
-  refs.refreshToken.value = state.refreshToken ?? "";
-  renderAuthStatus();
-  renderItems(refs.localItems, [], "No local synced items yet.");
-  renderItems(refs.serverItems, [], "Authenticate to inspect the source database.");
-  renderSyncStatus(state.connected ? "Reconnecting..." : "Disconnected.");
+
   await handleOAuthReturn();
-  await loadCurrentUser();
+
+  if (state.accessToken && !state.currentUser) {
+    await loadCurrentUser();
+  }
+
   await refreshServerItems();
 
   if (state.connected && state.accessToken && state.currentUser?.user_id) {
-    await connectPowerSync();
+    try {
+      await connectPowerSync();
+      markOutcome("success", "PowerSync reconnected from stored session state.");
+    } catch (error) {
+      markOutcome("error", error instanceof Error ? error.message : "PowerSync reconnect failed.");
+    }
   }
+
+  renderStatus();
+  renderControls();
 }
 
 void bootstrap();

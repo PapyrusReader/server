@@ -28,9 +28,12 @@ async def test_auth_sandbox_registered_in_debug_vite_mode(
     assert "Auth Sandbox" in response.text
     assert 'window.__PAPYRUS_DEV_PAGE_CONFIG__ =' in response.text
     assert 'data-dev-page="auth-sandbox"' in response.text
+    assert 'data-shell-marker="sticky-status-rail"' in response.text
     assert 'src="http://vite.test:5173/@vite/client"' in response.text
     assert 'src="http://vite.test:5173/src/pages/auth-sandbox/main.ts"' in response.text
     assert '"registerUrl": "/v1/auth/register"' in response.text
+    assert 'id="logout" class="secondary" disabled' in response.text
+    assert 'id="get-me" class="secondary" disabled' in response.text
 
 
 async def test_auth_sandbox_renders_built_assets_when_manifest_exists(
@@ -63,6 +66,7 @@ async def test_auth_sandbox_renders_built_assets_when_manifest_exists(
     assert response.status_code == 200
     assert 'href="/__dev/static/assets/auth-sandbox.css"' in response.text
     assert 'src="/__dev/static/assets/auth-sandbox.js"' in response.text
+    assert 'data-shell-marker="sticky-status-rail"' in response.text
     assert "@vite/client" not in response.text
     assert "src/pages/auth-sandbox/main.ts" not in response.text
 

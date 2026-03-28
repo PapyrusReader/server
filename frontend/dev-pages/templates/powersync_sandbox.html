@@ -1,14 +1,35 @@
 {% extends "base.html" %}
 
 {% block page_content %}
-  <section class="dev-panel dev-panel--full">
+  <header class="dev-page-header">
+    <div class="dev-page-header__eyebrow">Development Console</div>
     <h1>PowerSync Sandbox</h1>
-    <p>Dev-only page for validating Papyrus auth, PowerSync connectivity, queue uploads, and cross-tab sync.</p>
+    <p>Validate the full Papyrus-to-PowerSync flow with visible auth state, connection state, queued changes, and replicated rows.</p>
+  </header>
+
+  <section class="dev-rail" data-shell-marker="sticky-status-rail">
+    <div class="dev-rail__group">
+      <span id="powersync-rail-auth" class="dev-chip dev-chip--muted">Signed out</span>
+      <span id="powersync-rail-sync" class="dev-chip dev-chip--muted">Disconnected</span>
+      <span id="powersync-rail-db" class="dev-chip dev-chip--muted">No local DB</span>
+    </div>
+    <div class="dev-rail__group dev-rail__group--stacked">
+      <div class="dev-rail__meta">
+        <span id="powersync-rail-action" class="dev-rail__label">Idle</span>
+        <span id="powersync-rail-updated" class="dev-rail__timestamp">Waiting for activity</span>
+      </div>
+      <div id="powersync-rail-outcome" class="dev-rail__outcome">Authenticate to enable PowerSync operations.</div>
+    </div>
   </section>
 
   <div class="dev-grid dev-grid--powersync">
     <section class="dev-panel">
-      <h2>Auth</h2>
+      <div class="dev-panel__header">
+        <div>
+          <div class="dev-panel__eyebrow">Stage 1</div>
+          <h2>Auth And Session</h2>
+        </div>
+      </div>
       <label for="email">Email</label>
       <input id="email" type="email" value="powersync@example.com" />
       <label for="password">Password</label>
@@ -22,54 +43,65 @@
       <div class="dev-inline">
         <button id="register">Register</button>
         <button id="login">Login</button>
-        <button id="refresh">Refresh</button>
+        <button id="google-login">Google Login</button>
       </div>
       <div class="dev-inline">
-        <button id="logout" class="secondary">Logout</button>
-        <button id="google-login" class="secondary">Google Login</button>
+        <button id="refresh" disabled>Refresh</button>
+        <button id="logout" class="secondary" disabled>Logout</button>
       </div>
-      <p id="auth-status" class="dev-status">Signed out.</p>
+      <label for="access-token">Access Token</label>
+      <textarea id="access-token" readonly></textarea>
+      <label for="refresh-token">Refresh Token</label>
+      <textarea id="refresh-token" readonly></textarea>
+      <p id="auth-status" class="dev-panel__status">Sign in to enable PowerSync connection controls.</p>
     </section>
 
     <section class="dev-panel">
-      <h2>PowerSync</h2>
+      <div class="dev-panel__header">
+        <div>
+          <div class="dev-panel__eyebrow">Stage 2</div>
+          <h2>PowerSync Connection</h2>
+        </div>
+      </div>
       <div class="dev-inline">
-        <button id="connect">Connect</button>
-        <button id="disconnect" class="secondary">Disconnect</button>
+        <button id="connect" disabled>Connect</button>
+        <button id="disconnect" class="secondary" disabled>Disconnect</button>
       </div>
       <label for="title">New Item Title</label>
       <input id="title" type="text" value="Example synced item" />
       <label for="notes">Notes</label>
       <textarea id="notes">Created in the PowerSync sandbox.</textarea>
       <div class="dev-inline">
-        <button id="create-item">Create Item</button>
-        <button id="refresh-server" class="secondary">Refresh Server Snapshot</button>
+        <button id="create-item" disabled>Create Item</button>
+        <button id="refresh-server" class="secondary" disabled>Refresh Snapshot</button>
       </div>
-      <p id="sync-status" class="dev-status">Disconnected.</p>
+      <p id="sync-status" class="dev-panel__status">Authenticate before connecting to PowerSync.</p>
     </section>
 
     <section class="dev-panel">
-      <h2>Session</h2>
-      <label for="access-token">Access Token</label>
-      <textarea id="access-token"></textarea>
-      <label for="refresh-token">Refresh Token</label>
-      <textarea id="refresh-token"></textarea>
-    </section>
-
-    <section class="dev-panel">
-      <h2>Local Synced Items</h2>
-      <p id="client-label" class="dev-status"></p>
+      <div class="dev-panel__header">
+        <div>
+          <div class="dev-panel__eyebrow">Stage 3</div>
+          <h2>Live Data</h2>
+        </div>
+      </div>
+      <div class="dev-section-summary">
+        <span id="client-label" class="dev-chip dev-chip--muted">Local database pending</span>
+      </div>
+      <h3 class="dev-subheading">Local Synced Items</h3>
       <div id="local-items" class="dev-items"></div>
-    </section>
-
-    <section class="dev-panel">
-      <h2>Server Source Snapshot</h2>
+      <h3 class="dev-subheading">Server Source Snapshot</h3>
       <div id="server-items" class="dev-items"></div>
     </section>
 
     <section class="dev-panel dev-panel--full">
-      <h2>Last Response</h2>
-      <pre id="last-response" class="dev-mono">{}</pre>
+      <div class="dev-panel__header">
+        <div>
+          <div class="dev-panel__eyebrow">Diagnostics</div>
+          <h2>Last Response</h2>
+        </div>
+      </div>
+      <pre id="last-response" class="dev-mono dev-output-block">{}</pre>
     </section>
   </div>
 {% endblock %}

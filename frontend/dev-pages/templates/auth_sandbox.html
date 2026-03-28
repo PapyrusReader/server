@@ -1,14 +1,38 @@
 {% extends "base.html" %}
 
 {% block page_content %}
-  <section class="dev-panel dev-panel--full">
+  <header class="dev-page-header">
+    <div class="dev-page-header__eyebrow">Development Console</div>
     <h1>Auth Sandbox</h1>
-    <p>Dev-only page for manually exercising the Papyrus auth flows against this backend.</p>
+    <p>Exercise registration, login, browser OAuth, token refresh, recovery, and protected calls with explicit runtime status.</p>
+  </header>
+
+  <section class="dev-rail" data-shell-marker="sticky-status-rail">
+    <div class="dev-rail__group">
+      <span id="auth-rail-state" class="dev-chip dev-chip--muted">Signed out</span>
+      <span id="auth-rail-identity" class="dev-rail__text">No authenticated user loaded.</span>
+    </div>
+    <div class="dev-rail__group">
+      <span id="auth-rail-access" class="dev-chip dev-chip--muted">No access token</span>
+      <span id="auth-rail-refresh" class="dev-chip dev-chip--muted">No refresh token</span>
+    </div>
+    <div class="dev-rail__group dev-rail__group--stacked">
+      <div class="dev-rail__meta">
+        <span id="auth-rail-action" class="dev-rail__label">Idle</span>
+        <span id="auth-rail-updated" class="dev-rail__timestamp">Waiting for activity</span>
+      </div>
+      <div id="auth-rail-outcome" class="dev-rail__outcome">No actions have been triggered yet.</div>
+    </div>
   </section>
 
-  <div class="dev-grid">
+  <div class="dev-grid dev-grid--auth">
     <section class="dev-panel">
-      <h2>Account</h2>
+      <div class="dev-panel__header">
+        <div>
+          <div class="dev-panel__eyebrow">Credentials</div>
+          <h2>Account Inputs</h2>
+        </div>
+      </div>
       <label for="email">Email</label>
       <input id="email" type="email" value="sandbox@example.com" />
       <label for="password">Password</label>
@@ -21,64 +45,95 @@
       <input id="client-type" type="text" value="web" />
       <label for="device-label">Device Label</label>
       <input id="device-label" type="text" value="auth-sandbox" />
-      <div class="dev-inline">
-        <button id="register">Register</button>
-        <button id="login">Login</button>
-        <button id="refresh">Refresh</button>
-      </div>
-      <div class="dev-inline">
-        <button id="logout" class="secondary">Logout</button>
-        <button id="logout-all" class="secondary">Logout All</button>
-      </div>
+      <p class="dev-panel__status" id="auth-credentials-status">Ready for registration or login.</p>
     </section>
 
     <section class="dev-panel">
-      <h2>OAuth And Email</h2>
+      <div class="dev-panel__header">
+        <div>
+          <div class="dev-panel__eyebrow">Primary Flow</div>
+          <h2>Auth Actions</h2>
+        </div>
+      </div>
+      <div class="dev-action-stack">
+        <div class="dev-action-group">
+          <div class="dev-action-group__title">Signed-out actions</div>
+          <div class="dev-inline">
+            <button id="register">Register</button>
+            <button id="login">Login</button>
+            <button id="google-login">Google Login</button>
+          </div>
+        </div>
+        <div class="dev-action-group">
+          <div class="dev-action-group__title">Signed-in actions</div>
+          <div class="dev-inline">
+            <button id="refresh" disabled>Refresh</button>
+            <button id="logout" class="secondary" disabled>Logout</button>
+            <button id="logout-all" class="secondary" disabled>Logout All</button>
+          </div>
+          <div class="dev-inline">
+            <button id="google-link" class="secondary" disabled>Link Google</button>
+            <button id="get-me" class="secondary" disabled>Load /users/me</button>
+            <button id="session-state" class="secondary" disabled>Session State</button>
+          </div>
+          <div class="dev-inline">
+            <button id="powersync-token" class="secondary" disabled>PowerSync Token</button>
+          </div>
+        </div>
+      </div>
+      <p class="dev-panel__status" id="auth-actions-status">Signed-in actions are disabled until the sandbox has an active session.</p>
+    </section>
+
+    <section class="dev-panel">
+      <div class="dev-panel__header">
+        <div>
+          <div class="dev-panel__eyebrow">Recovery</div>
+          <h2>OAuth And Email</h2>
+        </div>
+      </div>
       <label for="exchange-code">Exchange Code</label>
       <input id="exchange-code" type="text" />
       <div class="dev-inline">
-        <button id="google-login">Start Google Login</button>
-        <button id="google-link" class="secondary">Start Google Link</button>
-      </div>
-      <div class="dev-inline">
-        <button id="exchange">Exchange Code</button>
-        <button id="complete-link" class="secondary">Complete Link</button>
+        <button id="exchange" disabled>Exchange Code</button>
+        <button id="complete-link" class="secondary" disabled>Complete Link</button>
       </div>
       <div class="dev-inline">
         <button id="resend-verification">Resend Verification</button>
         <button id="forgot-password" class="secondary">Forgot Password</button>
       </div>
-      <label for="verification-token">Verification/Reset Token</label>
+      <label for="verification-token">Verification / Reset Token</label>
       <input id="verification-token" type="text" />
       <div class="dev-inline">
-        <button id="verify-email">Verify Email</button>
-        <button id="reset-password" class="secondary">Reset Password</button>
+        <button id="verify-email" disabled>Verify Email</button>
+        <button id="reset-password" class="secondary" disabled>Reset Password</button>
       </div>
+      <p class="dev-panel__status" id="auth-recovery-status">Paste an exchange or email token to enable the matching actions.</p>
     </section>
 
     <section class="dev-panel">
-      <h2>Protected Calls</h2>
-      <div class="dev-inline">
-        <button id="get-me">GET /users/me</button>
-        <button id="session-state" class="secondary">Session State</button>
-      </div>
-      <div class="dev-inline">
-        <button id="powersync-token">PowerSync Token</button>
+      <div class="dev-panel__header">
+        <div>
+          <div class="dev-panel__eyebrow">Diagnostics</div>
+          <h2>Token Payloads</h2>
+        </div>
       </div>
       <label for="access-token">Access Token</label>
-      <textarea id="access-token"></textarea>
+      <textarea id="access-token" readonly></textarea>
       <label for="refresh-token">Refresh Token</label>
-      <textarea id="refresh-token"></textarea>
-    </section>
-
-    <section class="dev-panel">
-      <h2>Decoded Claims</h2>
-      <pre id="claims" class="dev-mono">{}</pre>
+      <textarea id="refresh-token" readonly></textarea>
+      <label for="claims">Decoded Claims</label>
+      <pre id="claims" class="dev-mono dev-output-block">{}</pre>
+      <p class="dev-panel__status" id="auth-diagnostics-status">Token payloads appear here after a successful auth flow.</p>
     </section>
 
     <section class="dev-panel dev-panel--full">
-      <h2>Last Response</h2>
-      <pre id="last-response" class="dev-mono">{}</pre>
+      <div class="dev-panel__header">
+        <div>
+          <div class="dev-panel__eyebrow">Output</div>
+          <h2>Last Response</h2>
+        </div>
+      </div>
+      <pre id="last-response" class="dev-mono dev-output-block">{}</pre>
     </section>
   </div>
 {% endblock %}
