@@ -69,6 +69,13 @@ uv run alembic upgrade head
 uv run uvicorn papyrus.main:app --reload --port 8080
 ```
 
+1. Start the sandbox asset dev server for live TS/SCSS reload:
+
+```bash
+npm --prefix frontend/dev-pages install
+npm --prefix frontend/dev-pages run dev
+```
+
 1. Start the PowerSync service:
 
 ```bash
@@ -135,6 +142,7 @@ docker compose down -v
    - `uv run alembic upgrade head`
    - `./scripts/setup_local_powersync.sh`
    - `uv run uvicorn papyrus.main:app --reload --port 8080`
+   - `npm --prefix frontend/dev-pages run dev`
    - `docker compose up -d powersync`
 
 ## Notes
@@ -142,3 +150,4 @@ docker compose down -v
 - The source database table is managed with Alembic.
 - The PowerSync publication and replication role are not managed with Alembic; they are initialized by [`scripts/setup_local_powersync.sh`](../scripts/setup_local_powersync.sh).
 - The sandbox is debug-only and should not be exposed in production mode.
+- If you prefer built assets over the Vite dev server, run `npm --prefix frontend/dev-pages run build` and set `DEV_PAGES_USE_VITE=false`.

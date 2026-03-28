@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     powersync_storage_db: str | None = None
     powersync_storage_user: str | None = None
     powersync_storage_password: str | None = None
+    dev_pages_use_vite: bool = False
+    dev_pages_vite_url: str = "http://localhost:5173"
+    dev_pages_manifest_path: str = "frontend/dev-pages/dist/.vite/manifest.json"
 
     @field_validator("debug", mode="before")
     @classmethod
@@ -92,6 +95,11 @@ class Settings(BaseSettings):
 
         return normalized.rstrip("/")
 
+    @field_validator("dev_pages_vite_url")
+    @classmethod
+    def normalize_dev_pages_vite_url(cls, value: str) -> str:
+        return value.strip().rstrip("/")
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:
@@ -115,6 +123,11 @@ class Settings(BaseSettings):
             return None
 
         return Path(self.powersync_jwt_public_key_file)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def dev_pages_manifest_file(self) -> Path:
+        return Path(self.dev_pages_manifest_path)
 
 
 @lru_cache

@@ -54,6 +54,19 @@ uv run alembic upgrade head
 uv run uvicorn papyrus.main:app --reload
 ```
 
+1. Run the dev-pages asset server for live TypeScript and SCSS reload:
+
+```bash
+npm --prefix frontend/dev-pages install
+npm --prefix frontend/dev-pages run dev
+```
+
+If you do not want to run Vite, build the sandbox assets once instead:
+
+```bash
+npm --prefix frontend/dev-pages run build
+```
+
 ## Useful Local Pages
 
 - API index: `http://localhost:8080/`

@@ -1,0 +1,17 @@
+{
+  "name": "papyrus-dev-pages",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5173",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "sass": "^1.89.2",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.7"
+  }
+}

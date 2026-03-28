@@ -10,12 +10,14 @@ from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
 from papyrus.api.routes import api_router, include_debug_routers
 from papyrus.config import get_settings
+from papyrus.core.dev_pages import DEV_PAGES_DIST_DIR, DEV_PAGES_STATIC_URL
 from papyrus.core.exceptions import AppError
 
 settings = get_settings()
@@ -107,6 +109,11 @@ Rate limits are enforced per user:
 
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
+    app.mount(
+        DEV_PAGES_STATIC_URL,
+        StaticFiles(directory=str(DEV_PAGES_DIST_DIR), check_dir=False),
+        name="dev_pages_static",
+    )
 
     app.add_middleware(
         CORSMiddleware,

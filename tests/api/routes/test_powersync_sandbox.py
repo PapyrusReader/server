@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -9,6 +10,8 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.api.routes import dev_powersync_sandbox
+from papyrus.core import dev_pages
+from papyrus.main import settings as app_settings
 from papyrus.models import PowerSyncDemoItem, User
 
 
@@ -39,12 +42,55 @@ async def test_powersync_sandbox_not_registered_in_production_mode(prod_client: 
     assert response.status_code == 404
 
 
-async def test_powersync_sandbox_registered_in_debug_mode(debug_client: AsyncClient):
-    """The PowerSync sandbox page is served when debug mode is enabled."""
+async def test_powersync_sandbox_registered_in_debug_vite_mode(
+    debug_client: AsyncClient,
+    monkeypatch,
+):
+    """The PowerSync sandbox page uses Vite-served assets when configured."""
+    monkeypatch.setattr(app_settings, "dev_pages_use_vite", True)
+    monkeypatch.setattr(app_settings, "dev_pages_vite_url", "http://vite.test:5173")
+
     response = await debug_client.get("/__dev/powersync-sandbox")
+
     assert response.status_code == 200
     assert "PowerSync Sandbox" in response.text
-    assert "/__dev/powersync-sandbox/app.js" in response.text
+    assert 'data-dev-page="powersync-sandbox"' in response.text
+    assert 'src="http://vite.test:5173/@vite/client"' in response.text
+    assert 'src="http://vite.test:5173/src/pages/powersync-sandbox/main.ts"' in response.text
+    assert '"powersync_endpoint": "http://localhost:8081"' in response.text
+
+
+async def test_powersync_sandbox_renders_built_assets_when_manifest_exists(
+    debug_client: AsyncClient,
+    monkeypatch,
+    tmp_path,
+):
+    """The PowerSync sandbox page falls back to built assets outside Vite mode."""
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "src/pages/powersync-sandbox/main.ts": {
+                    "file": "assets/powersync-sandbox.js",
+                    "css": ["assets/powersync-sandbox.css"],
+                    "imports": [],
+                    "src": "src/pages/powersync-sandbox/main.ts",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(app_settings, "dev_pages_use_vite", False)
+    monkeypatch.setattr(app_settings, "dev_pages_manifest_path", str(manifest_path))
+    dev_pages._load_manifest.cache_clear()
+
+    response = await debug_client.get("/__dev/powersync-sandbox")
+
+    assert response.status_code == 200
+    assert 'href="/__dev/static/assets/powersync-sandbox.css"' in response.text
+    assert 'src="/__dev/static/assets/powersync-sandbox.js"' in response.text
+    assert "@vite/client" not in response.text
 
 
 async def test_powersync_sandbox_config_returns_expected_urls(debug_client: AsyncClient):

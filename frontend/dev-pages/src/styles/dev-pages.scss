@@ -1,0 +1,169 @@
+:root {
+  color-scheme: light;
+  --bg: #f7f1e7;
+  --panel: #fffdf8;
+  --ink: #1e1b18;
+  --muted: #6e6259;
+  --line: #dbcdbf;
+  --accent: #7d4f2b;
+  --accent-strong: #5f391d;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body.dev-page {
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, #fff6df 0, transparent 35%),
+    linear-gradient(180deg, #f4ecdf 0%, var(--bg) 100%);
+}
+
+.dev-page__main {
+  margin: 0 auto;
+  padding: 32px 20px 48px;
+}
+
+.dev-page--auth .dev-page__main {
+  max-width: 1200px;
+}
+
+.dev-page--powersync .dev-page__main {
+  max-width: 1280px;
+}
+
+h1,
+h2 {
+  margin: 0 0 12px;
+}
+
+p {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+
+.dev-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.dev-grid--powersync {
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.dev-panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 18px;
+  box-shadow: 0 10px 30px rgba(72, 54, 39, 0.08);
+}
+
+.dev-panel--full {
+  grid-column: 1 / -1;
+}
+
+label {
+  display: block;
+  margin: 12px 0 6px;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+input,
+textarea,
+button {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  padding: 10px 12px;
+  font: inherit;
+  background: #fff;
+}
+
+textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.dev-page--powersync textarea {
+  min-height: 96px;
+}
+
+button {
+  margin-top: 10px;
+  cursor: pointer;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+}
+
+button.secondary {
+  background: #efe4d4;
+  color: var(--ink);
+}
+
+.dev-inline {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dev-inline button {
+  flex: 1 1 140px;
+  margin-top: 0;
+}
+
+.dev-status {
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.dev-items {
+  display: grid;
+  gap: 10px;
+}
+
+.dev-item {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: #fff;
+}
+
+.dev-item strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.dev-item p {
+  margin: 0;
+  color: var(--ink);
+}
+
+.dev-item-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dev-item-actions button {
+  margin-top: 0;
+}
+
+.dev-mono,
+pre,
+code {
+  font-family: "SFMono-Regular", "Menlo", monospace;
+}
+
+.dev-mono,
+pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

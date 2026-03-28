@@ -25,6 +25,9 @@ wheels/
 venv/
 ENV/
 env/
+node_modules/
+frontend/dev-pages/dist/
+*.tsbuildinfo
 
 # Environment variables
 .env

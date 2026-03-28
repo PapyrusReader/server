@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ page_title }}</title>
+    {% for css_url in dev_page_assets.css_urls %}
+    <link rel="stylesheet" href="{{ css_url }}" />
+    {% endfor %}
+  </head>
+  <body class="dev-page {{ body_class }}" data-dev-page="{{ page_id }}">
+    <main class="dev-page__main">
+      {% block page_content %}{% endblock %}
+    </main>
+
+    <script>
+      window.__PAPYRUS_DEV_PAGE_CONFIG__ = {{ page_config_json | safe }};
+    </script>
+    {% for script_url in dev_page_assets.script_urls %}
+    <script type="module" src="{{ script_url }}"></script>
+    {% endfor %}
+  </body>
+</html>

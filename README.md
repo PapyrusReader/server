@@ -28,6 +28,13 @@ Run the server:
 uv run uvicorn papyrus.main:app --reload --port 8080
 ```
 
+Run the dev-pages asset server with live TS/SCSS reload:
+
+```bash
+npm --prefix frontend/dev-pages install
+npm --prefix frontend/dev-pages run dev
+```
+
 Generate local PowerSync keys for auth testing:
 
 ```bash
@@ -57,3 +64,9 @@ See [`docs/auth-testing.md`](docs/auth-testing.md) for the exact `.env` values, 
 For Flutter client integration guidance, see [`docs/flutter-auth-integration.md`](docs/flutter-auth-integration.md).
 
 For the self-hosted PowerSync sandbox and sync validation workflow, see [`docs/powersync-sandbox.md`](docs/powersync-sandbox.md).
+
+To build the dev sandbox assets without the Vite dev server:
+
+```bash
+npm --prefix frontend/dev-pages run build
+```
