@@ -8,6 +8,8 @@ This repo can now support a full local auth test loop:
 - PowerSync token minting
 - Google OAuth browser flow after you add Google credentials
 
+For Flutter client integration guidance, see [`flutter-auth-integration.md`](flutter-auth-integration.md).
+
 ## Local Setup
 
 1. Start local dependencies:
