@@ -17,6 +17,21 @@
   </head>
   <body class="dev-page {{ body_class }}" data-dev-page="{{ page_id }}">
     <main class="dev-page__main">
+      <nav class="dev-page-nav" aria-label="Sandbox navigation">
+        <a
+          href="/__dev/auth-sandbox"
+          class="dev-page-nav__link{% if page_id == 'auth-sandbox' %} dev-page-nav__link--active{% endif %}"
+        >
+          Authentication
+        </a>
+        <a
+          href="/__dev/powersync-sandbox"
+          class="dev-page-nav__link{% if page_id == 'powersync-sandbox' %} dev-page-nav__link--active{% endif %}"
+        >
+          PowerSync
+        </a>
+      </nav>
+
       {% block page_content %}{% endblock %}
     </main>
 

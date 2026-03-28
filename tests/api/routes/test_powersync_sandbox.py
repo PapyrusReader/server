@@ -56,6 +56,9 @@ async def test_powersync_sandbox_registered_in_debug_vite_mode(
     assert "PowerSync Sandbox" in response.text
     assert 'data-dev-page="powersync-sandbox"' in response.text
     assert 'data-shell-marker="sticky-status-rail"' in response.text
+    assert 'href="/__dev/auth-sandbox"' in response.text
+    assert 'href="/__dev/powersync-sandbox"' in response.text
+    assert 'dev-page-nav__link--active' in response.text
     assert 'src="http://vite.test:5173/@vite/client"' in response.text
     assert 'src="http://vite.test:5173/src/pages/powersync-sandbox/main.ts"' in response.text
     assert '"powersync_endpoint": "http://localhost:8081"' in response.text

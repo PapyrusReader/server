@@ -29,9 +29,7 @@ body.dev-page {
   min-height: 100vh;
   font-family: "Roboto", sans-serif;
   color: var(--ink);
-  background:
-    linear-gradient(180deg, rgba(78, 161, 255, 0.08) 0%, transparent 160px),
-    var(--bg);
+  background-color: var(--bg);
 }
 
 .dev-page__main {
@@ -39,8 +37,43 @@ body.dev-page {
   padding: var(--space-5);
 }
 
+.dev-page-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.dev-page-nav__link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    color 140ms ease;
+}
+
+.dev-page-nav__link:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.dev-page-nav__link--active {
+  border-color: var(--accent);
+  background: var(--panel-strong);
+  color: var(--accent-strong);
+}
+
 .dev-page--auth .dev-page__main {
-  max-width: 1400px;
+  max-width: 1480px;
 }
 
 .dev-page--powersync .dev-page__main {

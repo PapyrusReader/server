@@ -25,10 +25,13 @@ async def test_auth_sandbox_registered_in_debug_vite_mode(
     response = await debug_client.get("/__dev/auth-sandbox")
 
     assert response.status_code == 200
-    assert "Auth Sandbox" in response.text
-    assert 'window.__PAPYRUS_DEV_PAGE_CONFIG__ =' in response.text
+    assert "Authentication sandbox" in response.text
+    assert "window.__PAPYRUS_DEV_PAGE_CONFIG__ =" in response.text
     assert 'data-dev-page="auth-sandbox"' in response.text
     assert 'data-shell-marker="sticky-status-rail"' in response.text
+    assert 'href="/__dev/auth-sandbox"' in response.text
+    assert 'href="/__dev/powersync-sandbox"' in response.text
+    assert "dev-page-nav__link--active" in response.text
     assert 'src="http://vite.test:5173/@vite/client"' in response.text
     assert 'src="http://vite.test:5173/src/pages/auth-sandbox/main.ts"' in response.text
     assert '"registerUrl": "/v1/auth/register"' in response.text
@@ -44,16 +47,14 @@ async def test_auth_sandbox_renders_built_assets_when_manifest_exists(
     """Test the auth sandbox uses built assets when Vite mode is disabled."""
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(
-        json.dumps(
-            {
-                "src/pages/auth-sandbox/main.ts": {
-                    "file": "assets/auth-sandbox.js",
-                    "css": ["assets/auth-sandbox.css"],
-                    "imports": [],
-                    "src": "src/pages/auth-sandbox/main.ts",
-                }
+        json.dumps({
+            "src/pages/auth-sandbox/main.ts": {
+                "file": "assets/auth-sandbox.js",
+                "css": ["assets/auth-sandbox.css"],
+                "imports": [],
+                "src": "src/pages/auth-sandbox/main.ts",
             }
-        ),
+        }),
         encoding="utf-8",
     )
 

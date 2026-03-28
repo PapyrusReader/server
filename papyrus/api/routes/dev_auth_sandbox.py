@@ -48,7 +48,7 @@ async def auth_sandbox(request: Request) -> HTMLResponse:
     return render_dev_page(
         request,
         template_name="auth_sandbox.html",
-        page_title="Papyrus Auth Sandbox",
+        page_title="Papyrus Authentication sandbox",
         page_id="auth-sandbox",
         body_class="dev-page--auth",
         entry_module="src/pages/auth-sandbox/main.ts",
