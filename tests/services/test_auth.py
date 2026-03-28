@@ -19,6 +19,14 @@ from papyrus.schemas.auth import LoginRequest, OAuthExchangeRequest, RefreshToke
 from papyrus.services import auth as auth_service
 
 
+def test_auth_package_facade_exports_public_surface() -> None:
+    """The auth package façade preserves the legacy public surface."""
+    assert auth_service.google_oauth_client is not None
+    assert auth_service.GoogleIdentity.__name__ == "GoogleIdentity"
+    assert auth_service.GOOGLE_PROVIDER == "google"
+    assert callable(auth_service.register_user)
+
+
 async def _create_user_with_password(
     session: AsyncSession,
     *,
