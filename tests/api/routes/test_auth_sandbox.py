@@ -14,6 +14,8 @@ async def test_auth_sandbox_registered_in_debug_mode(debug_client: AsyncClient):
     response = await debug_client.get("/__dev/auth-sandbox")
     assert response.status_code == 200
     assert "Auth Sandbox" in response.text
+    assert 'state.pendingOauthMode = "login";' in response.text
+    assert "handleOAuthReturn()" in response.text
 
 
 async def test_auth_sandbox_session_endpoint(

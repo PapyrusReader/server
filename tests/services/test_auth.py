@@ -53,7 +53,9 @@ def configured_google(monkeypatch: pytest.MonkeyPatch) -> None:
 def configured_powersync(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = get_settings()
     monkeypatch.setattr(settings, "powersync_jwt_private_key", None)
+    monkeypatch.setattr(settings, "powersync_jwt_private_key_file", None)
     monkeypatch.setattr(settings, "powersync_jwt_public_key", None)
+    monkeypatch.setattr(settings, "powersync_jwt_public_key_file", None)
     monkeypatch.setattr(settings, "powersync_jwt_audience", None)
     security_module._get_powersync_private_key.cache_clear()
     security_module._get_powersync_public_key.cache_clear()

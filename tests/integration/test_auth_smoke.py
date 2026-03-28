@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import os
-from urllib.parse import parse_qs, urlparse
 
+import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -44,32 +44,75 @@ async def test_smtp_password_reset_smoke(
 
 
 async def test_google_oauth_smoke(
-    test_session_maker: async_sessionmaker[AsyncSession],
 ):
-    """Exercise the live Google code exchange when explicitly configured."""
+    """Exercise a live Google-authenticated Papyrus session against the running server."""
     if not _env_flag("RUN_GOOGLE_SMOKE_TEST"):
         pytest.skip("RUN_GOOGLE_SMOKE_TEST is not enabled")
 
-    google_code = os.environ.get("AUTH_SMOKE_GOOGLE_CODE")
-    callback_uri = os.environ.get("AUTH_SMOKE_GOOGLE_CALLBACK_URI")
-    if not google_code or not callback_uri:
-        pytest.skip("AUTH_SMOKE_GOOGLE_CODE or AUTH_SMOKE_GOOGLE_CALLBACK_URI is not configured")
-
     settings = get_settings()
-    if settings.google_oauth_client_id is None or settings.google_oauth_client_secret is None:
-        pytest.skip("Google OAuth is not configured in the environment")
+    base_url = os.environ.get("AUTH_SMOKE_SERVER_BASE_URL") or settings.public_base_url
+    access_token = os.environ.get("AUTH_SMOKE_GOOGLE_ACCESS_TOKEN")
+    refresh_token = os.environ.get("AUTH_SMOKE_GOOGLE_REFRESH_TOKEN")
 
-    async with test_session_maker() as session:
-        redirect_uri = "papyrus://auth/callback"
-        authorization_url = auth_service.build_google_login_authorization_url(redirect_uri, callback_uri)
-        state = parse_qs(urlparse(authorization_url).query)["state"][0]
+    if base_url is None:
+        pytest.skip("AUTH_SMOKE_SERVER_BASE_URL or PUBLIC_BASE_URL must be configured")
 
-        redirect_url = await auth_service.handle_google_callback(
-            session,
-            callback_uri=callback_uri,
-            code=google_code,
-            state_token=state,
-            error=None,
+    if access_token is None and refresh_token is None:
+        if os.environ.get("AUTH_SMOKE_GOOGLE_CODE") or os.environ.get("AUTH_SMOKE_GOOGLE_CALLBACK_URI"):
+            pytest.skip(
+                "Raw Google code smoke testing is no longer supported. "
+                "Complete a real Google login in the auth sandbox, then set "
+                "AUTH_SMOKE_GOOGLE_ACCESS_TOKEN or AUTH_SMOKE_GOOGLE_REFRESH_TOKEN."
+            )
+
+        pytest.skip("AUTH_SMOKE_GOOGLE_ACCESS_TOKEN or AUTH_SMOKE_GOOGLE_REFRESH_TOKEN is not configured")
+
+    api_prefix = settings.api_prefix
+    me_url = f"{api_prefix}/users/me"
+    refresh_url = f"{api_prefix}/auth/refresh"
+    current_access_token = access_token
+
+    async with httpx.AsyncClient(base_url=base_url, timeout=10) as client:
+        if current_access_token is not None:
+            me_response = await client.get(
+                me_url,
+                headers={"Authorization": f"Bearer {current_access_token}"},
+            )
+
+            if me_response.status_code == 200:
+                body = me_response.json()
+                assert "user_id" in body
+                assert body["email"]
+                return
+
+            if refresh_token is None:
+                pytest.fail(
+                    "AUTH_SMOKE_GOOGLE_ACCESS_TOKEN was rejected and no refresh token was provided. "
+                    "Log in through Google again and copy a fresh access token or refresh token from the auth sandbox."
+                )
+
+        if refresh_token is None:
+            pytest.fail("No usable Google-authenticated access token or refresh token was provided")
+
+        refresh_response = await client.post(
+            refresh_url,
+            json={"refresh_token": refresh_token},
         )
-        query = parse_qs(urlparse(redirect_url).query)
-        assert "code" in query
+        assert refresh_response.status_code == 200, refresh_response.text
+
+        refresh_body = refresh_response.json()
+        assert refresh_body["access_token"]
+        assert refresh_body["refresh_token"]
+        assert refresh_body["refresh_token"] != refresh_token
+        print(f"AUTH_SMOKE_ROTATED_REFRESH_TOKEN={refresh_body['refresh_token']}")
+
+        current_access_token = refresh_body["access_token"]
+        me_response = await client.get(
+            me_url,
+            headers={"Authorization": f"Bearer {current_access_token}"},
+        )
+        assert me_response.status_code == 200, me_response.text
+
+        me_body = me_response.json()
+        assert me_body["user_id"]
+        assert me_body["email"]

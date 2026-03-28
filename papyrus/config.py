@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -45,7 +46,9 @@ class Settings(BaseSettings):
     smtp_from_email: str | None = None
     smtp_from_name: str | None = "Papyrus"
     powersync_jwt_private_key: str | None = None
+    powersync_jwt_private_key_file: str | None = None
     powersync_jwt_public_key: str | None = None
+    powersync_jwt_public_key_file: str | None = None
     powersync_jwt_key_id: str = "papyrus-powersync-v1"
     powersync_jwt_audience: str | None = None
     powersync_token_expire_minutes: int = 5
@@ -87,6 +90,22 @@ class Settings(BaseSettings):
             f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def powersync_jwt_private_key_path(self) -> Path | None:
+        if self.powersync_jwt_private_key_file is None:
+            return None
+
+        return Path(self.powersync_jwt_private_key_file)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def powersync_jwt_public_key_path(self) -> Path | None:
+        if self.powersync_jwt_public_key_file is None:
+            return None
+
+        return Path(self.powersync_jwt_public_key_file)
 
 
 @lru_cache

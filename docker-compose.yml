@@ -16,6 +16,13 @@ services:
       timeout: 5s
       retries: 5
 
+  mailpit:
+    image: axllent/mailpit:v1.26
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
   server:
     build: .
     restart: unless-stopped
@@ -25,6 +32,8 @@ services:
     depends_on:
       database:
         condition: service_healthy
+      mailpit:
+        condition: service_started
     command: >
       sh -c "alembic upgrade head && papyrus-server"
 

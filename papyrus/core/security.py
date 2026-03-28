@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from hashlib import sha256
+from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any
 
@@ -21,15 +22,29 @@ def _normalize_pem(value: str) -> str:
     return value.replace("\\n", "\n")
 
 
+def _load_pem_configured_value(value: str | None, file_path: Path | None) -> str | None:
+    if value is not None:
+        return _normalize_pem(value)
+
+    if file_path is None:
+        return None
+
+    return file_path.read_text(encoding="utf-8")
+
+
 @lru_cache
 def _get_powersync_private_key() -> Any:
     settings = get_settings()
+    private_key_pem = _load_pem_configured_value(
+        settings.powersync_jwt_private_key,
+        settings.powersync_jwt_private_key_path,
+    )
 
-    if settings.powersync_jwt_private_key is None:
+    if private_key_pem is None:
         raise RuntimeError("PowerSync private key is not configured")
 
     return serialization.load_pem_private_key(
-        _normalize_pem(settings.powersync_jwt_private_key).encode("utf-8"),
+        private_key_pem.encode("utf-8"),
         password=None,
     )
 
@@ -37,9 +52,13 @@ def _get_powersync_private_key() -> Any:
 @lru_cache
 def _get_powersync_public_key() -> Any:
     settings = get_settings()
+    public_key_pem = _load_pem_configured_value(
+        settings.powersync_jwt_public_key,
+        settings.powersync_jwt_public_key_path,
+    )
 
-    if settings.powersync_jwt_public_key is not None:
-        return serialization.load_pem_public_key(_normalize_pem(settings.powersync_jwt_public_key).encode("utf-8"))
+    if public_key_pem is not None:
+        return serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
 
     return _get_powersync_private_key().public_key()
 

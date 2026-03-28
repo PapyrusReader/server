@@ -349,12 +349,16 @@ def _sandbox_html(request: Request) -> str:
       }};
 
       document.getElementById("google-login").onclick = async () => {{
+        state.pendingOauthMode = "login";
+        saveState();
         const url = new URL(config.googleStartUrl, window.location.origin);
         url.searchParams.set("redirect_uri", config.redirectUri);
         window.location.assign(url.toString());
       }};
 
       document.getElementById("google-link").onclick = async () => {{
+        state.pendingOauthMode = "link";
+        saveState();
         const {{ body }} = await callApi(config.googleLinkStartUrl, {{
           method: "POST",
           body: JSON.stringify({{ redirect_uri: config.redirectUri }}),
@@ -437,19 +441,52 @@ def _sandbox_html(request: Request) -> str:
         saveState();
       }});
 
-      const params = new URLSearchParams(window.location.search);
-      const code = params.get("code");
-      const error = params.get("error");
-      if (code) {{
-        refs.exchangeCode.value = code;
-        renderLastResponse({{ status: 302, body: {{ code }} }});
-        history.replaceState(null, "", config.redirectUri);
-      }} else if (error) {{
-        renderLastResponse({{ status: 302, body: {{ error }} }});
-        history.replaceState(null, "", config.redirectUri);
+      async function handleOAuthReturn() {{
+        const params = new URLSearchParams(window.location.search);
+        const code = params.get("code");
+        const error = params.get("error");
+
+        if (code) {{
+          refs.exchangeCode.value = code;
+          history.replaceState(null, "", config.redirectUri);
+
+          if (state.pendingOauthMode === "login") {{
+            const {{ response, body }} = await callApi(config.exchangeUrl, {{
+              method: "POST",
+              body: JSON.stringify({{
+                code,
+                client_type: refs.clientType.value || "web",
+                device_label: refs.deviceLabel.value || null,
+              }}),
+            }});
+
+            if (response.ok && body) {{
+              setTokens(body);
+            }}
+          }} else if (state.pendingOauthMode === "link" && state.accessToken) {{
+            await callApi(config.googleLinkCompleteUrl, {{
+              method: "POST",
+              body: JSON.stringify({{ code }}),
+            }}, true);
+          }} else {{
+            renderLastResponse({{ status: 302, body: {{ code }} }});
+          }}
+
+          delete state.pendingOauthMode;
+          saveState();
+          return;
+        }}
+
+        if (error) {{
+          renderLastResponse({{ status: 302, body: {{ error }} }});
+          history.replaceState(null, "", config.redirectUri);
+          delete state.pendingOauthMode;
+          saveState();
+        }}
       }}
 
       setTokens(state);
+      handleOAuthReturn();
     </script>
   </body>
 </html>"""

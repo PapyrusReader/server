@@ -29,6 +29,13 @@ def configured_google(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
+def unconfigured_google(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = get_settings()
+    monkeypatch.setattr(settings, "google_oauth_client_id", None)
+    monkeypatch.setattr(settings, "google_oauth_client_secret", None)
+
+
+@pytest.fixture
 def configured_powersync(monkeypatch: pytest.MonkeyPatch) -> bytes:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     private_pem = private_key.private_bytes(
@@ -43,12 +50,30 @@ def configured_powersync(monkeypatch: pytest.MonkeyPatch) -> bytes:
 
     settings = get_settings()
     monkeypatch.setattr(settings, "powersync_jwt_private_key", private_pem)
+    monkeypatch.setattr(settings, "powersync_jwt_private_key_file", None)
     monkeypatch.setattr(settings, "powersync_jwt_public_key", public_pem.decode("utf-8"))
+    monkeypatch.setattr(settings, "powersync_jwt_public_key_file", None)
     monkeypatch.setattr(settings, "powersync_jwt_audience", "https://powersync.example.test")
 
     security_module._get_powersync_private_key.cache_clear()
     security_module._get_powersync_public_key.cache_clear()
     yield public_pem
+    security_module._get_powersync_private_key.cache_clear()
+    security_module._get_powersync_public_key.cache_clear()
+
+
+@pytest.fixture
+def unconfigured_powersync(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = get_settings()
+    monkeypatch.setattr(settings, "powersync_jwt_private_key", None)
+    monkeypatch.setattr(settings, "powersync_jwt_private_key_file", None)
+    monkeypatch.setattr(settings, "powersync_jwt_public_key", None)
+    monkeypatch.setattr(settings, "powersync_jwt_public_key_file", None)
+    monkeypatch.setattr(settings, "powersync_jwt_audience", None)
+
+    security_module._get_powersync_private_key.cache_clear()
+    security_module._get_powersync_public_key.cache_clear()
+    yield
     security_module._get_powersync_private_key.cache_clear()
     security_module._get_powersync_public_key.cache_clear()
 
@@ -67,6 +92,14 @@ def configured_email_delivery(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str
 
     monkeypatch.setattr(email_service, "send_email", fake_send_email)
     return sent_messages
+
+
+@pytest.fixture
+def unconfigured_email_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = get_settings()
+    monkeypatch.setattr(settings, "email_delivery_enabled", False)
+    monkeypatch.setattr(settings, "smtp_host", None)
+    monkeypatch.setattr(settings, "smtp_from_email", None)
 
 
 async def test_register_user_returns_tokens(client: AsyncClient):
@@ -340,7 +373,10 @@ async def test_google_oauth_does_not_auto_link_existing_email(
     assert parse_qs(urlparse(redirect_location).query)["error"][0] == "account_exists"
 
 
-async def test_google_oauth_start_requires_configuration(client: AsyncClient):
+async def test_google_oauth_start_requires_configuration(
+    client: AsyncClient,
+    unconfigured_google: None,
+):
     """Test Google OAuth start returns a controlled error when not configured."""
     response = await client.get(
         "/v1/auth/oauth/google/start",
@@ -438,6 +474,7 @@ async def test_powersync_jwks_returns_signing_key(
 async def test_powersync_token_requires_signing_configuration(
     client: AsyncClient,
     auth_headers: dict[str, str],
+    unconfigured_powersync: None,
 ):
     """Test PowerSync token minting fails cleanly without signing config."""
     response = await client.post("/v1/auth/powersync-token", headers=auth_headers)
@@ -517,7 +554,10 @@ async def test_resend_verification_sends_email_when_configured(
     assert "Verification token:" in body
 
 
-async def test_forgot_password_returns_configuration_message(client: AsyncClient):
+async def test_forgot_password_returns_configuration_message(
+    client: AsyncClient,
+    unconfigured_email_delivery: None,
+):
     """Test forgot password endpoint without SMTP configuration."""
     register_response = await client.post(
         "/v1/auth/register",

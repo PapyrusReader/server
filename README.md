@@ -13,7 +13,7 @@ uv sync --extra dev
 Run the database:
 
 ```bash
-docker compose up database
+docker compose up -d database mailpit
 ```
 
 Run database migrations:
@@ -28,6 +28,12 @@ Run the server:
 uv run uvicorn papyrus.main:app --reload
 ```
 
+Generate local PowerSync keys for auth testing:
+
+```bash
+./scripts/generate_dev_powersync_keys.sh
+```
+
 ## Development
 
 Run tests:
@@ -35,3 +41,9 @@ Run tests:
 ```bash
 uv run pytest --cov --cov-report html
 ```
+
+## Auth Testing
+
+Local auth testing supports Mailpit for SMTP capture, a dev auth sandbox at `/__dev/auth-sandbox`, and opt-in provider smoke tests.
+
+See [`docs/auth-testing.md`](docs/auth-testing.md) for the exact `.env` values, Google OAuth setup, and end-to-end test workflow.
