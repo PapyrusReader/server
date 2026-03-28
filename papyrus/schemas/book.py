@@ -198,12 +198,7 @@ class BookList(BaseModel):
     pagination: "Pagination"
 
 
-# Imports at bottom to avoid circular imports
 if TYPE_CHECKING:
-    from papyrus.schemas.common import Pagination
-    from papyrus.schemas.shelf import ShelfSummary
-    from papyrus.schemas.tag import Tag
-else:
     from papyrus.schemas.common import Pagination
     from papyrus.schemas.shelf import ShelfSummary
     from papyrus.schemas.tag import Tag
