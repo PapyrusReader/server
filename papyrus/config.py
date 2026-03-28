@@ -65,6 +65,7 @@ class Settings(BaseSettings):
 
         if normalized in truthy:
             return True
+
         if normalized in falsy:
             return False
 

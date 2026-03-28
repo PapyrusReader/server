@@ -43,7 +43,6 @@ async def _create_user_with_password(
     )
     session.add(user)
     await session.flush()
-
     session.add(PasswordCredential(user_id=user.user_id, password_hash=hash_password(password)))
     await session.commit()
     await session.refresh(user)
@@ -90,7 +89,6 @@ async def test_register_user_creates_user_and_session(
 
         session_result = await session.execute(select(AuthSession).where(AuthSession.user_id == result.user.user_id))
         auth_session = session_result.scalar_one()
-
         assert result.user.primary_email == "register@example.com"
         assert result.refresh_token
         assert auth_session.client_type == "web"
@@ -154,7 +152,6 @@ async def test_refresh_tokens_rotates_and_invalidates_previous_token(
             None,
         )
         first_refresh_token = register_result.refresh_token
-
         rotated = await auth_service.refresh_tokens(session, RefreshTokenRequest(refresh_token=first_refresh_token))
         assert rotated.refresh_token != first_refresh_token
 
@@ -178,10 +175,8 @@ async def test_logout_current_session_revokes_session(
         )
         session_result = await session.execute(select(AuthSession).where(AuthSession.user_id == result.user.user_id))
         auth_session = session_result.scalar_one()
-
         await auth_service.logout_current_session(session, result.user.user_id, auth_session.session_id)
         await session.refresh(auth_session)
-
         assert auth_session.revoked_at is not None
 
 
@@ -207,7 +202,6 @@ async def test_logout_all_sessions_revokes_every_session(
 
         user_id = second_login.user.user_id
         await auth_service.logout_all_sessions(session, user_id)
-
         session_result = await session.execute(select(AuthSession).where(AuthSession.user_id == user_id))
         assert all(auth_session.revoked_at is not None for auth_session in session_result.scalars())
 
@@ -236,9 +230,7 @@ async def test_reset_password_revokes_all_sessions(
             )
         )
         await session.commit()
-
         await auth_service.reset_password(session, plain_token, "NewSecureP@ss123")
-
         session_result = await session.execute(select(AuthSession).where(AuthSession.user_id == register_result.user.user_id))
         assert all(auth_session.revoked_at is not None for auth_session in session_result.scalars())
 
@@ -297,7 +289,6 @@ async def test_google_login_reuses_existing_identity(
             select(UserIdentity).where(UserIdentity.provider_subject == "google-subject")
         )
         identity = identity_result.scalar_one()
-
         assert result.user.user_id == user.user_id
         assert identity.email_at_provider == "updated@example.com"
 

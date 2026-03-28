@@ -55,6 +55,7 @@ def _public_callback_url(request: Request, route_name: str) -> str:
 
     route_parts = urlsplit(route_url)
     public_parts = urlsplit(public_base_url.rstrip("/"))
+
     return urlunsplit(
         (
             public_parts.scheme,
@@ -110,6 +111,7 @@ async def google_oauth_start(
         redirect_uri=redirect_uri,
         callback_uri=_public_callback_url(request, "google_oauth_callback"),
     )
+
     return RedirectResponse(url=authorization_url, status_code=status.HTTP_302_FOUND)
 
 
@@ -133,6 +135,7 @@ async def google_oauth_callback(
         state_token=state,
         error=error,
     )
+
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
 
 
@@ -215,6 +218,7 @@ async def start_google_link(
         redirect_uri=request.redirect_uri,
         callback_uri=_public_callback_url(http_request, "google_oauth_callback"),
     )
+
     return AuthorizationUrlResponse(authorization_url=authorization_url)
 
 

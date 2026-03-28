@@ -153,6 +153,7 @@ def create_powersync_token(user_id: str, expires_delta: timedelta | None = None)
 def get_powersync_jwks() -> dict[str, list[dict[str, Any]]]:
     settings = get_settings()
     jwk = RSAAlgorithm.to_jwk(_get_powersync_public_key(), as_dict=True)
+
     jwk.update(
         {
             "kid": settings.powersync_jwt_key_id,

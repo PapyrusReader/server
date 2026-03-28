@@ -25,7 +25,7 @@ uv run alembic upgrade head
 Run the server:
 
 ```bash
-uv run uvicorn papyrus.main:app --reload
+uv run uvicorn papyrus.main:app --reload --port 8080
 ```
 
 Generate local PowerSync keys for auth testing:

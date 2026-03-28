@@ -65,6 +65,7 @@ async def get_current_auth_session(
     result = await db.execute(
         select(AuthSession).options(selectinload(AuthSession.user)).where(AuthSession.session_id == session_uuid)
     )
+
     auth_session = result.scalar_one_or_none()
 
     if auth_session is None or auth_session.user_id != user_uuid:

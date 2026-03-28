@@ -40,7 +40,6 @@ async def test_delete_current_user(client: AsyncClient, auth_headers: dict[str, 
         json={"password": auth_user["password"]},
     )
     assert response.status_code == 204
-
     protected_response = await client.get("/v1/users/me", headers=auth_headers)
     assert protected_response.status_code == 401
 
@@ -79,7 +78,6 @@ async def test_change_password(client: AsyncClient, auth_headers: dict[str, str]
     assert response.status_code == 200
     data = response.json()
     assert "message" in data
-
     protected_response = await client.get("/v1/users/me", headers=auth_headers)
     assert protected_response.status_code == 401
 
@@ -118,7 +116,6 @@ async def test_expired_db_session_is_rejected(
     assert session is not None
     session.expires_at = datetime.now(UTC) - timedelta(minutes=1)
     await db_session.commit()
-
     response = await client.get("/v1/users/me", headers=auth_headers)
     assert response.status_code == 401
 
@@ -134,7 +131,6 @@ async def test_disabled_user_is_rejected_on_protected_route(
     assert user is not None
     user.disabled_at = datetime.now(UTC)
     await db_session.commit()
-
     response = await client.get("/v1/users/me", headers=auth_headers)
     assert response.status_code == 403
 

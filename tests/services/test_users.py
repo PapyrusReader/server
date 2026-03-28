@@ -28,8 +28,8 @@ async def _seed_user_with_session(
     )
     session.add(user)
     await session.flush()
-
     session.add(PasswordCredential(user_id=user.user_id, password_hash=hash_password(password)))
+
     auth_session = AuthSession(
         user_id=user.user_id,
         refresh_token_hash=hash_opaque_token("refresh-token"),
@@ -51,9 +51,7 @@ async def test_change_user_password_revokes_sessions(
     """Test password changes revoke active sessions."""
     async with test_session_maker() as session:
         user, _ = await _seed_user_with_session(session)
-
         await user_service.change_user_password(session, user.user_id, "SecureP@ss123", "NewSecureP@ss123")
-
         session_result = await session.execute(select(AuthSession).where(AuthSession.user_id == user.user_id))
         assert all(auth_session.revoked_at is not None for auth_session in session_result.scalars())
 
@@ -75,11 +73,8 @@ async def test_delete_user_account_disables_user_and_revokes_sessions(
     """Test account deletion disables the user and revokes sessions."""
     async with test_session_maker() as session:
         user, _ = await _seed_user_with_session(session)
-
         await user_service.delete_user_account(session, user.user_id, "SecureP@ss123")
-
         await session.refresh(user)
         assert user.disabled_at is not None
-
         session_result = await session.execute(select(AuthSession).where(AuthSession.user_id == user.user_id))
         assert all(auth_session.revoked_at is not None for auth_session in session_result.scalars())

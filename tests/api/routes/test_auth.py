@@ -54,7 +54,6 @@ def configured_powersync(monkeypatch: pytest.MonkeyPatch) -> bytes:
     monkeypatch.setattr(settings, "powersync_jwt_public_key", public_pem.decode("utf-8"))
     monkeypatch.setattr(settings, "powersync_jwt_public_key_file", None)
     monkeypatch.setattr(settings, "powersync_jwt_audience", "https://powersync.example.test")
-
     security_module._get_powersync_private_key.cache_clear()
     security_module._get_powersync_public_key.cache_clear()
     yield public_pem
@@ -70,7 +69,6 @@ def unconfigured_powersync(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "powersync_jwt_public_key", None)
     monkeypatch.setattr(settings, "powersync_jwt_public_key_file", None)
     monkeypatch.setattr(settings, "powersync_jwt_audience", None)
-
     security_module._get_powersync_private_key.cache_clear()
     security_module._get_powersync_public_key.cache_clear()
     yield
@@ -84,7 +82,6 @@ def configured_email_delivery(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str
     monkeypatch.setattr(settings, "email_delivery_enabled", True)
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.test")
     monkeypatch.setattr(settings, "smtp_from_email", "noreply@example.test")
-
     sent_messages: list[tuple[str, str, str]] = []
 
     def fake_send_email(recipient: str, subject: str, body: str) -> None:
@@ -130,7 +127,6 @@ async def test_register_duplicate_email_returns_conflict(client: AsyncClient):
     }
     first_response = await client.post("/v1/auth/register", json=payload)
     assert first_response.status_code == 201
-
     second_response = await client.post("/v1/auth/register", json=payload)
     assert second_response.status_code == 409
 
@@ -197,12 +193,10 @@ async def test_refresh_token_rotates_and_invalidates_previous_token(client: Asyn
     )
     assert register_response.status_code == 201
     refresh_token = register_response.json()["refresh_token"]
-
     refresh_response = await client.post("/v1/auth/refresh", json={"refresh_token": refresh_token})
     assert refresh_response.status_code == 200
     rotated_refresh_token = refresh_response.json()["refresh_token"]
     assert rotated_refresh_token != refresh_token
-
     invalidated_response = await client.post("/v1/auth/refresh", json={"refresh_token": refresh_token})
     assert invalidated_response.status_code == 401
 
@@ -226,7 +220,6 @@ async def test_logout_current_session_revokes_refresh_token(client: AsyncClient)
         json={"all_devices": False},
     )
     assert logout_response.status_code == 204
-
     refresh_response = await client.post("/v1/auth/refresh", json={"refresh_token": auth_payload["refresh_token"]})
     assert refresh_response.status_code == 401
 
@@ -262,7 +255,6 @@ async def test_logout_all_revokes_other_sessions(client: AsyncClient):
         headers={"Authorization": f"Bearer {first_auth['access_token']}"},
     )
     assert logout_all_response.status_code == 204
-
     first_refresh_response = await client.post("/v1/auth/refresh", json={"refresh_token": first_auth["refresh_token"]})
     second_refresh_response = await client.post(
         "/v1/auth/refresh", json={"refresh_token": second_auth["refresh_token"]}
@@ -487,7 +479,6 @@ async def test_verify_email(client: AsyncClient, db_session: AsyncSession):
     user = User(display_name="Needs Verification", primary_email="verify@example.com")
     db_session.add(user)
     await db_session.flush()
-
     plain_token = generate_opaque_token()
     db_session.add(
         EmailActionToken(
@@ -498,7 +489,6 @@ async def test_verify_email(client: AsyncClient, db_session: AsyncSession):
         )
     )
     await db_session.commit()
-
     response = await client.post("/v1/auth/verify-email", json={"token": plain_token})
     assert response.status_code == 200
     assert response.json()["message"] == "Email verified successfully"
@@ -509,7 +499,6 @@ async def test_verify_email_rejects_expired_token(client: AsyncClient, db_sessio
     user = User(display_name="Needs Verification", primary_email="verify@example.com")
     db_session.add(user)
     await db_session.flush()
-
     plain_token = generate_opaque_token()
     db_session.add(
         EmailActionToken(
@@ -520,7 +509,6 @@ async def test_verify_email_rejects_expired_token(client: AsyncClient, db_sessio
         )
     )
     await db_session.commit()
-
     response = await client.post("/v1/auth/verify-email", json={"token": plain_token})
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
@@ -619,7 +607,6 @@ async def test_forgot_password_send_failure_returns_service_unavailable(
         },
     )
     assert register_response.status_code == 201
-
     settings = get_settings()
     monkeypatch.setattr(settings, "email_delivery_enabled", True)
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.test")
@@ -643,7 +630,6 @@ async def test_reset_password(client: AsyncClient, db_session: AsyncSession):
     user = User(display_name="Resettable User", primary_email="reset@example.com")
     db_session.add(user)
     await db_session.flush()
-
     plain_token = generate_opaque_token()
     db_session.add(
         EmailActionToken(
@@ -692,7 +678,6 @@ async def test_reset_password_revokes_existing_access_token(
         },
     )
     assert response.status_code == 200
-
     protected_response = await client.get("/v1/users/me", headers=auth_headers)
     assert protected_response.status_code == 401
 
@@ -702,7 +687,6 @@ async def test_reset_password_rejects_expired_token(client: AsyncClient, db_sess
     user = User(display_name="Resettable User", primary_email="reset@example.com")
     db_session.add(user)
     await db_session.flush()
-
     plain_token = generate_opaque_token()
     db_session.add(
         EmailActionToken(
@@ -730,7 +714,6 @@ async def test_exchange_code_rejects_expired_code(client: AsyncClient, db_sessio
     user = User(display_name="OAuth User", primary_email="oauth@example.com")
     db_session.add(user)
     await db_session.flush()
-
     plain_code = generate_opaque_token()
     db_session.add(
         AuthExchangeCode(
@@ -757,7 +740,6 @@ async def test_exchange_code_rejects_reused_code(client: AsyncClient, db_session
     user = User(display_name="OAuth User", primary_email="oauth@example.com")
     db_session.add(user)
     await db_session.flush()
-
     plain_code = generate_opaque_token()
     db_session.add(
         AuthExchangeCode(

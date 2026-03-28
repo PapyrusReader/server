@@ -58,7 +58,6 @@ async def update_user_profile(session: AsyncSession, user_id: UUID, request: Upd
 
 async def delete_user_account(session: AsyncSession, user_id: UUID, password: str) -> None:
     user = await _get_active_user(session, user_id)
-
     credential = await session.get(PasswordCredential, user_id)
 
     if credential is not None and not verify_password(password, credential.password_hash):

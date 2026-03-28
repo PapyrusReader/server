@@ -44,14 +44,12 @@ def test_create_powersync_token_supports_file_based_keys(
     """PowerSync tokens can be signed from key files instead of inline PEM env vars."""
     private_key_path, public_key_path = powersync_key_files
     settings = get_settings()
-
     monkeypatch.setattr(settings, "powersync_jwt_private_key", None)
     monkeypatch.setattr(settings, "powersync_jwt_public_key", None)
     monkeypatch.setattr(settings, "powersync_jwt_private_key_file", str(private_key_path))
     monkeypatch.setattr(settings, "powersync_jwt_public_key_file", str(public_key_path))
     monkeypatch.setattr(settings, "powersync_jwt_audience", "powersync-dev")
     monkeypatch.setattr(settings, "powersync_jwt_key_id", "papyrus-powersync-dev")
-
     security_module._get_powersync_private_key.cache_clear()
     security_module._get_powersync_public_key.cache_clear()
 

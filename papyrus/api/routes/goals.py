@@ -21,6 +21,7 @@ router = APIRouter()
 def _example_goal(goal_id: UUID | None = None) -> Goal:
     """Create an example goal for responses."""
     today = date.today()
+
     return Goal(
         goal_id=goal_id or uuid4(),
         title="Read 12 books this year",

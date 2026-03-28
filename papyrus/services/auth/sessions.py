@@ -48,6 +48,7 @@ async def register_user(
         primary_email=normalized_email,
         primary_email_verified=False,
     )
+
     session.add(user)
     await session.flush()
 
@@ -65,6 +66,7 @@ async def register_user(
         device_label=request.device_label,
         user_agent=user_agent,
     )
+
     await session.commit()
     await session.refresh(user)
     return result
@@ -80,6 +82,7 @@ async def login_user(
         .options(selectinload(User.password_credential))
         .where(User.primary_email == _normalize_email(request.email))
     )
+
     user = result.scalar_one_or_none()
 
     if user is None or user.password_credential is None:
@@ -98,6 +101,7 @@ async def login_user(
         device_label=request.device_label,
         user_agent=user_agent,
     )
+
     await session.commit()
     await session.refresh(user)
     return auth_result
@@ -112,6 +116,7 @@ async def refresh_tokens(
         .options(selectinload(AuthSession.user))
         .where(AuthSession.refresh_token_hash == hash_opaque_token(request.refresh_token))
     )
+
     auth_session = result.scalar_one_or_none()
 
     if auth_session is None or auth_session.revoked_at is not None or auth_session.expires_at <= _now():
@@ -128,10 +133,10 @@ async def refresh_tokens(
     auth_session.last_seen_at = _now()
     user.last_login_at = _now()
     await session.flush()
-
     access_token = create_access_token({"sub": str(user.user_id), "sid": str(auth_session.session_id)})
     await session.commit()
     await session.refresh(user)
+
     return AuthResult(
         access_token=access_token,
         refresh_token=new_refresh_token,
@@ -169,6 +174,7 @@ async def exchange_login_code(
         raise UnauthorizedError("Exchange code is missing a user")
 
     user = await _get_active_user(session, exchange_code.user_id)
+
     auth_result = await _create_session_for_user(
         session,
         user,
@@ -176,6 +182,7 @@ async def exchange_login_code(
         device_label=request.device_label,
         user_agent=user_agent,
     )
+
     await session.commit()
     await session.refresh(user)
     return auth_result

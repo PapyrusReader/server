@@ -19,7 +19,14 @@
 - Reuse or extend existing schema modules before creating new top-level packages.
 - Follow existing async patterns with `AsyncSession`, explicit return types, and Pydantic schemas.
 - Use vertical spacing to separate logical steps inside functions. Keep related statements together, but add a blank line when moving between setup, validation, branching, and side effects.
-- Prefer readable spacing over dense blocks. Short guard clauses, temporary assignments, and context-manager branches should usually be visually separated the way `papyrus/services/email.py` is structured.
+- Prefer readable spacing over dense blocks. Short guard clauses, temporary assignments, and context-manager branches should usually be visually separated the way `papyrus/services/email.py` and `papyrus/services/auth/` are structured.
+- Treat any multiline statement or block as a visual boundary inside a function. If one adjacent statement is multiline and both sides are real code, separate the two statements with a blank line.
+- Apply that rule to multiline conditionals, loops, `with` blocks, `try` blocks, multiline calls, multiline literals, and multiline return values. Treat `if` / `elif` / `else` as one block.
+- Do not add a blank line just because a docstring appears above the first statement in a function. The multiline-block rule applies between code statements, not between a docstring and the first line of code.
+- Add a blank line between query execution and result extraction, especially around `session.execute(...)` and subsequent `scalar*()` reads.
+- Add a blank line before persistence and side-effect boundaries such as `session.add(...)`, `send_email(...)`, `commit()`, redirects, and returned result objects when they start a new phase of the function.
+- Keep tightly coupled short sequences together when they are clearly one step. Do not add spacing mechanically when it makes a two-line operation harder to read.
+- Prefer extra spacing around state transitions and persistence boundaries rather than packing setup, branching, and writes into a single block.
 - When adding a new router module, register it in `papyrus/api/routes/__init__.py`.
 - Avoid adding dependencies unless the user explicitly asks for them.
 - Keep changes scoped. Do not refactor unrelated areas as part of a focused fix.

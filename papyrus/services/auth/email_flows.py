@@ -39,11 +39,13 @@ async def resend_verification_email(session: AsyncSession, email: str) -> str:
         EMAIL_VERIFICATION_ACTION,
         get_settings().email_verification_token_expire_minutes,
     )
+
     email_service.send_email(
         normalized_email,
         "Verify your Papyrus email address",
         _verification_email_body(token),
     )
+
     await session.commit()
     return "If the email is registered, a verification link has been sent"
 
@@ -51,7 +53,6 @@ async def resend_verification_email(session: AsyncSession, email: str) -> str:
 async def verify_email_token(session: AsyncSession, token: str) -> str:
     email_token = await _consume_email_action_token(session, token, EMAIL_VERIFICATION_ACTION)
     user = await _get_active_user(session, email_token.user_id)
-
     user.primary_email_verified = True
     await session.commit()
     return "Email verified successfully"
@@ -73,11 +74,13 @@ async def begin_password_reset(session: AsyncSession, email: str) -> str:
         PASSWORD_RESET_ACTION,
         get_settings().password_reset_token_expire_minutes,
     )
+
     email_service.send_email(
         normalized_email,
         "Reset your Papyrus password",
         _password_reset_email_body(token),
     )
+
     await session.commit()
     return "If the email is registered, a reset link has been sent"
 
@@ -89,6 +92,7 @@ async def reset_password(session: AsyncSession, token: str, new_password: str) -
     credential_result = await session.execute(
         select(PasswordCredential).where(PasswordCredential.user_id == user.user_id)
     )
+
     credential = credential_result.scalar_one_or_none()
 
     if credential is None:

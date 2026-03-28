@@ -35,10 +35,8 @@ async def test_smtp_password_reset_smoke(
 
     async with test_session_maker() as session:
         from papyrus.models import User
-
         session.add(User(display_name="SMTP Smoke", primary_email=recipient, primary_email_verified=True))
         await session.commit()
-
         message = await auth_service.begin_password_reset(session, recipient)
         assert message == "If the email is registered, a reset link has been sent"
 
@@ -99,20 +97,17 @@ async def test_google_oauth_smoke(
             json={"refresh_token": refresh_token},
         )
         assert refresh_response.status_code == 200, refresh_response.text
-
         refresh_body = refresh_response.json()
         assert refresh_body["access_token"]
         assert refresh_body["refresh_token"]
         assert refresh_body["refresh_token"] != refresh_token
         print(f"AUTH_SMOKE_ROTATED_REFRESH_TOKEN={refresh_body['refresh_token']}")
-
         current_access_token = refresh_body["access_token"]
         me_response = await client.get(
             me_url,
             headers={"Authorization": f"Bearer {current_access_token}"},
         )
         assert me_response.status_code == 200, me_response.text
-
         me_body = me_response.json()
         assert me_body["user_id"]
         assert me_body["email"]

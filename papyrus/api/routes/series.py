@@ -77,6 +77,7 @@ async def get_series(
 ) -> SeriesWithBooks:
     """Return detailed information about a series with its books."""
     base = _example_series(series_id)
+
     return SeriesWithBooks(
         series_id=base.series_id,
         name=base.name,

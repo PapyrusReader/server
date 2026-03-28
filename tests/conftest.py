@@ -223,6 +223,7 @@ async def auth_user(
             primary_email_verified=True,
             last_login_at=datetime.now(UTC),
         )
+
         session.add(user)
         session.add(PasswordCredential(user_id=user_uuid, password_hash=hash_password("current_password")))
         await session.flush()
@@ -237,7 +238,6 @@ async def auth_user(
         )
         session.add(auth_session)
         await session.commit()
-
         access_token = create_access_token({"sub": str(user_uuid), "sid": str(auth_session.session_id)})
 
     return {

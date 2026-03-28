@@ -68,11 +68,12 @@ async def _create_session_for_user(
         expires_at=_now() + timedelta(days=get_settings().refresh_token_expire_days),
         last_seen_at=_now(),
     )
+
     session.add(auth_session)
     user.last_login_at = _now()
     await session.flush()
-
     access_token = create_access_token({"sub": str(user.user_id), "sid": str(auth_session.session_id)})
+
     return AuthResult(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -102,6 +103,7 @@ async def _revoke_user_sessions(session: AsyncSession, user_id: UUID) -> None:
     result = await session.execute(
         select(AuthSession).where(AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None))
     )
+
     for auth_session in result.scalars():
         auth_session.revoked_at = _now()
 
@@ -120,6 +122,7 @@ async def _create_exchange_code(
     avatar_url: str | None = None,
 ) -> str:
     plain_code = generate_opaque_token()
+
     session.add(
         AuthExchangeCode(
             code_hash=hash_opaque_token(plain_code),
@@ -135,6 +138,7 @@ async def _create_exchange_code(
             expires_at=_now() + timedelta(minutes=get_settings().auth_exchange_code_expire_minutes),
         )
     )
+
     await session.flush()
     return plain_code
 
@@ -164,6 +168,7 @@ async def _issue_email_action_token(
     expires_minutes: int,
 ) -> str:
     plain_token = generate_opaque_token()
+
     session.add(
         EmailActionToken(
             user_id=user_id,
@@ -172,6 +177,7 @@ async def _issue_email_action_token(
             expires_at=_now() + timedelta(minutes=expires_minutes),
         )
     )
+
     await session.flush()
     return plain_token
 
@@ -206,6 +212,7 @@ def _default_display_name(identity: GoogleIdentity | None = None, email: str | N
 
 def _build_api_url(path: str) -> str | None:
     public_base_url = get_settings().public_base_url
+
     if public_base_url is None:
         return None
 
@@ -223,10 +230,12 @@ def _verification_email_body(token: str) -> str:
     ]
 
     if verify_url is not None:
-        lines.extend([
-            "",
-            f"Submit this token to: {verify_url}",
-        ])
+        lines.extend(
+            [
+                "",
+                f"Submit this token to: {verify_url}",
+            ]
+        )
 
     return "\n".join(lines)
 
@@ -240,9 +249,11 @@ def _password_reset_email_body(token: str) -> str:
     ]
 
     if reset_url is not None:
-        lines.extend([
-            "",
-            f"Submit this token and your new password to: {reset_url}",
-        ])
+        lines.extend(
+            [
+                "",
+                f"Submit this token and your new password to: {reset_url}",
+            ]
+        )
 
     return "\n".join(lines)

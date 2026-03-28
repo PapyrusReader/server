@@ -8,7 +8,6 @@ async def test_index_lists_available_pages(prod_client: AsyncClient):
     response = await prod_client.get("/")
     assert response.status_code == 200
     data = response.json()
-
     pages = {page["name"]: page["path"] for page in data["pages"]}
     assert data["name"] == "Papyrus Server API"
     assert pages["docs"] == "/docs"
@@ -22,7 +21,6 @@ async def test_index_lists_debug_pages(debug_client: AsyncClient):
     response = await debug_client.get("/")
     assert response.status_code == 200
     data = response.json()
-
     pages = {page["name"]: page["path"] for page in data["pages"]}
     assert pages["auth_sandbox"] == "/__dev/auth-sandbox"
 

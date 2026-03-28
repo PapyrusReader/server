@@ -19,7 +19,6 @@ def test_auth_models_are_registered_with_metadata() -> None:
     sessions_table = Base.metadata.tables["auth_sessions"]
     exchange_codes_table = Base.metadata.tables["auth_exchange_codes"]
     email_tokens_table = Base.metadata.tables["email_action_tokens"]
-
     assert users_table is User.__table__
     assert identities_table is UserIdentity.__table__
     assert password_credentials_table is PasswordCredential.__table__

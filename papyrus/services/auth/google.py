@@ -41,34 +41,33 @@ class GoogleOAuthClient:
 
     def build_authorization_url(self, callback_uri: str, state: str) -> str:
         settings = get_settings()
+
         if settings.google_oauth_client_id is None:
             raise ValidationError("Google OAuth is not configured")
 
-        query = urlencode(
-            {
-                "client_id": settings.google_oauth_client_id,
-                "redirect_uri": callback_uri,
-                "response_type": "code",
-                "scope": "openid email profile",
-                "state": state,
-            }
-        )
+        query = urlencode({
+            "client_id": settings.google_oauth_client_id,
+            "redirect_uri": callback_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state,
+        })
+
         return f"{GOOGLE_AUTHORIZATION_URL}?{query}"
 
     def exchange_code_for_identity(self, code: str, callback_uri: str) -> GoogleIdentity:
         settings = get_settings()
+
         if settings.google_oauth_client_id is None or settings.google_oauth_client_secret is None:
             raise ValidationError("Google OAuth is not configured")
 
-        payload = urlencode(
-            {
-                "code": code,
-                "client_id": settings.google_oauth_client_id,
-                "client_secret": settings.google_oauth_client_secret,
-                "redirect_uri": callback_uri,
-                "grant_type": "authorization_code",
-            }
-        ).encode("utf-8")
+        payload = urlencode({
+            "code": code,
+            "client_id": settings.google_oauth_client_id,
+            "client_secret": settings.google_oauth_client_secret,
+            "redirect_uri": callback_uri,
+            "grant_type": "authorization_code",
+        }).encode("utf-8")
 
         request = Request(
             GOOGLE_TOKEN_URL,
@@ -84,10 +83,12 @@ class GoogleOAuthClient:
             raise ValidationError("Google OAuth exchange failed") from exc
 
         id_token = token_payload.get("id_token")
+
         if not isinstance(id_token, str):
             raise ValidationError("Google OAuth response did not include an ID token")
 
         signing_key = self._jwk_client.get_signing_key_from_jwt(id_token)
+
         claims = jwt.decode(
             id_token,
             signing_key.key,
@@ -97,6 +98,7 @@ class GoogleOAuthClient:
         )
 
         email = claims.get("email")
+
         return GoogleIdentity(
             subject=str(claims["sub"]),
             email=_normalize_email(email) if isinstance(email, str) else None,
@@ -111,8 +113,10 @@ google_oauth_client = GoogleOAuthClient()
 
 def _build_google_state(redirect_uri: str, mode: str, user_id: UUID | None = None) -> str:
     payload: dict[str, str] = {"redirect_uri": redirect_uri, "mode": mode}
+
     if user_id is not None:
         payload["user_id"] = str(user_id)
+
     return create_state_token(payload)
 
 
@@ -137,6 +141,7 @@ async def _resolve_google_login_user(session: AsyncSession, identity: GoogleIden
             UserIdentity.provider_subject == identity.subject,
         )
     )
+
     existing_identity = identity_result.scalar_one_or_none()
 
     if existing_identity is not None:
@@ -150,6 +155,7 @@ async def _resolve_google_login_user(session: AsyncSession, identity: GoogleIden
 
     if identity.email is not None:
         existing_user = await _get_user_by_email(session, identity.email)
+
         if existing_user is not None:
             return None, "account_exists"
 
@@ -160,6 +166,7 @@ async def _resolve_google_login_user(session: AsyncSession, identity: GoogleIden
         primary_email_verified=identity.email_verified,
         last_login_at=_now(),
     )
+
     session.add(user)
     await session.flush()
 
@@ -173,6 +180,7 @@ async def _resolve_google_login_user(session: AsyncSession, identity: GoogleIden
             last_used_at=_now(),
         )
     )
+
     await session.flush()
     return user, None
 
@@ -203,6 +211,7 @@ async def handle_google_callback(
 
     if mode == "login":
         user, callback_error = await _resolve_google_login_user(session, identity)
+
         if callback_error is not None or user is None:
             await session.rollback()
             return _build_redirect_uri(redirect_uri, {"error": callback_error or "oauth_failed"})
@@ -213,11 +222,13 @@ async def handle_google_callback(
             redirect_uri=redirect_uri,
             user_id=user.user_id,
         )
+
         await session.commit()
         return _build_redirect_uri(redirect_uri, {"code": exchange_code})
 
     if mode == "link":
         raw_user_id = state.get("user_id")
+
         if raw_user_id is None:
             raise ValidationError("OAuth state is missing link context")
 
@@ -233,6 +244,7 @@ async def handle_google_callback(
             display_name=identity.display_name,
             avatar_url=identity.avatar_url,
         )
+
         await session.commit()
         return _build_redirect_uri(redirect_uri, {"code": exchange_code})
 
@@ -241,7 +253,6 @@ async def handle_google_callback(
 
 async def complete_google_link(session: AsyncSession, user_id: UUID, code: str) -> User:
     from papyrus.services.auth._core import _consume_exchange_code
-
     exchange_code = await _consume_exchange_code(session, code, purpose="link_google")
 
     if exchange_code.user_id != user_id:
@@ -258,6 +269,7 @@ async def complete_google_link(session: AsyncSession, user_id: UUID, code: str) 
             UserIdentity.provider_subject == exchange_code.provider_subject,
         )
     )
+
     existing_identity = identity_result.scalar_one_or_none()
 
     if existing_identity is not None:
