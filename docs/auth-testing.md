@@ -120,6 +120,8 @@ Set the resulting values in `.env`:
 GOOGLE_OAUTH_CLIENT_ID=...
 GOOGLE_OAUTH_CLIENT_SECRET=...
 PUBLIC_BASE_URL=http://localhost:8080
+OAUTH_ALLOWED_REDIRECT_SCHEMES=["papyrus"]
+OAUTH_ALLOWED_REDIRECT_HOSTS=["localhost","127.0.0.1"]
 ```
 
 For mobile-device testing or any device where the browser cannot reach your workstation as `localhost`, use a public HTTPS base URL and set `PUBLIC_BASE_URL` to that exact value.

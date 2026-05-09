@@ -9,6 +9,8 @@ This repo includes a debug-only PowerSync sandbox that validates the full local 
 - replication back into another browser client
 
 The sandbox uses a dedicated demo table, not the real books domain.
+The production sync configuration now also includes the first Flutter app tables:
+`books`, `annotations`, and `reading_sessions`.
 
 ## What Gets Created
 
@@ -149,5 +151,6 @@ docker compose down -v
 
 - The source database table is managed with Alembic.
 - The PowerSync publication and replication role are not managed with Alembic; they are initialized by [`scripts/setup_local_powersync.sh`](../scripts/setup_local_powersync.sh).
+- Re-run `scripts/setup_local_powersync.sh` after applying migrations so the replication role and publication include the production sync tables.
 - The sandbox is debug-only and should not be exposed in production mode.
 - If you prefer built assets over the Vite dev server, run `npm --prefix frontend/dev-pages run build` and set `DEV_PAGES_USE_VITE=false`.

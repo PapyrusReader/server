@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 from uuid import UUID
 
@@ -45,13 +45,15 @@ class GoogleOAuthClient:
         if settings.google_oauth_client_id is None:
             raise ValidationError("Google OAuth is not configured")
 
-        query = urlencode({
-            "client_id": settings.google_oauth_client_id,
-            "redirect_uri": callback_uri,
-            "response_type": "code",
-            "scope": "openid email profile",
-            "state": state,
-        })
+        query = urlencode(
+            {
+                "client_id": settings.google_oauth_client_id,
+                "redirect_uri": callback_uri,
+                "response_type": "code",
+                "scope": "openid email profile",
+                "state": state,
+            }
+        )
 
         return f"{GOOGLE_AUTHORIZATION_URL}?{query}"
 
@@ -61,13 +63,15 @@ class GoogleOAuthClient:
         if settings.google_oauth_client_id is None or settings.google_oauth_client_secret is None:
             raise ValidationError("Google OAuth is not configured")
 
-        payload = urlencode({
-            "code": code,
-            "client_id": settings.google_oauth_client_id,
-            "client_secret": settings.google_oauth_client_secret,
-            "redirect_uri": callback_uri,
-            "grant_type": "authorization_code",
-        }).encode("utf-8")
+        payload = urlencode(
+            {
+                "code": code,
+                "client_id": settings.google_oauth_client_id,
+                "client_secret": settings.google_oauth_client_secret,
+                "redirect_uri": callback_uri,
+                "grant_type": "authorization_code",
+            }
+        ).encode("utf-8")
 
         request = Request(
             GOOGLE_TOKEN_URL,
@@ -111,6 +115,48 @@ class GoogleOAuthClient:
 google_oauth_client = GoogleOAuthClient()
 
 
+def _public_base_host() -> str | None:
+    public_base_url = get_settings().public_base_url
+
+    if public_base_url is None:
+        return None
+
+    return urlsplit(public_base_url).hostname
+
+
+def _is_allowed_oauth_redirect_uri(redirect_uri: str) -> bool:
+    settings = get_settings()
+    parsed = urlsplit(redirect_uri)
+    scheme = parsed.scheme.lower()
+
+    if scheme in settings.oauth_allowed_redirect_schemes:
+        return True
+
+    if scheme not in {"http", "https"}:
+        return False
+
+    hostname = parsed.hostname.lower() if parsed.hostname is not None else None
+
+    if hostname is None:
+        return False
+
+    allowed_hosts = set(settings.oauth_allowed_redirect_hosts)
+    public_base_host = _public_base_host()
+
+    if public_base_host is not None:
+        allowed_hosts.add(public_base_host.lower())
+
+    if settings.debug:
+        allowed_hosts.update({"localhost", "127.0.0.1", "test"})
+
+    return hostname in allowed_hosts
+
+
+def _validate_oauth_redirect_uri(redirect_uri: str) -> None:
+    if not _is_allowed_oauth_redirect_uri(redirect_uri):
+        raise ValidationError("OAuth redirect URI is not allowed")
+
+
 def _build_google_state(redirect_uri: str, mode: str, user_id: UUID | None = None) -> str:
     payload: dict[str, str] = {"redirect_uri": redirect_uri, "mode": mode}
 
@@ -121,11 +167,14 @@ def _build_google_state(redirect_uri: str, mode: str, user_id: UUID | None = Non
 
 
 def build_google_login_authorization_url(redirect_uri: str, callback_uri: str) -> str:
+    _validate_oauth_redirect_uri(redirect_uri)
     state = _build_google_state(redirect_uri, mode="login")
     return google_oauth_client.build_authorization_url(callback_uri, state)
 
 
 async def build_google_link_authorization_url(user_id: UUID, redirect_uri: str, callback_uri: str) -> str:
+    _validate_oauth_redirect_uri(redirect_uri)
+
     return google_oauth_client.build_authorization_url(
         callback_uri,
         _build_google_state(redirect_uri, mode="link", user_id=user_id),
@@ -253,6 +302,7 @@ async def handle_google_callback(
 
 async def complete_google_link(session: AsyncSession, user_id: UUID, code: str) -> User:
     from papyrus.services.auth._core import _consume_exchange_code
+
     exchange_code = await _consume_exchange_code(session, code, purpose="link_google")
 
     if exchange_code.user_id != user_id:

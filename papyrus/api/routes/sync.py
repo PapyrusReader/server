@@ -1,14 +1,19 @@
 """Sync routes."""
 
 from datetime import UTC, datetime
+from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Depends, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.api.deps import CurrentUserId
+from papyrus.core.database import get_db
 from papyrus.schemas.sync import (
     CreateMetadataServerConfigRequest,
     MetadataServerConfig,
+    PowerSyncUploadRequest,
+    PowerSyncUploadResponse,
     ServerType,
     SyncAccepted,
     SyncChanges,
@@ -18,8 +23,10 @@ from papyrus.schemas.sync import (
     SyncStatus,
     SyncStatusEnum,
 )
+from papyrus.services import sync as sync_service
 
 router = APIRouter()
+DBSession = Annotated[AsyncSession, Depends(get_db)]
 
 
 @router.get(
@@ -79,6 +86,21 @@ async def push_changes(
         rejected=[],
         server_timestamp=datetime.now(UTC),
     )
+
+
+@router.post(
+    "/powersync-upload",
+    response_model=PowerSyncUploadResponse,
+    summary="Upload PowerSync client-side mutations",
+)
+async def upload_powersync_changes(
+    user_id: CurrentUserId,
+    request: PowerSyncUploadRequest,
+    db: DBSession,
+) -> PowerSyncUploadResponse:
+    """Apply a PowerSync upload queue batch to production source tables."""
+    applied_count = await sync_service.apply_powersync_upload_batch(db, user_id, request.batch)
+    return PowerSyncUploadResponse(applied_count=applied_count)
 
 
 @router.get(

@@ -51,6 +51,7 @@ The Flutter app should integrate with these server endpoints:
 - `POST /v1/auth/link/google/start`
 - `POST /v1/auth/link/google/complete`
 - `POST /v1/auth/powersync-token`
+- `POST /v1/sync/powersync-upload`
 - `GET /v1/users/me`
 
 Related endpoints that are usually needed in a real client flow:
@@ -378,7 +379,7 @@ Flow:
 }
 ```
 
-3. Papyrus returns:
+1. Papyrus returns:
 
 ```json
 {
@@ -386,9 +387,9 @@ Flow:
 }
 ```
 
-4. App opens `authorization_url` in the browser.
-5. After browser completion, Papyrus redirects back to the app with a one-time Papyrus `code`.
-6. App calls `POST /v1/auth/link/google/complete` with that code.
+1. App opens `authorization_url` in the browser.
+2. After browser completion, Papyrus redirects back to the app with a one-time Papyrus `code`.
+3. App calls `POST /v1/auth/link/google/complete` with that code.
 
 ```json
 {
@@ -422,6 +423,15 @@ Recommended client behavior:
 - request a fresh PowerSync token on PowerSync startup
 - refresh it when PowerSync needs new credentials
 - keep PowerSync token handling separate from the main Papyrus refresh-token flow
+- send `database.getNextCrudTransaction()` batches to `POST /v1/sync/powersync-upload`
+
+The first production PowerSync tables are:
+
+- `books`
+- `annotations`
+- `reading_sessions`
+
+The upload endpoint accepts PowerSync CRUD mutations for those tables and applies owner checks server-side. The client should still populate `owner_user_id` in the local rows for query convenience, but the backend ignores client-supplied ownership for authorization and uses the authenticated Papyrus user.
 
 ## Failure Handling
 

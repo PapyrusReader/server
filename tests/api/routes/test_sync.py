@@ -1,9 +1,12 @@
 """Tests for sync endpoints."""
 
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from papyrus.models import SyncBook, User
 
 
 async def test_get_sync_status(client: AsyncClient, auth_headers: dict[str, str]):
@@ -46,6 +49,81 @@ async def test_push_changes(client: AsyncClient, auth_headers: dict[str, str]):
     data = response.json()
     assert "accepted" in data
     assert "rejected" in data
+
+
+async def test_powersync_upload_applies_book_mutation(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    auth_user: dict[str, str],
+    db_session: AsyncSession,
+):
+    """Test production PowerSync upload endpoint applies owned book mutations."""
+    book_id = str(uuid4())
+    response = await client.post(
+        "/v1/sync/powersync-upload",
+        headers=auth_headers,
+        json={
+            "batch": [
+                {
+                    "type": "books",
+                    "op": "PUT",
+                    "id": book_id,
+                    "data": {
+                        "title": "PowerSync Book",
+                        "author": "PowerSync Author",
+                    },
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["applied_count"] == 1
+
+    book = await db_session.get(SyncBook, UUID(book_id))
+    assert book is not None
+    assert book.owner_user_id == UUID(auth_user["user_id"])
+    assert book.title == "PowerSync Book"
+
+
+async def test_powersync_upload_rejects_cross_user_book_mutation(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+):
+    """Test production PowerSync upload endpoint rejects cross-user writes."""
+    other_user = User(
+        display_name="Other User",
+        primary_email="other-sync@example.com",
+        primary_email_verified=True,
+        last_login_at=datetime.now(UTC),
+    )
+    db_session.add(other_user)
+    await db_session.flush()
+    foreign_book = SyncBook(
+        book_id=uuid4(),
+        owner_user_id=other_user.user_id,
+        title="Foreign Book",
+        added_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(foreign_book)
+    await db_session.commit()
+
+    response = await client.post(
+        "/v1/sync/powersync-upload",
+        headers=auth_headers,
+        json={
+            "batch": [
+                {
+                    "type": "books",
+                    "op": "PATCH",
+                    "id": str(foreign_book.book_id),
+                    "data": {"title": "Unauthorized Edit"},
+                }
+            ]
+        },
+    )
+    assert response.status_code == 403
 
 
 async def test_get_sync_conflicts(client: AsyncClient, auth_headers: dict[str, str]):

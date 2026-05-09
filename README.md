@@ -13,7 +13,7 @@ uv sync --extra dev
 Run the database:
 
 ```bash
-docker compose up -d database mailpit powersync-storage powersync
+docker compose up database mailpit powersync-storage powersync
 ```
 
 Run database migrations:

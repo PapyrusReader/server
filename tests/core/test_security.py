@@ -70,3 +70,42 @@ def test_create_powersync_token_supports_file_based_keys(
     assert payload["sub"] == "user-123"
     assert payload["type"] == "powersync"
     assert jwks["keys"][0]["kid"] == "papyrus-powersync-dev"
+
+
+def test_powersync_jwks_includes_previous_public_key_for_rotation(
+    monkeypatch: pytest.MonkeyPatch,
+    powersync_key_files: tuple[Path, Path],
+    tmp_path: Path,
+) -> None:
+    """JWKS exposes current and previous public keys during rotation."""
+    private_key_path, public_key_path = powersync_key_files
+    previous_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    previous_public_key_path = tmp_path / "previous_public.pem"
+    previous_public_key_path.write_bytes(
+        previous_private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "powersync_jwt_private_key", None)
+    monkeypatch.setattr(settings, "powersync_jwt_public_key", None)
+    monkeypatch.setattr(settings, "powersync_jwt_private_key_file", str(private_key_path))
+    monkeypatch.setattr(settings, "powersync_jwt_public_key_file", str(public_key_path))
+    monkeypatch.setattr(settings, "powersync_jwt_key_id", "current-key")
+    monkeypatch.setattr(settings, "powersync_jwt_previous_public_key", None)
+    monkeypatch.setattr(settings, "powersync_jwt_previous_public_key_file", str(previous_public_key_path))
+    monkeypatch.setattr(settings, "powersync_jwt_previous_key_id", "previous-key")
+    security_module._get_powersync_private_key.cache_clear()
+    security_module._get_powersync_public_key.cache_clear()
+    security_module._get_powersync_previous_public_key.cache_clear()
+
+    try:
+        jwks = security_module.get_powersync_jwks()
+    finally:
+        security_module._get_powersync_private_key.cache_clear()
+        security_module._get_powersync_public_key.cache_clear()
+        security_module._get_powersync_previous_public_key.cache_clear()
+
+    assert [key["kid"] for key in jwks["keys"]] == ["current-key", "previous-key"]

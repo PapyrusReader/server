@@ -63,6 +63,33 @@ def _get_powersync_public_key() -> Any:
     return _get_powersync_private_key().public_key()
 
 
+@lru_cache
+def _get_powersync_previous_public_key() -> Any | None:
+    settings = get_settings()
+    public_key_pem = _load_pem_configured_value(
+        settings.powersync_jwt_previous_public_key,
+        settings.powersync_jwt_previous_public_key_path,
+    )
+
+    if public_key_pem is None:
+        return None
+
+    return serialization.load_pem_public_key(public_key_pem.encode("utf-8"))
+
+
+def _public_key_to_jwk(public_key: Any, key_id: str) -> dict[str, Any]:
+    jwk = RSAAlgorithm.to_jwk(public_key, as_dict=True)
+
+    jwk.update(
+        {
+            "kid": key_id,
+            "alg": "RS256",
+            "use": "sig",
+        }
+    )
+    return jwk
+
+
 def _create_signed_token(
     data: dict[str, Any],
     token_type: str,
@@ -152,13 +179,10 @@ def create_powersync_token(user_id: str, expires_delta: timedelta | None = None)
 
 def get_powersync_jwks() -> dict[str, list[dict[str, Any]]]:
     settings = get_settings()
-    jwk = RSAAlgorithm.to_jwk(_get_powersync_public_key(), as_dict=True)
+    keys = [_public_key_to_jwk(_get_powersync_public_key(), settings.powersync_jwt_key_id)]
+    previous_public_key = _get_powersync_previous_public_key()
 
-    jwk.update(
-        {
-            "kid": settings.powersync_jwt_key_id,
-            "alg": "RS256",
-            "use": "sig",
-        }
-    )
-    return {"keys": [jwk]}
+    if previous_public_key is not None and settings.powersync_jwt_previous_key_id is not None:
+        keys.append(_public_key_to_jwk(previous_public_key, settings.powersync_jwt_previous_key_id))
+
+    return {"keys": keys}

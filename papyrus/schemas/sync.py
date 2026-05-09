@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -153,3 +153,28 @@ class SyncStatus(BaseModel):
     last_sync_at: datetime | None = None
     pending_changes: int | None = None
     error_message: str | None = None
+
+
+class PowerSyncCrudMutation(BaseModel):
+    """Single CRUD mutation uploaded from the PowerSync client queue."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    table: Literal["books", "annotations", "reading_sessions"] = Field(alias="type")
+    op: Literal["PUT", "PATCH", "DELETE", "put", "patch", "delete"]
+    id: str
+    op_id: int | None = Field(default=None, alias="op_id")
+    tx_id: int | None = None
+    op_data: dict[str, Any] | None = Field(default=None, alias="data")
+
+
+class PowerSyncUploadRequest(BaseModel):
+    """PowerSync upload queue batch."""
+
+    batch: list[PowerSyncCrudMutation]
+
+
+class PowerSyncUploadResponse(BaseModel):
+    """Summary of an applied PowerSync upload batch."""
+
+    applied_count: int

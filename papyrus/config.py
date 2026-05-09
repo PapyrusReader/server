@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     public_base_url: str | None = None
     google_oauth_client_id: str | None = None
     google_oauth_client_secret: str | None = None
+    oauth_allowed_redirect_schemes: list[str] = ["papyrus"]
+    oauth_allowed_redirect_hosts: list[str] = []
     oauth_state_expire_minutes: int = 10
     auth_exchange_code_expire_minutes: int = 5
     email_verification_token_expire_minutes: int = 1440
@@ -49,6 +51,9 @@ class Settings(BaseSettings):
     powersync_jwt_private_key_file: str | None = None
     powersync_jwt_public_key: str | None = None
     powersync_jwt_public_key_file: str | None = None
+    powersync_jwt_previous_public_key: str | None = None
+    powersync_jwt_previous_public_key_file: str | None = None
+    powersync_jwt_previous_key_id: str | None = None
     powersync_jwt_key_id: str = "papyrus-powersync-v1"
     powersync_jwt_audience: str | None = None
     powersync_token_expire_minutes: int = 5
@@ -100,6 +105,18 @@ class Settings(BaseSettings):
     def normalize_dev_pages_vite_url(cls, value: str) -> str:
         return value.strip().rstrip("/")
 
+    @field_validator("oauth_allowed_redirect_schemes", mode="before")
+    @classmethod
+    def normalize_oauth_allowed_redirect_schemes(cls, value: list[str] | str) -> list[str]:
+        raw_values = value.split(",") if isinstance(value, str) else value
+        return [item.strip().lower() for item in raw_values if item.strip()]
+
+    @field_validator("oauth_allowed_redirect_hosts", mode="before")
+    @classmethod
+    def normalize_oauth_allowed_redirect_hosts(cls, value: list[str] | str) -> list[str]:
+        raw_values = value.split(",") if isinstance(value, str) else value
+        return [item.strip().lower() for item in raw_values if item.strip()]
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def database_url(self) -> str:
@@ -123,6 +140,14 @@ class Settings(BaseSettings):
             return None
 
         return Path(self.powersync_jwt_public_key_file)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def powersync_jwt_previous_public_key_path(self) -> Path | None:
+        if self.powersync_jwt_previous_public_key_file is None:
+            return None
+
+        return Path(self.powersync_jwt_previous_public_key_file)
 
     @computed_field  # type: ignore[prop-decorator]
     @property

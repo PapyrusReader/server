@@ -379,6 +379,37 @@ async def test_google_oauth_start_requires_configuration(
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
+async def test_google_oauth_start_rejects_unallowed_redirect_uri(
+    client: AsyncClient,
+    configured_google: None,
+):
+    """Test Google OAuth cannot redirect exchange codes to arbitrary origins."""
+    response = await client.get(
+        "/v1/auth/oauth/google/start",
+        params={"redirect_uri": "https://evil.example.test/auth/callback"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+async def test_google_oauth_start_allows_configured_web_redirect_host(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    configured_google: None,
+):
+    """Test configured Flutter web callback hosts are allowed."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "oauth_allowed_redirect_hosts", ["app.example.test"])
+
+    response = await client.get(
+        "/v1/auth/oauth/google/start",
+        params={"redirect_uri": "https://app.example.test/auth/callback"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+
 async def test_google_link_flow_links_identity_to_existing_user(
     client: AsyncClient,
     auth_headers: dict[str, str],
