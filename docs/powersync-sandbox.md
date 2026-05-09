@@ -68,8 +68,12 @@ uv run alembic upgrade head
 1. Start the backend on the host:
 
 ```bash
-uv run uvicorn papyrus.main:app --reload --port 8080
+uv run uvicorn papyrus.main:app --reload --host 0.0.0.0 --port 8080
 ```
+
+PowerSync runs in Docker and fetches JWKS from `host.docker.internal:8080`, so
+the backend must listen on all host interfaces. Binding Uvicorn to its default
+`127.0.0.1` causes PowerSync JWT validation to fail with `JWKS request failed`.
 
 1. Start the sandbox asset dev server for live TS/SCSS reload:
 
@@ -143,7 +147,7 @@ docker compose down -v
    - `docker compose up -d database mailpit powersync-storage`
    - `uv run alembic upgrade head`
    - `./scripts/setup_local_powersync.sh`
-   - `uv run uvicorn papyrus.main:app --reload --port 8080`
+   - `uv run uvicorn papyrus.main:app --reload --host 0.0.0.0 --port 8080`
    - `npm --prefix frontend/dev-pages run dev`
    - `docker compose up -d powersync`
 

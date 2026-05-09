@@ -85,6 +85,93 @@ async def test_powersync_upload_applies_book_mutation(
     assert book.title == "PowerSync Book"
 
 
+async def test_powersync_upload_applies_book_patch(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    auth_user: dict[str, str],
+    db_session: AsyncSession,
+):
+    """Test production PowerSync upload endpoint patches owned book mutations."""
+    book = SyncBook(
+        book_id=uuid4(),
+        owner_user_id=UUID(auth_user["user_id"]),
+        title="Original Title",
+        author="Original Author",
+        added_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(book)
+    await db_session.commit()
+    book_id = book.book_id
+
+    response = await client.post(
+        "/v1/sync/powersync-upload",
+        headers=auth_headers,
+        json={
+            "batch": [
+                {
+                    "type": "books",
+                    "op": "PATCH",
+                    "id": str(book.book_id),
+                    "data": {"title": "Patched Title"},
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["applied_count"] == 1
+
+    db_session.expire_all()
+    patched_book = await db_session.get(SyncBook, book_id)
+    assert patched_book is not None
+    assert patched_book.title == "Patched Title"
+    assert patched_book.author == "Original Author"
+
+
+async def test_powersync_upload_applies_book_delete(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    auth_user: dict[str, str],
+    db_session: AsyncSession,
+):
+    """Test production PowerSync upload endpoint deletes owned books."""
+    book = SyncBook(
+        book_id=uuid4(),
+        owner_user_id=UUID(auth_user["user_id"]),
+        title="Delete Me",
+        added_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(book)
+    await db_session.commit()
+    book_id = book.book_id
+
+    response = await client.post(
+        "/v1/sync/powersync-upload",
+        headers=auth_headers,
+        json={"batch": [{"type": "books", "op": "DELETE", "id": str(book.book_id)}]},
+    )
+    assert response.status_code == 200
+    assert response.json()["applied_count"] == 1
+
+    db_session.expire_all()
+    deleted_book = await db_session.get(SyncBook, book_id)
+    assert deleted_book is None
+
+
+async def test_powersync_upload_rejects_unsupported_table(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    """Test production PowerSync upload endpoint rejects unsupported tables."""
+    response = await client.post(
+        "/v1/sync/powersync-upload",
+        headers=auth_headers,
+        json={"batch": [{"type": "shelves", "op": "PUT", "id": str(uuid4()), "data": {"name": "Shelf"}}]},
+    )
+    assert response.status_code == 422
+
+
 async def test_powersync_upload_rejects_cross_user_book_mutation(
     client: AsyncClient,
     auth_headers: dict[str, str],

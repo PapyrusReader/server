@@ -51,7 +51,7 @@ If the API runs inside Docker instead of on the host, set `SMTP_HOST=mailpit` an
 
 ```bash
 uv run alembic upgrade head
-uv run uvicorn papyrus.main:app --reload
+uv run uvicorn papyrus.main:app --reload --host 0.0.0.0 --port 8080
 ```
 
 1. Run the dev-pages asset server for live TypeScript and SCSS reload:

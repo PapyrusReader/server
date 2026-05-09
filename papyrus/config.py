@@ -105,6 +105,41 @@ class Settings(BaseSettings):
     def normalize_dev_pages_vite_url(cls, value: str) -> str:
         return value.strip().rstrip("/")
 
+    @field_validator(
+        "public_base_url",
+        "google_oauth_client_id",
+        "google_oauth_client_secret",
+        "smtp_host",
+        "smtp_username",
+        "smtp_password",
+        "smtp_from_email",
+        "smtp_from_name",
+        "powersync_jwt_private_key",
+        "powersync_jwt_private_key_file",
+        "powersync_jwt_public_key",
+        "powersync_jwt_public_key_file",
+        "powersync_jwt_previous_public_key",
+        "powersync_jwt_previous_public_key_file",
+        "powersync_jwt_previous_key_id",
+        "powersync_jwt_audience",
+        "powersync_jwks_uri",
+        "powersync_source_role",
+        "powersync_source_password",
+        "powersync_storage_db",
+        "powersync_storage_user",
+        "powersync_storage_password",
+        mode="before",
+    )
+    @classmethod
+    def normalize_optional_string(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        if isinstance(value, str) and not value.strip():
+            return None
+
+        return value
+
     @field_validator("oauth_allowed_redirect_schemes", mode="before")
     @classmethod
     def normalize_oauth_allowed_redirect_schemes(cls, value: list[str] | str) -> list[str]:
@@ -128,7 +163,7 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def powersync_jwt_private_key_path(self) -> Path | None:
-        if self.powersync_jwt_private_key_file is None:
+        if self.powersync_jwt_private_key_file is None or not self.powersync_jwt_private_key_file.strip():
             return None
 
         return Path(self.powersync_jwt_private_key_file)
@@ -136,7 +171,7 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def powersync_jwt_public_key_path(self) -> Path | None:
-        if self.powersync_jwt_public_key_file is None:
+        if self.powersync_jwt_public_key_file is None or not self.powersync_jwt_public_key_file.strip():
             return None
 
         return Path(self.powersync_jwt_public_key_file)
@@ -144,7 +179,10 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def powersync_jwt_previous_public_key_path(self) -> Path | None:
-        if self.powersync_jwt_previous_public_key_file is None:
+        if (
+            self.powersync_jwt_previous_public_key_file is None
+            or not self.powersync_jwt_previous_public_key_file.strip()
+        ):
             return None
 
         return Path(self.powersync_jwt_previous_public_key_file)

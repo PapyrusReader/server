@@ -25,8 +25,11 @@ uv run alembic upgrade head
 Run the server:
 
 ```bash
-uv run uvicorn papyrus.main:app --reload --port 8080
+uv run uvicorn papyrus.main:app --reload --host 0.0.0.0 --port 8080
 ```
+
+The `--host 0.0.0.0` flag is required for the Dockerized PowerSync service to
+reach the backend JWKS endpoint through `host.docker.internal`.
 
 Run the dev-pages asset server with live TS/SCSS reload:
 

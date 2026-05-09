@@ -23,7 +23,7 @@ def _normalize_pem(value: str) -> str:
 
 
 def _load_pem_configured_value(value: str | None, file_path: Path | None) -> str | None:
-    if value is not None:
+    if value is not None and value.strip():
         return _normalize_pem(value)
 
     if file_path is None:
