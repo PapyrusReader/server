@@ -1,34 +1,10 @@
-# Authentication Testing Setup
+# Authentication Testing
 
-This repo can now support a full local auth test loop:
+Use this runbook to test Papyrus auth, local email delivery, and Google OAuth.
 
-- email/password login
-- refresh and logout flows
-- verification and password-reset emails
-- PowerSync token minting
-- Google OAuth browser flow after you add Google credentials
+## Setup
 
-For Flutter client integration guidance, see [`flutter-auth-integration.md`](flutter-auth-integration.md).
-
-For the self-hosted PowerSync sync sandbox and two-client validation workflow, see [`powersync-sandbox.md`](powersync-sandbox.md).
-
-## Local Setup
-
-1. Start local dependencies:
-
-```bash
-docker compose up -d database mailpit
-```
-
-1. Generate local PowerSync signing keys:
-
-```bash
-./scripts/generate_dev_powersync_keys.sh
-```
-
-1. Make sure `.env` contains the auth values shown in `.env.example`.
-
-Recommended local values when the API runs on the host with `uvicorn`:
+Create `.env` from `.env.example` and set these values:
 
 ```dotenv
 PUBLIC_BASE_URL=http://localhost:8080
@@ -39,49 +15,46 @@ SMTP_USE_TLS=false
 SMTP_USE_SSL=false
 SMTP_FROM_EMAIL=noreply@papyrus.local
 SMTP_FROM_NAME=Papyrus
+GOOGLE_OAUTH_CLIENT_ID=...
+GOOGLE_OAUTH_CLIENT_SECRET=...
+OAUTH_ALLOWED_REDIRECT_SCHEMES=["papyrus"]
+OAUTH_ALLOWED_REDIRECT_HOSTS=["localhost","127.0.0.1"]
 POWERSYNC_JWT_PRIVATE_KEY_FILE=.local/powersync/private.pem
 POWERSYNC_JWT_PUBLIC_KEY_FILE=.local/powersync/public.pem
 POWERSYNC_JWT_KEY_ID=papyrus-powersync-dev
 POWERSYNC_JWT_AUDIENCE=powersync-dev
 ```
 
-If the API runs inside Docker instead of on the host, set `SMTP_HOST=mailpit` and `POSTGRES_HOST=database`.
-
-1. Apply migrations and run the API:
+Run from `server/`:
 
 ```bash
+uv sync --extra dev
+./scripts/generate_dev_powersync_keys.sh
+docker compose up -d database mailpit
 uv run alembic upgrade head
 uv run uvicorn papyrus.main:app --reload --host 0.0.0.0 --port 8080
-```
-
-1. Run the dev-pages asset server for live TypeScript and SCSS reload:
-
-```bash
 npm --prefix frontend/dev-pages install
 npm --prefix frontend/dev-pages run dev
 ```
 
-If you do not want to run Vite, build the sandbox assets once instead:
+## Local Pages
 
-```bash
-npm --prefix frontend/dev-pages run build
-```
-
-## Useful Local Pages
-
-- API index: `http://localhost:8080/`
+- Auth sandbox: `http://localhost:8080/__dev/auth-sandbox`
+- Mailpit inbox: `http://localhost:8025`
 - Swagger UI: `http://localhost:8080/docs`
 - ReDoc: `http://localhost:8080/redoc`
-- Dev auth sandbox: `http://localhost:8080/__dev/auth-sandbox`
-- Mailpit inbox UI: `http://localhost:8025`
 
-## SMTP End-to-End Testing
+## Email Testing
 
-Mailpit is a local SMTP sink. No real mailbox is needed.
+Use the auth sandbox to trigger:
 
-- Trigger `forgot password` or `resend verification` from the sandbox or API.
-- Open `http://localhost:8025` to inspect the delivered messages.
-- For the opt-in smoke test, use any recipient address:
+- registration verification email
+- resend verification email
+- password reset email
+
+Open `http://localhost:8025` and inspect the delivered messages.
+
+Run the SMTP smoke test:
 
 ```bash
 RUN_SMTP_SMOKE_TEST=true \
@@ -89,88 +62,30 @@ AUTH_SMOKE_EMAIL_RECIPIENT=smoke@papyrus.local \
 uv run pytest tests/integration/test_auth_smoke.py -m auth_smoke -q
 ```
 
-## Google OAuth Setup
+## Google OAuth
 
-Papyrus uses a server-owned browser OAuth flow. The Flutter app opens:
+Create a Google OAuth client:
 
-- `GET /v1/auth/oauth/google/start`
+- Application type: `Web application`
+- Authorized redirect URI:
+  `http://localhost:8080/v1/auth/oauth/google/callback`
 
-Google redirects back to the server callback:
+Keep the OAuth consent screen in testing mode and add the testing Google
+account as a test user.
 
-- `GET /v1/auth/oauth/google/callback`
-
-The server then redirects to your app callback URI with a one-time Papyrus exchange code.
-
-### What To Create In Google Cloud
-
-Create an OAuth client with:
-
-- Client type: `Web application`
-- Redirect URI:
-  - local desktop testing: `http://localhost:8080/v1/auth/oauth/google/callback`
-  - public tunnel/device testing: `https://<your-public-host>/v1/auth/oauth/google/callback`
-
-Authorized JavaScript origins are not required for this backend-owned redirect flow. If the Google UI requires one for localhost testing, use:
-
-- `http://localhost:8080`
-
-Set the resulting values in `.env`:
-
-```dotenv
-GOOGLE_OAUTH_CLIENT_ID=...
-GOOGLE_OAUTH_CLIENT_SECRET=...
-PUBLIC_BASE_URL=http://localhost:8080
-OAUTH_ALLOWED_REDIRECT_SCHEMES=["papyrus"]
-OAUTH_ALLOWED_REDIRECT_HOSTS=["localhost","127.0.0.1"]
-```
-
-For mobile-device testing or any device where the browser cannot reach your workstation as `localhost`, use a public HTTPS base URL and set `PUBLIC_BASE_URL` to that exact value.
-
-### Localhost vs Public Testing
-
-- Desktop same-machine testing:
-  - `PUBLIC_BASE_URL=http://localhost:8080`
-  - Google redirect URI: `http://localhost:8080/v1/auth/oauth/google/callback`
-- Mobile emulator, physical phone, or shared test device:
-  - expose the backend through a public HTTPS URL
-  - set `PUBLIC_BASE_URL=https://<your-public-host>`
-  - Google redirect URI: `https://<your-public-host>/v1/auth/oauth/google/callback`
-
-The callback URI must match Google exactly, including scheme, host, port, path, and trailing slash behavior.
-
-### OAuth Consent Screen Notes
-
-For development:
-
-- keep the app in testing mode
-- add your Google account under test users if Google requires it
-
-Papyrus only requests basic identity scopes:
+Papyrus requests these scopes:
 
 - `openid`
 - `email`
 - `profile`
 
-## Google Smoke Test
+Test the browser flow:
 
-The Google smoke test now validates a live Papyrus session produced by a successful Google browser login.
-
-Recommended workflow:
-
-1. Complete a real Google login in the auth sandbox.
-2. Copy the access token or refresh token from the sandbox.
-3. Run the smoke test against the running server.
-
-Access-token-only mode:
-
-```bash
-RUN_GOOGLE_SMOKE_TEST=true \
-AUTH_SMOKE_SERVER_BASE_URL=http://localhost:8080 \
-AUTH_SMOKE_GOOGLE_ACCESS_TOKEN=<access-token-from-sandbox> \
-uv run pytest tests/integration/test_auth_smoke.py -m auth_smoke -q
-```
-
-Refresh-token mode is more durable and also validates token rotation:
+1. Open `http://localhost:8080/__dev/auth-sandbox`.
+2. Start Google login.
+3. Complete the Google browser flow.
+4. Copy the refresh token from the sandbox.
+5. Run the smoke test:
 
 ```bash
 RUN_GOOGLE_SMOKE_TEST=true \
@@ -179,11 +94,5 @@ AUTH_SMOKE_GOOGLE_REFRESH_TOKEN=<refresh-token-from-sandbox> \
 uv run pytest tests/integration/test_auth_smoke.py -m auth_smoke -q
 ```
 
-If both are provided, the test tries the access token first and falls back to refresh if the access token is expired.
-
-Notes:
-
-- refresh-token mode rotates the provided refresh token, so the old token will stop working after the test
-- on success, the test prints `AUTH_SMOKE_ROTATED_REFRESH_TOKEN=...`; use that value for the next manual run
-- if you only provide an access token, the test is non-destructive but depends on that token still being unexpired
-- `AUTH_SMOKE_SERVER_BASE_URL` defaults to `PUBLIC_BASE_URL` if omitted
+The smoke test prints `AUTH_SMOKE_ROTATED_REFRESH_TOKEN=...`. Use that refresh
+token for the next run.

@@ -1,58 +1,43 @@
-# Papyrus server
+# Papyrus Server
 
-REST API server for Papyrus, a cross platform book management application.
+FastAPI backend for Papyrus authentication, metadata, file storage, and
+PowerSync-backed synchronization.
 
-## Getting started
+## Auth And Sync
 
-Install dependencies:
+- Email/password auth uses `POST /v1/auth/register` and
+  `POST /v1/auth/login`.
+- Google auth starts at `GET /v1/auth/oauth/google/start` and finishes through
+  `POST /v1/auth/exchange-code`.
+- PowerSync credentials come from `POST /v1/auth/powersync-token`.
+- PowerSync uploads use `POST /v1/sync/powersync-upload`.
+
+Read the focused guides:
+
+- [Flutter auth and PowerSync integration](docs/flutter-auth-integration.md)
+- [Authentication testing](docs/auth-testing.md)
+- [PowerSync sandbox](docs/powersync-sandbox.md)
+
+## Local Setup
+
+Run from `server/`:
 
 ```bash
 uv sync --extra dev
-```
-
-Run the database:
-
-```bash
-docker compose up database mailpit powersync-storage powersync
-```
-
-Run database migrations:
-
-```bash
+./scripts/generate_dev_powersync_keys.sh
+docker compose up -d database mailpit powersync-storage
 uv run alembic upgrade head
-```
-
-Run the server:
-
-```bash
+./scripts/setup_local_powersync.sh
 uv run uvicorn papyrus.main:app --reload --host 0.0.0.0 --port 8080
-```
-
-The `--host 0.0.0.0` flag is required for the Dockerized PowerSync service to
-reach the backend JWKS endpoint through `host.docker.internal`.
-
-Run the dev-pages asset server with live TS/SCSS reload:
-
-```bash
+docker compose up -d powersync
 npm --prefix frontend/dev-pages install
 npm --prefix frontend/dev-pages run dev
 ```
 
-Generate local PowerSync keys for auth testing:
+Use `--host 0.0.0.0` so the PowerSync container reaches the JWKS endpoint at
+`host.docker.internal:8080`.
 
-```bash
-./scripts/generate_dev_powersync_keys.sh
-```
-
-Initialize the local PowerSync source role and publication after migrations:
-
-```bash
-./scripts/setup_local_powersync.sh
-```
-
-## Development
-
-Run tests:
+## Checks
 
 ```bash
 uv run pytest --cov --cov-report html
