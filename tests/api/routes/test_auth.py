@@ -82,6 +82,7 @@ def configured_email_delivery(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str
     monkeypatch.setattr(settings, "email_delivery_enabled", True)
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.test")
     monkeypatch.setattr(settings, "smtp_from_email", "noreply@example.test")
+    monkeypatch.setattr(settings, "app_public_base_url", "http://papyrus.localhost:3000")
     sent_messages: list[tuple[str, str, str]] = []
 
     def fake_send_email(recipient: str, subject: str, body: str) -> None:
@@ -596,6 +597,33 @@ async def test_forgot_password_returns_configuration_message(
     assert response.json()["message"] == "Password reset is not configured on this server"
 
 
+async def test_forgot_password_requires_app_public_base_url(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    configured_email_delivery: list[tuple[str, str, str]],
+):
+    """Test forgot password does not send linkless email when app URL is missing."""
+    register_response = await client.post(
+        "/v1/auth/register",
+        json={
+            "email": "test@example.com",
+            "password": "SecureP@ss123",
+            "display_name": "Test User",
+        },
+    )
+    assert register_response.status_code == 201
+    settings = get_settings()
+    monkeypatch.setattr(settings, "app_public_base_url", None)
+
+    response = await client.post(
+        "/v1/auth/forgot-password",
+        json={"email": "test@example.com"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "Password reset is not configured on this server"
+    assert configured_email_delivery == []
+
+
 async def test_forgot_password_sends_email_when_configured(
     client: AsyncClient,
     configured_email_delivery: list[tuple[str, str, str]],
@@ -621,7 +649,10 @@ async def test_forgot_password_sends_email_when_configured(
     recipient, subject, body = configured_email_delivery[0]
     assert recipient == "test@example.com"
     assert subject == "Reset your Papyrus password"
-    assert "Reset token:" in body
+    assert "http://papyrus.localhost:3000/reset-password?token=" in body
+    assert "This link expires in 60 minutes." in body
+    assert "Reset token:" not in body
+    assert "/v1/auth/reset-password" not in body
 
 
 async def test_forgot_password_send_failure_returns_service_unavailable(
@@ -681,6 +712,15 @@ async def test_reset_password(client: AsyncClient, db_session: AsyncSession):
     )
     assert response.status_code == 200
     assert response.json()["message"] == "Password has been reset successfully"
+
+    login_response = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": "reset@example.com",
+            "password": "NewSecureP@ss123",
+        },
+    )
+    assert login_response.status_code == 200
 
 
 async def test_reset_password_revokes_existing_access_token(

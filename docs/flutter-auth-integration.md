@@ -172,9 +172,7 @@ Synced source tables:
 Run from `client/app/`:
 
 ```bash
-flutter run \
-  --dart-define=PAPYRUS_API_BASE_URL=http://localhost:8080 \
-  --dart-define=POWERSYNC_SERVICE_URL=http://localhost:8081
+flutter run -d chrome --web-hostname papyrus.localhost --web-port 3000 --dart-define-from-file=.dart_defines
 ```
 
 ## Related Docs

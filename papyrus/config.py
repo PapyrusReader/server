@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     rate_limit_upload: int
     rate_limit_batch: int
     public_base_url: str | None = None
+    app_public_base_url: str | None = None
     google_oauth_client_id: str | None = None
     google_oauth_client_secret: str | None = None
     oauth_allowed_redirect_schemes: list[str] = ["papyrus"]
@@ -107,6 +108,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "public_base_url",
+        "app_public_base_url",
         "google_oauth_client_id",
         "google_oauth_client_secret",
         "smtp_host",

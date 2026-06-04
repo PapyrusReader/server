@@ -221,6 +221,22 @@ def _build_api_url(path: str) -> str | None:
     return f"{base}{prefix}{path}"
 
 
+def _build_app_url(path: str, query: dict[str, str] | None = None) -> str | None:
+    app_public_base_url = get_settings().app_public_base_url
+
+    if app_public_base_url is None:
+        return None
+
+    base = app_public_base_url.rstrip("/")
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    url = f"{base}{normalized_path}"
+
+    if query:
+        return f"{url}?{urlencode(query)}"
+
+    return url
+
+
 def _verification_email_body(token: str) -> str:
     verify_url = _build_api_url("/auth/verify-email")
     lines = [
@@ -241,18 +257,19 @@ def _verification_email_body(token: str) -> str:
 
 
 def _password_reset_email_body(token: str) -> str:
-    reset_url = _build_api_url("/auth/reset-password")
+    settings = get_settings()
+    reset_url = _build_app_url("/reset-password", {"token": token})
     lines = [
-        "Use this token to reset your Papyrus password.",
+        "Reset your Papyrus password.",
         "",
-        f"Reset token: {token}",
+        f"This link expires in {settings.password_reset_token_expire_minutes} minutes.",
     ]
 
     if reset_url is not None:
         lines.extend(
             [
                 "",
-                f"Submit this token and your new password to: {reset_url}",
+                reset_url,
             ]
         )
 

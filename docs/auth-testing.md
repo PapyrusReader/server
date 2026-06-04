@@ -8,6 +8,8 @@ Create `.env` from `.env.example` and set these values:
 
 ```dotenv
 PUBLIC_BASE_URL=http://localhost:8080
+APP_PUBLIC_BASE_URL=http://papyrus.localhost:3000
+CORS_ORIGINS=["http://papyrus.localhost:3000"]
 EMAIL_DELIVERY_ENABLED=true
 SMTP_HOST=127.0.0.1
 SMTP_PORT=1025
@@ -23,6 +25,13 @@ POWERSYNC_JWT_PRIVATE_KEY_FILE=.local/powersync/private.pem
 POWERSYNC_JWT_PUBLIC_KEY_FILE=.local/powersync/public.pem
 POWERSYNC_JWT_KEY_ID=papyrus-powersync-dev
 POWERSYNC_JWT_AUDIENCE=powersync-dev
+```
+
+Add local app host entries:
+
+```text
+127.0.0.1 papyrus.localhost
+::1 papyrus.localhost
 ```
 
 Run from `server/`:

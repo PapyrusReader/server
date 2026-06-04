@@ -65,14 +65,16 @@ async def begin_password_reset(session: AsyncSession, email: str) -> str:
     if user is None:
         return "If the email is registered, a reset link has been sent"
 
-    if not email_service.is_email_delivery_configured():
+    settings = get_settings()
+
+    if not email_service.is_email_delivery_configured() or settings.app_public_base_url is None:
         return "Password reset is not configured on this server"
 
     token = await _issue_email_action_token(
         session,
         user.user_id,
         PASSWORD_RESET_ACTION,
-        get_settings().password_reset_token_expire_minutes,
+        settings.password_reset_token_expire_minutes,
     )
 
     email_service.send_email(
