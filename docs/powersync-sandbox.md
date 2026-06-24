@@ -27,14 +27,9 @@ Run from `server/`:
 
 ```bash
 uv sync --extra dev
-./scripts/generate_dev_powersync_keys.sh
-docker compose up -d database mailpit powersync-storage
-uv run alembic upgrade head
-./scripts/setup_local_powersync.sh
-uv run uvicorn papyrus.main:app --reload --host 0.0.0.0 --port 8080
+./scripts/bootstrap_local.sh
 npm --prefix frontend/dev-pages install
 npm --prefix frontend/dev-pages run dev
-docker compose up -d powersync
 ```
 
 Use `--host 0.0.0.0` so the PowerSync container reaches the JWKS endpoint at
@@ -75,12 +70,8 @@ Run from `server/`:
 
 ```bash
 docker compose down -v
-docker compose up -d database mailpit powersync-storage
-uv run alembic upgrade head
-./scripts/setup_local_powersync.sh
-uv run uvicorn papyrus.main:app --reload --host 0.0.0.0 --port 8080
+./scripts/bootstrap_local.sh
 npm --prefix frontend/dev-pages run dev
-docker compose up -d powersync
 ```
 
 Clear browser storage for `http://localhost:8080/__dev/powersync-sandbox`.

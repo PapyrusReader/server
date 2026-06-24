@@ -7,9 +7,7 @@ from papyrus.models import (
     EmailActionToken,
     PasswordCredential,
     PowerSyncDemoItem,
-    SyncAnnotation,
     SyncBook,
-    SyncReadingSession,
     User,
     UserIdentity,
 )
@@ -25,8 +23,6 @@ def test_auth_models_are_registered_with_metadata() -> None:
     email_tokens_table = Base.metadata.tables["email_action_tokens"]
     powersync_demo_items_table = Base.metadata.tables["powersync_demo_items"]
     books_table = Base.metadata.tables["books"]
-    annotations_table = Base.metadata.tables["annotations"]
-    reading_sessions_table = Base.metadata.tables["reading_sessions"]
     assert users_table is User.__table__
     assert identities_table is UserIdentity.__table__
     assert password_credentials_table is PasswordCredential.__table__
@@ -35,8 +31,6 @@ def test_auth_models_are_registered_with_metadata() -> None:
     assert email_tokens_table is EmailActionToken.__table__
     assert powersync_demo_items_table is PowerSyncDemoItem.__table__
     assert books_table is SyncBook.__table__
-    assert annotations_table is SyncAnnotation.__table__
-    assert reading_sessions_table is SyncReadingSession.__table__
 
     assert set(users_table.columns.keys()) == {
         "user_id",
@@ -57,5 +51,5 @@ def test_auth_models_are_registered_with_metadata() -> None:
         "updated_at",
     }
     assert {"book_id", "owner_user_id", "title", "updated_at"}.issubset(books_table.columns.keys())
-    assert {"annotation_id", "owner_user_id", "book_id", "selected_text"}.issubset(annotations_table.columns.keys())
-    assert {"session_id", "owner_user_id", "book_id", "start_time"}.issubset(reading_sessions_table.columns.keys())
+    assert "annotations" not in Base.metadata.tables
+    assert "reading_sessions" not in Base.metadata.tables

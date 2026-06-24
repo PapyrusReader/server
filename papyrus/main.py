@@ -11,17 +11,16 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.util import get_remote_address
 
 from papyrus.api.routes import api_router, include_debug_routers
 from papyrus.config import get_settings
 from papyrus.core.dev_pages import DEV_PAGES_DIST_DIR, DEV_PAGES_STATIC_URL
 from papyrus.core.exceptions import AppError
+from papyrus.core.rate_limit import limiter
 
 settings = get_settings()
-limiter = Limiter(key_func=get_remote_address)
 
 
 def configure_logging() -> None:

@@ -150,7 +150,9 @@ Pull:
 2. `sync-config.yaml` selects rows with
    `WHERE owner_user_id::text = auth.user_id()`.
 3. PowerSync sends user rows to the Flutter local PowerSync database.
-4. Flutter watches local tables and updates `DataStore`.
+4. Flutter repositories watch the local PowerSync database.
+5. `DataStore` receives a read snapshot for existing feature providers; books
+   are never independently persisted in memory.
 
 Upload:
 
@@ -158,14 +160,21 @@ Upload:
 2. PowerSync queues CRUD mutations.
 3. `PapyrusPowerSyncConnector.uploadData()` reads queued transactions.
 4. The connector posts the batch to `POST /v1/sync/powersync-upload`.
-5. The server applies supported mutations after ownership checks.
+5. The server applies the complete CRUD transaction atomically after ownership
+   and field validation.
 6. PowerSync replication sends committed changes to connected clients.
 
-Synced source tables:
+The production sync contract currently contains only `books`. Additional
+entities should be added as complete vertical slices: PostgreSQL model and
+migration, sync stream, upload validation, client schema, repository, and
+end-to-end tests.
 
-- `books`
-- `annotations`
-- `reading_sessions`
+Guest and authenticated libraries use separate local databases:
+
+- `papyrus-guest.db` is local-only and persists until the user deletes it.
+- `papyrus-account.db` connects to PowerSync and is cleared on logout or
+  account switch.
+- Guest records are never merged into an authenticated account.
 
 ## Local Flutter Command
 

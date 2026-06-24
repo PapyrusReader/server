@@ -1,180 +1,66 @@
-"""Sync-related schemas."""
+"""PowerSync upload schemas."""
 
-from datetime import datetime
-from enum import StrEnum
 from typing import Any, Literal
-from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
-class ServerType(StrEnum):
-    """Metadata server type."""
-
-    OFFICIAL = "official"
-    SELF_HOSTED = "self_hosted"
-
-
-class SyncStatusEnum(StrEnum):
-    """Sync status values."""
-
-    IDLE = "idle"
-    SYNCING = "syncing"
-    ERROR = "error"
-
-
-class ResolutionStrategy(StrEnum):
-    """Conflict resolution strategy."""
-
-    LATEST_WINS = "latest_wins"
-    MERGE = "merge"
-    MANUAL = "manual"
-
-
-class SyncOperation(StrEnum):
-    """Sync operation type."""
-
-    CREATE = "create"
-    UPDATE = "update"
-    DELETE = "delete"
-
-
-class MetadataServerConfig(BaseModel):
-    """Metadata server configuration response."""
-
-    model_config = ConfigDict(from_attributes=True)
-
-    config_id: UUID
-    server_url: HttpUrl | str
-    server_type: ServerType | None = None
-    is_connected: bool = False
-    sync_enabled: bool = True
-    sync_interval_seconds: int | None = None
-    last_sync_at: datetime | None = None
-    sync_status: SyncStatusEnum | None = None
-    sync_error_message: str | None = None
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
-class CreateMetadataServerConfigRequest(BaseModel):
-    """Metadata server configuration creation request."""
-
-    server_url: HttpUrl | str = Field(..., description="URL of the metadata server")
-    server_type: ServerType | None = None
-    sync_enabled: bool = True
-    sync_interval_seconds: int = Field(30, ge=10, le=3600)
-    auth_token: str | None = Field(None, description="JWT or API token for authentication")
-
-
-class SyncChange(BaseModel):
-    """Individual sync change."""
-
-    entity_type: str
-    entity_id: UUID
-    operation: SyncOperation
-    data: dict[str, Any] | None = None
-    version: int | None = None
-    updated_at: datetime | None = None
-    device_id: str | None = None
-
-
-class SyncChanges(BaseModel):
-    """Sync changes response."""
-
-    changes: list[SyncChange]
-    server_timestamp: datetime
-
-
-class SyncPushChange(BaseModel):
-    """Individual change in push request."""
-
-    entity_type: str
-    entity_id: UUID
-    operation: SyncOperation
-    data: dict[str, Any]
-    timestamp: datetime
-    version: int | None = None
-
-
-class SyncPushRequest(BaseModel):
-    """Sync push request."""
-
-    changes: list[SyncPushChange]
-    device_id: str
-
-
-class SyncAccepted(BaseModel):
-    """Accepted sync change."""
-
-    entity_type: str
-    entity_id: UUID
-    new_version: int
-
-
-class SyncRejected(BaseModel):
-    """Rejected sync change."""
-
-    entity_type: str
-    entity_id: UUID
-    reason: str
-
-
-class SyncPushResponse(BaseModel):
-    """Sync push response."""
-
-    accepted: list[SyncAccepted]
-    rejected: list[SyncRejected]
-    server_timestamp: datetime
-
-
-class SyncConflict(BaseModel):
-    """Sync conflict detail."""
-
-    entity_type: str
-    entity_id: UUID
-    local_version: int
-    server_version: int
-    server_data: dict[str, Any] | None = None
-    resolved_data: dict[str, Any] | None = None
-    resolution_strategy: ResolutionStrategy | None = None
-
-
-class SyncConflictResponse(BaseModel):
-    """Sync conflicts response."""
-
-    conflicts: list[SyncConflict]
-
-
-class SyncStatus(BaseModel):
-    """Sync status response."""
-
-    status: SyncStatusEnum
-    last_sync_at: datetime | None = None
-    pending_changes: int | None = None
-    error_message: str | None = None
+BOOK_UPLOAD_FIELDS = frozenset(
+    {
+        "title",
+        "subtitle",
+        "author",
+        "co_authors",
+        "isbn",
+        "isbn13",
+        "publisher",
+        "language",
+        "page_count",
+        "description",
+        "cover_image_url",
+        "reading_status",
+        "current_page",
+        "current_position",
+        "current_cfi",
+        "is_favorite",
+        "rating",
+        "custom_metadata",
+        "added_at",
+        "owner_user_id",
+        "updated_at",
+    }
+)
 
 
 class PowerSyncCrudMutation(BaseModel):
-    """Single CRUD mutation uploaded from the PowerSync client queue."""
+    """Single books-table mutation uploaded from the PowerSync queue."""
 
     model_config = ConfigDict(populate_by_name=True)
 
-    table: Literal["books", "annotations", "reading_sessions"] = Field(alias="type")
+    table: Literal["books"] = Field(alias="type")
     op: Literal["PUT", "PATCH", "DELETE", "put", "patch", "delete"]
     id: str
     op_id: int | None = Field(default=None, alias="op_id")
     tx_id: int | None = None
     op_data: dict[str, Any] | None = Field(default=None, alias="data")
 
+    @field_validator("op_data")
+    @classmethod
+    def reject_unknown_book_fields(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        unknown = value.keys() - BOOK_UPLOAD_FIELDS
+        if unknown:
+            raise ValueError(f"Unsupported book fields: {', '.join(sorted(unknown))}")
+        return value
+
 
 class PowerSyncUploadRequest(BaseModel):
-    """PowerSync upload queue batch."""
+    """One PowerSync CRUD transaction."""
 
     batch: list[PowerSyncCrudMutation]
 
 
 class PowerSyncUploadResponse(BaseModel):
-    """Summary of an applied PowerSync upload batch."""
+    """Summary of an applied PowerSync upload transaction."""
 
     applied_count: int

@@ -51,59 +51,8 @@ def upgrade() -> None:
     )
     op.create_index(op.f("ix_books_owner_user_id"), "books", ["owner_user_id"], unique=False)
 
-    op.create_table(
-        "annotations",
-        sa.Column("annotation_id", sa.Uuid(), nullable=False),
-        sa.Column("owner_user_id", sa.Uuid(), nullable=False),
-        sa.Column("book_id", sa.Uuid(), nullable=False),
-        sa.Column("selected_text", sa.Text(), nullable=False),
-        sa.Column("note", sa.Text(), nullable=True),
-        sa.Column("highlight_color", sa.String(length=16), server_default="#FFEB3B", nullable=False),
-        sa.Column("start_position", sa.Text(), nullable=False),
-        sa.Column("end_position", sa.Text(), nullable=False),
-        sa.Column("chapter_title", sa.String(length=255), nullable=True),
-        sa.Column("chapter_index", sa.Integer(), nullable=True),
-        sa.Column("page_number", sa.Integer(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.ForeignKeyConstraint(["book_id"], ["books.book_id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["owner_user_id"], ["users.user_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("annotation_id"),
-    )
-    op.create_index(op.f("ix_annotations_book_id"), "annotations", ["book_id"], unique=False)
-    op.create_index(op.f("ix_annotations_owner_user_id"), "annotations", ["owner_user_id"], unique=False)
-
-    op.create_table(
-        "reading_sessions",
-        sa.Column("session_id", sa.Uuid(), nullable=False),
-        sa.Column("owner_user_id", sa.Uuid(), nullable=False),
-        sa.Column("book_id", sa.Uuid(), nullable=False),
-        sa.Column("start_time", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("end_time", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("start_position", sa.Float(), nullable=True),
-        sa.Column("end_position", sa.Float(), nullable=True),
-        sa.Column("pages_read", sa.Integer(), nullable=True),
-        sa.Column("duration_minutes", sa.Integer(), nullable=True),
-        sa.Column("device_type", sa.String(length=64), nullable=True),
-        sa.Column("device_name", sa.String(length=255), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.ForeignKeyConstraint(["book_id"], ["books.book_id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["owner_user_id"], ["users.user_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("session_id"),
-    )
-    op.create_index(op.f("ix_reading_sessions_book_id"), "reading_sessions", ["book_id"], unique=False)
-    op.create_index(op.f("ix_reading_sessions_owner_user_id"), "reading_sessions", ["owner_user_id"], unique=False)
-
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index(op.f("ix_reading_sessions_owner_user_id"), table_name="reading_sessions")
-    op.drop_index(op.f("ix_reading_sessions_book_id"), table_name="reading_sessions")
-    op.drop_table("reading_sessions")
-
-    op.drop_index(op.f("ix_annotations_owner_user_id"), table_name="annotations")
-    op.drop_index(op.f("ix_annotations_book_id"), table_name="annotations")
-    op.drop_table("annotations")
-
     op.drop_index(op.f("ix_books_owner_user_id"), table_name="books")
     op.drop_table("books")

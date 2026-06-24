@@ -68,3 +68,5 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+.codex
+.agents

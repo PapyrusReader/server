@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from papyrus.config import get_settings
 from papyrus.core.database import get_db
+from papyrus.core.rate_limit import limiter
 from papyrus.core.security import create_access_token, generate_opaque_token, hash_opaque_token, hash_password
 from papyrus.main import create_app
 from papyrus.main import settings as app_settings
@@ -252,3 +253,9 @@ async def auth_user(
 @pytest_asyncio.fixture
 async def auth_headers(auth_user: dict[str, str]) -> dict[str, str]:
     return {"Authorization": f"Bearer {auth_user['access_token']}"}
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter() -> None:
+    """Keep per-IP rate-limit state isolated between tests."""
+    limiter._storage.reset()

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from papyrus.config import get_settings
 from papyrus.core import security as security_module
 from papyrus.core.exceptions import ServiceUnavailableError
+from papyrus.core.rate_limit import limiter
 from papyrus.core.security import generate_opaque_token, hash_opaque_token
 from papyrus.models import AuthExchangeCode, EmailActionToken, User, UserIdentity
 from papyrus.services import auth as auth_service
@@ -229,6 +230,31 @@ async def test_logout_current_session_revokes_refresh_token(client: AsyncClient)
         headers={"Authorization": f"Bearer {auth_payload['access_token']}"},
     )
     assert protected_response.status_code == 401
+
+
+async def test_login_is_rate_limited(client: AsyncClient):
+    """Credential endpoints enforce the configured per-IP auth limit."""
+    limiter._storage.reset()
+    register_response = await client.post(
+        "/v1/auth/register",
+        json={
+            "email": "rate-limit@example.com",
+            "password": "SecureP@ss123",
+            "display_name": "Rate Limited",
+        },
+    )
+    assert register_response.status_code == 201
+
+    responses = [
+        await client.post(
+            "/v1/auth/login",
+            json={"email": "rate-limit@example.com", "password": "SecureP@ss123"},
+        )
+        for _ in range(6)
+    ]
+
+    assert [response.status_code for response in responses[:5]] == [200] * 5
+    assert responses[5].status_code == 429
 
 
 async def test_logout_all_revokes_other_sessions(client: AsyncClient):

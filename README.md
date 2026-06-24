@@ -24,18 +24,14 @@ Run from `server/`:
 
 ```bash
 uv sync --extra dev
-./scripts/generate_dev_powersync_keys.sh
-docker compose up -d database mailpit powersync-storage
-uv run alembic upgrade head
-./scripts/setup_local_powersync.sh
-uv run uvicorn papyrus.main:app --reload --host 0.0.0.0 --port 8080
-docker compose up -d powersync
+./scripts/bootstrap_local.sh
 npm --prefix frontend/dev-pages install
 npm --prefix frontend/dev-pages run dev
 ```
 
-Use `--host 0.0.0.0` so the PowerSync container reaches the JWKS endpoint at
-`host.docker.internal:8080`.
+The bootstrap is idempotent: it creates development keys when missing, starts
+the databases, applies Alembic migrations, configures logical replication, and
+starts the healthy server and pinned PowerSync services.
 
 ## Checks
 

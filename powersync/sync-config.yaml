@@ -31,45 +31,6 @@ streams:
       FROM books
       WHERE owner_user_id::text = auth.user_id()
 
-  annotations:
-    auto_subscribe: true
-    query: |
-      SELECT
-        annotation_id AS id,
-        owner_user_id::text AS owner_user_id,
-        book_id::text AS book_id,
-        selected_text,
-        note,
-        highlight_color,
-        start_position,
-        end_position,
-        chapter_title,
-        chapter_index,
-        page_number,
-        created_at::text AS created_at,
-        updated_at::text AS updated_at
-      FROM annotations
-      WHERE owner_user_id::text = auth.user_id()
-
-  reading_sessions:
-    auto_subscribe: true
-    query: |
-      SELECT
-        session_id AS id,
-        owner_user_id::text AS owner_user_id,
-        book_id::text AS book_id,
-        start_time::text AS start_time,
-        end_time::text AS end_time,
-        start_position,
-        end_position,
-        pages_read,
-        duration_minutes,
-        device_type,
-        device_name,
-        created_at::text AS created_at
-      FROM reading_sessions
-      WHERE owner_user_id::text = auth.user_id()
-
   demo_items:
     auto_subscribe: true
     query: |
