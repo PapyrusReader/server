@@ -115,13 +115,19 @@ class GoogleOAuthClient:
 google_oauth_client = GoogleOAuthClient()
 
 
-def _public_base_host() -> str | None:
-    public_base_url = get_settings().public_base_url
+def _configured_base_hosts() -> set[str]:
+    settings = get_settings()
+    hosts: set[str] = set()
 
-    if public_base_url is None:
-        return None
+    for base_url in (settings.public_base_url, settings.app_public_base_url):
+        if base_url is None:
+            continue
 
-    return urlsplit(public_base_url).hostname
+        hostname = urlsplit(base_url).hostname
+        if hostname is not None:
+            hosts.add(hostname.lower())
+
+    return hosts
 
 
 def _is_allowed_oauth_redirect_uri(redirect_uri: str) -> bool:
@@ -141,10 +147,7 @@ def _is_allowed_oauth_redirect_uri(redirect_uri: str) -> bool:
         return False
 
     allowed_hosts = set(settings.oauth_allowed_redirect_hosts)
-    public_base_host = _public_base_host()
-
-    if public_base_host is not None:
-        allowed_hosts.add(public_base_host.lower())
+    allowed_hosts.update(_configured_base_hosts())
 
     if settings.debug:
         allowed_hosts.update({"localhost", "127.0.0.1", "test"})
