@@ -162,6 +162,8 @@ async def prod_client(
     test_session_maker: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncClient, None]:
     monkeypatch.setattr(app_settings, "debug", False)
+    monkeypatch.setattr(app_settings, "public_base_url", "http://localhost:8080")
+    monkeypatch.setattr(app_settings, "app_public_base_url", "http://papyrus.localhost:3000")
     prod_app = create_app()
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -182,6 +184,8 @@ async def debug_client(
     test_session_maker: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncClient, None]:
     monkeypatch.setattr(app_settings, "debug", True)
+    monkeypatch.setattr(app_settings, "public_base_url", "http://localhost:8080")
+    monkeypatch.setattr(app_settings, "app_public_base_url", "http://papyrus.localhost:3000")
     debug_app = create_app()
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
