@@ -27,6 +27,25 @@ def test_auth_package_facade_exports_public_surface() -> None:
     assert callable(auth_service.register_user)
 
 
+def test_google_login_allows_configured_app_public_base_url_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+    configured_google: None,
+) -> None:
+    """Web OAuth callbacks may return to the configured Flutter app origin."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "app_public_base_url", "http://papyrus.localhost:3000")
+    monkeypatch.setattr(settings, "oauth_allowed_redirect_hosts", ["localhost", "127.0.0.1"])
+
+    authorization_url = auth_service.build_google_login_authorization_url(
+        "http://papyrus.localhost:3000/auth/callback",
+        "http://localhost:8080/v1/auth/oauth/google/callback",
+    )
+
+    assert parse_qs(urlparse(authorization_url).query)["redirect_uri"] == [
+        "http://localhost:8080/v1/auth/oauth/google/callback"
+    ]
+
+
 async def _create_user_with_password(
     session: AsyncSession,
     *,

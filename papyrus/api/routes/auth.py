@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from papyrus.api.deps import CurrentSessionId, CurrentUserId
 from papyrus.config import get_settings
 from papyrus.core.database import get_db
+from papyrus.core.rate_limit import limiter
 from papyrus.schemas.auth import (
     AuthorizationUrlResponse,
     AuthTokens,
@@ -36,6 +37,10 @@ router = APIRouter()
 DBSession = Annotated[AsyncSession, Depends(get_db)]
 
 
+def _auth_rate_limit() -> str:
+    return f"{get_settings().rate_limit_auth}/minute"
+
+
 def _auth_tokens_response(result: auth_service.AuthResult) -> AuthTokens:
     return AuthTokens(
         access_token=result.access_token,
@@ -56,13 +61,15 @@ def _public_callback_url(request: Request, route_name: str) -> str:
     route_parts = urlsplit(route_url)
     public_parts = urlsplit(public_base_url.rstrip("/"))
 
-    return urlunsplit((
-        public_parts.scheme,
-        public_parts.netloc,
-        route_parts.path,
-        route_parts.query,
-        route_parts.fragment,
-    ))
+    return urlunsplit(
+        (
+            public_parts.scheme,
+            public_parts.netloc,
+            route_parts.path,
+            route_parts.query,
+            route_parts.fragment,
+        )
+    )
 
 
 @router.post(
@@ -71,13 +78,14 @@ def _public_callback_url(request: Request, route_name: str) -> str:
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user account",
 )
+@limiter.limit(_auth_rate_limit)
 async def register_user(
-    request: RegisterRequest,
-    http_request: Request,
+    request: Request,
+    payload: RegisterRequest,
     db: DBSession,
 ) -> AuthTokens:
     """Create a new user account with email and password."""
-    result = await auth_service.register_user(db, request, http_request.headers.get("user-agent"))
+    result = await auth_service.register_user(db, payload, request.headers.get("user-agent"))
     return _auth_tokens_response(result)
 
 
@@ -86,13 +94,14 @@ async def register_user(
     response_model=AuthTokens,
     summary="Login with email and password",
 )
+@limiter.limit(_auth_rate_limit)
 async def login_user(
-    request: LoginRequest,
-    http_request: Request,
+    request: Request,
+    payload: LoginRequest,
     db: DBSession,
 ) -> AuthTokens:
     """Authenticate a user with email and password credentials."""
-    result = await auth_service.login_user(db, request, http_request.headers.get("user-agent"))
+    result = await auth_service.login_user(db, payload, request.headers.get("user-agent"))
     return _auth_tokens_response(result)
 
 
@@ -100,6 +109,7 @@ async def login_user(
     "/oauth/google/start",
     summary="Start Google OAuth login flow",
 )
+@limiter.limit(_auth_rate_limit)
 async def google_oauth_start(
     request: Request,
     redirect_uri: str = Query(..., description="App callback URI for the browser flow"),
@@ -118,6 +128,7 @@ async def google_oauth_start(
     name="google_oauth_callback",
     summary="Complete the Google OAuth browser callback",
 )
+@limiter.limit(_auth_rate_limit)
 async def google_oauth_callback(
     request: Request,
     db: DBSession,
@@ -142,13 +153,14 @@ async def google_oauth_callback(
     response_model=AuthTokens,
     summary="Exchange an OAuth browser code for Papyrus tokens",
 )
+@limiter.limit(_auth_rate_limit)
 async def exchange_code(
-    request: OAuthExchangeRequest,
-    http_request: Request,
+    request: Request,
+    payload: OAuthExchangeRequest,
     db: DBSession,
 ) -> AuthTokens:
     """Exchange a one-time OAuth handoff code for Papyrus tokens."""
-    result = await auth_service.exchange_login_code(db, request, http_request.headers.get("user-agent"))
+    result = await auth_service.exchange_login_code(db, payload, request.headers.get("user-agent"))
     return _auth_tokens_response(result)
 
 
@@ -157,12 +169,14 @@ async def exchange_code(
     response_model=AuthTokens,
     summary="Refresh access token",
 )
+@limiter.limit(_auth_rate_limit)
 async def refresh_token(
-    request: RefreshTokenRequest,
+    request: Request,
+    payload: RefreshTokenRequest,
     db: DBSession,
 ) -> AuthTokens:
     """Exchange a valid refresh token for a new access token."""
-    result = await auth_service.refresh_tokens(db, request)
+    result = await auth_service.refresh_tokens(db, payload)
     return _auth_tokens_response(result)
 
 
@@ -260,9 +274,14 @@ async def powersync_jwks() -> dict[str, list[dict[str, object]]]:
     response_model=MessageResponse,
     summary="Verify email address",
 )
-async def verify_email(request: VerifyEmailRequest, db: DBSession) -> MessageResponse:
+@limiter.limit(_auth_rate_limit)
+async def verify_email(
+    request: Request,
+    payload: VerifyEmailRequest,
+    db: DBSession,
+) -> MessageResponse:
     """Verify the user's email address using a one-time token."""
-    message = await auth_service.verify_email_token(db, request.token)
+    message = await auth_service.verify_email_token(db, payload.token)
     return MessageResponse(message=message)
 
 
@@ -271,12 +290,14 @@ async def verify_email(request: VerifyEmailRequest, db: DBSession) -> MessageRes
     response_model=MessageResponse,
     summary="Resend verification email",
 )
+@limiter.limit(_auth_rate_limit)
 async def resend_verification(
-    request: ResendVerificationRequest,
+    request: Request,
+    payload: ResendVerificationRequest,
     db: DBSession,
 ) -> MessageResponse:
     """Issue a new verification token when email delivery is enabled."""
-    message = await auth_service.resend_verification_email(db, request.email)
+    message = await auth_service.resend_verification_email(db, payload.email)
     return MessageResponse(message=message)
 
 
@@ -285,12 +306,14 @@ async def resend_verification(
     response_model=MessageResponse,
     summary="Request password reset",
 )
+@limiter.limit(_auth_rate_limit)
 async def forgot_password(
-    request: ForgotPasswordRequest,
+    request: Request,
+    payload: ForgotPasswordRequest,
     db: DBSession,
 ) -> MessageResponse:
     """Issue a password reset token when email delivery is enabled."""
-    message = await auth_service.begin_password_reset(db, request.email)
+    message = await auth_service.begin_password_reset(db, payload.email)
     return MessageResponse(message=message)
 
 
@@ -299,10 +322,12 @@ async def forgot_password(
     response_model=MessageResponse,
     summary="Reset password with token",
 )
+@limiter.limit(_auth_rate_limit)
 async def reset_password(
-    request: ResetPasswordRequest,
+    request: Request,
+    payload: ResetPasswordRequest,
     db: DBSession,
 ) -> MessageResponse:
     """Reset the user's password using a one-time token."""
-    message = await auth_service.reset_password(db, request.token, request.password)
+    message = await auth_service.reset_password(db, payload.token, payload.password)
     return MessageResponse(message=message)

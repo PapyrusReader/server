@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from papyrus.config import get_settings
 from papyrus.core import security as security_module
 from papyrus.core.exceptions import ServiceUnavailableError
+from papyrus.core.rate_limit import limiter
 from papyrus.core.security import generate_opaque_token, hash_opaque_token
 from papyrus.models import AuthExchangeCode, EmailActionToken, User, UserIdentity
 from papyrus.services import auth as auth_service
@@ -82,6 +83,7 @@ def configured_email_delivery(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str
     monkeypatch.setattr(settings, "email_delivery_enabled", True)
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.test")
     monkeypatch.setattr(settings, "smtp_from_email", "noreply@example.test")
+    monkeypatch.setattr(settings, "app_public_base_url", "http://papyrus.localhost:3000")
     sent_messages: list[tuple[str, str, str]] = []
 
     def fake_send_email(recipient: str, subject: str, body: str) -> None:
@@ -228,6 +230,31 @@ async def test_logout_current_session_revokes_refresh_token(client: AsyncClient)
         headers={"Authorization": f"Bearer {auth_payload['access_token']}"},
     )
     assert protected_response.status_code == 401
+
+
+async def test_login_is_rate_limited(client: AsyncClient):
+    """Credential endpoints enforce the configured per-IP auth limit."""
+    limiter._storage.reset()
+    register_response = await client.post(
+        "/v1/auth/register",
+        json={
+            "email": "rate-limit@example.com",
+            "password": "SecureP@ss123",
+            "display_name": "Rate Limited",
+        },
+    )
+    assert register_response.status_code == 201
+
+    responses = [
+        await client.post(
+            "/v1/auth/login",
+            json={"email": "rate-limit@example.com", "password": "SecureP@ss123"},
+        )
+        for _ in range(6)
+    ]
+
+    assert [response.status_code for response in responses[:5]] == [200] * 5
+    assert responses[5].status_code == 429
 
 
 async def test_logout_all_revokes_other_sessions(client: AsyncClient):
@@ -377,6 +404,37 @@ async def test_google_oauth_start_requires_configuration(
     )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+async def test_google_oauth_start_rejects_unallowed_redirect_uri(
+    client: AsyncClient,
+    configured_google: None,
+):
+    """Test Google OAuth cannot redirect exchange codes to arbitrary origins."""
+    response = await client.get(
+        "/v1/auth/oauth/google/start",
+        params={"redirect_uri": "https://evil.example.test/auth/callback"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+async def test_google_oauth_start_allows_configured_web_redirect_host(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    configured_google: None,
+):
+    """Test configured Flutter web callback hosts are allowed."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "oauth_allowed_redirect_hosts", ["app.example.test"])
+
+    response = await client.get(
+        "/v1/auth/oauth/google/start",
+        params={"redirect_uri": "https://app.example.test/auth/callback"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
 
 
 async def test_google_link_flow_links_identity_to_existing_user(
@@ -565,6 +623,33 @@ async def test_forgot_password_returns_configuration_message(
     assert response.json()["message"] == "Password reset is not configured on this server"
 
 
+async def test_forgot_password_requires_app_public_base_url(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+    configured_email_delivery: list[tuple[str, str, str]],
+):
+    """Test forgot password does not send linkless email when app URL is missing."""
+    register_response = await client.post(
+        "/v1/auth/register",
+        json={
+            "email": "test@example.com",
+            "password": "SecureP@ss123",
+            "display_name": "Test User",
+        },
+    )
+    assert register_response.status_code == 201
+    settings = get_settings()
+    monkeypatch.setattr(settings, "app_public_base_url", None)
+
+    response = await client.post(
+        "/v1/auth/forgot-password",
+        json={"email": "test@example.com"},
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "Password reset is not configured on this server"
+    assert configured_email_delivery == []
+
+
 async def test_forgot_password_sends_email_when_configured(
     client: AsyncClient,
     configured_email_delivery: list[tuple[str, str, str]],
@@ -590,7 +675,10 @@ async def test_forgot_password_sends_email_when_configured(
     recipient, subject, body = configured_email_delivery[0]
     assert recipient == "test@example.com"
     assert subject == "Reset your Papyrus password"
-    assert "Reset token:" in body
+    assert "http://papyrus.localhost:3000/reset-password?token=" in body
+    assert "This link expires in 60 minutes." in body
+    assert "Reset token:" not in body
+    assert "/v1/auth/reset-password" not in body
 
 
 async def test_forgot_password_send_failure_returns_service_unavailable(
@@ -650,6 +738,15 @@ async def test_reset_password(client: AsyncClient, db_session: AsyncSession):
     )
     assert response.status_code == 200
     assert response.json()["message"] == "Password has been reset successfully"
+
+    login_response = await client.post(
+        "/v1/auth/login",
+        json={
+            "email": "reset@example.com",
+            "password": "NewSecureP@ss123",
+        },
+    )
+    assert login_response.status_code == 200
 
 
 async def test_reset_password_revokes_existing_access_token(

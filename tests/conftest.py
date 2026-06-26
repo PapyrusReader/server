@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from papyrus.config import get_settings
 from papyrus.core.database import get_db
+from papyrus.core.rate_limit import limiter
 from papyrus.core.security import create_access_token, generate_opaque_token, hash_opaque_token, hash_password
 from papyrus.main import create_app
 from papyrus.main import settings as app_settings
@@ -161,6 +162,8 @@ async def prod_client(
     test_session_maker: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncClient, None]:
     monkeypatch.setattr(app_settings, "debug", False)
+    monkeypatch.setattr(app_settings, "public_base_url", "http://localhost:8080")
+    monkeypatch.setattr(app_settings, "app_public_base_url", "http://papyrus.localhost:3000")
     prod_app = create_app()
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -181,6 +184,8 @@ async def debug_client(
     test_session_maker: async_sessionmaker[AsyncSession],
 ) -> AsyncGenerator[AsyncClient, None]:
     monkeypatch.setattr(app_settings, "debug", True)
+    monkeypatch.setattr(app_settings, "public_base_url", "http://localhost:8080")
+    monkeypatch.setattr(app_settings, "app_public_base_url", "http://papyrus.localhost:3000")
     debug_app = create_app()
 
     async def override_get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -252,3 +257,9 @@ async def auth_user(
 @pytest_asyncio.fixture
 async def auth_headers(auth_user: dict[str, str]) -> dict[str, str]:
     return {"Authorization": f"Bearer {auth_user['access_token']}"}
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limiter() -> None:
+    """Keep per-IP rate-limit state isolated between tests."""
+    limiter._storage.reset()

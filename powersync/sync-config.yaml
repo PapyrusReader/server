@@ -2,6 +2,35 @@ config:
   edition: 2
 
 streams:
+  books:
+    auto_subscribe: true
+    query: |
+      SELECT
+        book_id AS id,
+        owner_user_id::text AS owner_user_id,
+        title,
+        subtitle,
+        author,
+        co_authors::text AS co_authors,
+        isbn,
+        isbn13,
+        publisher,
+        language,
+        page_count,
+        description,
+        cover_image_url,
+        reading_status,
+        current_page,
+        current_position,
+        current_cfi,
+        is_favorite,
+        rating,
+        custom_metadata::text AS custom_metadata,
+        added_at::text AS added_at,
+        updated_at::text AS updated_at
+      FROM books
+      WHERE owner_user_id::text = auth.user_id()
+
   demo_items:
     auto_subscribe: true
     query: |

@@ -1,55 +1,39 @@
-# Papyrus server
+# Papyrus Server
 
-REST API server for Papyrus, a cross platform book management application.
+FastAPI backend for Papyrus authentication, metadata, file storage, and
+PowerSync-backed synchronization.
 
-## Getting started
+## Auth And Sync
 
-Install dependencies:
+- Email/password auth uses `POST /v1/auth/register` and
+  `POST /v1/auth/login`.
+- Google auth starts at `GET /v1/auth/oauth/google/start` and finishes through
+  `POST /v1/auth/exchange-code`.
+- PowerSync credentials come from `POST /v1/auth/powersync-token`.
+- PowerSync uploads use `POST /v1/sync/powersync-upload`.
+
+Read the focused guides:
+
+- [Flutter auth and PowerSync integration](docs/flutter-auth-integration.md)
+- [Authentication testing](docs/auth-testing.md)
+- [PowerSync sandbox](docs/powersync-sandbox.md)
+
+## Local Setup
+
+Run from `server/`:
 
 ```bash
 uv sync --extra dev
-```
-
-Run the database:
-
-```bash
-docker compose up -d database mailpit powersync-storage powersync
-```
-
-Run database migrations:
-
-```bash
-uv run alembic upgrade head
-```
-
-Run the server:
-
-```bash
-uv run uvicorn papyrus.main:app --reload --port 8080
-```
-
-Run the dev-pages asset server with live TS/SCSS reload:
-
-```bash
+./scripts/bootstrap_local.sh
 npm --prefix frontend/dev-pages install
 npm --prefix frontend/dev-pages run dev
 ```
 
-Generate local PowerSync keys for auth testing:
+The bootstrap is idempotent: it creates development keys when missing, starts
+the databases, applies Alembic migrations, configures logical replication, and
+starts the healthy server and pinned PowerSync services.
 
-```bash
-./scripts/generate_dev_powersync_keys.sh
-```
-
-Initialize the local PowerSync source role and publication after migrations:
-
-```bash
-./scripts/setup_local_powersync.sh
-```
-
-## Development
-
-Run tests:
+## Checks
 
 ```bash
 uv run pytest --cov --cov-report html
