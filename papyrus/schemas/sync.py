@@ -17,6 +17,8 @@ BOOK_UPLOAD_FIELDS = frozenset(
         "page_count",
         "description",
         "cover_image_url",
+        "file_media_id",
+        "cover_media_id",
         "reading_status",
         "current_page",
         "current_position",

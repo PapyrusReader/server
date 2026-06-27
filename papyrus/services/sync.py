@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from papyrus.core.exceptions import ForbiddenError, ValidationError
 from papyrus.models import SyncBook
 from papyrus.schemas.sync import PowerSyncCrudMutation
+from papyrus.services import media as media_service
 
 BOOK_FIELDS = frozenset(
     {
@@ -24,6 +25,8 @@ BOOK_FIELDS = frozenset(
         "page_count",
         "description",
         "cover_image_url",
+        "file_media_id",
+        "cover_media_id",
         "reading_status",
         "current_page",
         "current_position",
@@ -62,6 +65,15 @@ def _optional_text(payload: dict[str, object], key: str, default: str | None = N
         return default
     value = payload[key]
     return None if value is None else str(value)
+
+
+def _optional_uuid(payload: dict[str, object], key: str, default: UUID | None = None) -> UUID | None:
+    if key not in payload:
+        return default
+    value = payload[key]
+    if value is None:
+        return None
+    return _uuid(value, key)
 
 
 def _required_text(payload: dict[str, object], key: str, default: str | None = None) -> str:
@@ -182,6 +194,7 @@ async def _apply_book_mutation(
         book = await _get_owned_book(session, user_id, book_id)
         if book is None:
             return 0
+        await media_service.delete_book_media(session, user_id, book_id)
         await session.delete(book)
         return 1
 
@@ -210,6 +223,22 @@ async def _apply_book_mutation(
     book.page_count = _optional_int(payload, "page_count", book.page_count)
     book.description = _optional_text(payload, "description", book.description)
     book.cover_image_url = _optional_text(payload, "cover_image_url", book.cover_image_url)
+    book.file_media_id = await media_service.validate_media_reference(
+        session,
+        user_id,
+        book.book_id,
+        _optional_uuid(payload, "file_media_id", book.file_media_id),
+        field_name="file_media_id",
+        expected_kind="book_file",
+    )
+    book.cover_media_id = await media_service.validate_media_reference(
+        session,
+        user_id,
+        book.book_id,
+        _optional_uuid(payload, "cover_media_id", book.cover_media_id),
+        field_name="cover_media_id",
+        expected_kind="cover_image",
+    )
     book.reading_status = _optional_text(payload, "reading_status", book.reading_status)
     book.current_page = _optional_int(payload, "current_page", book.current_page)
     book.current_position = _optional_float(payload, "current_position", book.current_position)
