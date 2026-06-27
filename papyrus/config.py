@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     powersync_service_url: str = "http://localhost:8081"
     powersync_service_port: int = 8081
     file_storage_quota_bytes: int = 1_073_741_824
+    media_storage_root: str = ".papyrus-media"
     powersync_jwks_uri: str | None = None
     powersync_source_role: str | None = None
     powersync_source_password: str | None = None

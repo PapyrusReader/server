@@ -269,3 +269,76 @@ async def test_powersync_upload_rejects_cross_user_book_mutation(
         },
     )
     assert response.status_code == 403
+
+
+async def test_powersync_upload_accepts_owned_media_references(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    auth_user: dict[str, str],
+    db_session: AsyncSession,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
+    book_id = uuid4()
+    book = SyncBook(
+        book_id=book_id,
+        owner_user_id=UUID(auth_user["user_id"]),
+        title="Media Book",
+        added_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(book)
+    await db_session.commit()
+    upload = await client.post(
+        "/v1/media",
+        headers=auth_headers,
+        data={"book_id": str(book_id), "kind": "cover_image"},
+        files={"file": ("cover.png", b"png bytes", "image/png")},
+    )
+    assert upload.status_code == 201
+    asset_id = upload.json()["asset_id"]
+
+    response = await client.post(
+        "/v1/sync/powersync-upload",
+        headers=auth_headers,
+        json={
+            "batch": [
+                {
+                    "type": "books",
+                    "op": "PATCH",
+                    "id": str(book_id),
+                    "data": {"cover_media_id": asset_id},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    db_session.expire_all()
+    synced_book = await db_session.get(SyncBook, book_id)
+    assert synced_book is not None
+    assert str(synced_book.cover_media_id) == asset_id
+
+
+async def test_powersync_upload_rejects_unknown_media_reference(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+):
+    response = await client.post(
+        "/v1/sync/powersync-upload",
+        headers=auth_headers,
+        json={
+            "batch": [
+                {
+                    "type": "books",
+                    "op": "PUT",
+                    "id": str(uuid4()),
+                    "data": {"title": "Bad Media", "file_media_id": str(uuid4())},
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["message"] == "file_media_id was not found"
