@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     powersync_token_expire_minutes: int = 5
     powersync_service_url: str = "http://localhost:8081"
     powersync_service_port: int = 8081
+    file_storage_quota_bytes: int = 1_073_741_824
     powersync_jwks_uri: str | None = None
     powersync_source_role: str | None = None
     powersync_source_password: str | None = None

@@ -9,6 +9,26 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from papyrus.models import SyncBook, User
 
 
+async def test_sync_settings_are_public_and_hide_implementation_details(client: AsyncClient, monkeypatch):
+    """Return public data sync settings for one-URL custom server discovery."""
+    from papyrus.main import settings as app_settings
+
+    monkeypatch.setattr(app_settings, "powersync_service_url", "https://sync.papyrus.test")
+    monkeypatch.setattr(app_settings, "file_storage_quota_bytes", 1_073_741_824)
+
+    response = await client.get("/v1/sync/settings")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "data_sync_url": "https://sync.papyrus.test",
+        "file_storage": {
+            "supported": True,
+            "quota_bytes": 1_073_741_824,
+        },
+    }
+    assert "powersync" not in response.text.lower()
+
+
 async def test_legacy_sync_routes_are_removed(client: AsyncClient, auth_headers: dict[str, str]):
     """PowerSync is the only supported synchronization contract."""
     assert (await client.get("/v1/sync/status", headers=auth_headers)).status_code == 404

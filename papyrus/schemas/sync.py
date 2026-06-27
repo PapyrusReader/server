@@ -64,3 +64,17 @@ class PowerSyncUploadResponse(BaseModel):
     """Summary of an applied PowerSync upload transaction."""
 
     applied_count: int
+
+
+class FileStorageSettings(BaseModel):
+    """Public file storage capability advertised by this server."""
+
+    supported: bool
+    quota_bytes: int
+
+
+class DataSyncSettingsResponse(BaseModel):
+    """Public sync settings used by clients for custom server discovery."""
+
+    data_sync_url: str
+    file_storage: FileStorageSettings
