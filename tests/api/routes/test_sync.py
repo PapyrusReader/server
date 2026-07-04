@@ -1,12 +1,18 @@
 """Tests for sync endpoints."""
 
 from datetime import UTC, datetime
+from io import BytesIO
 from uuid import UUID, uuid4
 
+import pytest
+from fastapi import UploadFile
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.models import SyncBook, User
+from papyrus.schemas.sync import PowerSyncCrudMutation
+from papyrus.services import media as media_service
+from papyrus.services import sync as sync_service
 
 
 async def test_sync_settings_are_public_and_hide_implementation_details(client: AsyncClient, monkeypatch):
@@ -342,3 +348,86 @@ async def test_powersync_upload_rejects_unknown_media_reference(
 
     assert response.status_code == 400
     assert response.json()["error"]["message"] == "file_media_id was not found"
+
+
+async def test_powersync_book_delete_removes_media_files_after_commit(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    auth_user: dict[str, str],
+    db_session: AsyncSession,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
+    book_id = uuid4()
+    book = SyncBook(
+        book_id=book_id,
+        owner_user_id=UUID(auth_user["user_id"]),
+        title="Media Delete Book",
+        added_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(book)
+    await db_session.commit()
+    upload = await client.post(
+        "/v1/media",
+        headers=auth_headers,
+        data={"book_id": str(book_id), "kind": "book_file"},
+        files={"file": ("book.epub", b"epub bytes", "application/epub+zip")},
+    )
+    assert upload.status_code == 201
+    media_path = tmp_path / upload.json()["storage_path"]
+    assert media_path.exists()
+
+    response = await client.post(
+        "/v1/sync/powersync-upload",
+        headers=auth_headers,
+        json={"batch": [{"type": "books", "op": "DELETE", "id": str(book_id)}]},
+    )
+
+    assert response.status_code == 200
+    assert not media_path.exists()
+
+
+async def test_powersync_book_delete_keeps_media_file_when_commit_fails(
+    auth_user: dict[str, str],
+    db_session: AsyncSession,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
+    monkeypatch.setattr("papyrus.main.settings.file_storage_quota_bytes", 1_073_741_824)
+    user_id = UUID(auth_user["user_id"])
+    book_id = uuid4()
+    book = SyncBook(
+        book_id=book_id,
+        owner_user_id=user_id,
+        title="Media Rollback Book",
+        added_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    db_session.add(book)
+    await db_session.commit()
+    asset = await media_service.upload_media(
+        db_session,
+        user_id,
+        book_id=book_id,
+        kind="book_file",
+        file=UploadFile(filename="book.epub", file=BytesIO(b"epub bytes")),
+    )
+    media_path = tmp_path / asset.storage_path
+    assert media_path.exists()
+
+    async def fail_commit() -> None:
+        raise RuntimeError("database commit failed")
+
+    monkeypatch.setattr(db_session, "commit", fail_commit)
+
+    with pytest.raises(RuntimeError, match="database commit failed"):
+        await sync_service.apply_powersync_upload_batch(
+            db_session,
+            user_id,
+            [PowerSyncCrudMutation(type="books", op="DELETE", id=str(book_id))],
+        )
+
+    assert media_path.exists()

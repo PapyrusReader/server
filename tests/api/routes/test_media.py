@@ -1,13 +1,17 @@
 """Tests for authenticated media storage routes."""
 
 from datetime import UTC, datetime
+from io import BytesIO
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import pytest
+from fastapi import UploadFile
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.models import SyncBook, User
+from papyrus.services import media as media_service
 
 
 async def _create_owned_book(db_session: AsyncSession, user_id: str) -> SyncBook:
@@ -150,3 +154,67 @@ async def test_upload_rejects_cross_user_book(
     )
 
     assert response.status_code == 403
+
+
+async def test_upload_removes_new_file_when_commit_fails(
+    auth_user: dict[str, str],
+    db_session: AsyncSession,
+    monkeypatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
+    monkeypatch.setattr("papyrus.main.settings.file_storage_quota_bytes", 1_073_741_824)
+    book = await _create_owned_book(db_session, auth_user["user_id"])
+
+    async def fail_commit() -> None:
+        raise RuntimeError("database commit failed")
+
+    monkeypatch.setattr(db_session, "commit", fail_commit)
+
+    with pytest.raises(RuntimeError, match="database commit failed"):
+        await media_service.upload_media(
+            db_session,
+            UUID(auth_user["user_id"]),
+            book_id=book.book_id,
+            kind="book_file",
+            file=UploadFile(filename="example.epub", file=BytesIO(b"epub bytes")),
+        )
+
+    assert [path for path in tmp_path.rglob("*") if path.is_file()] == []
+
+
+async def test_replacing_media_keeps_existing_file_when_commit_fails(
+    auth_user: dict[str, str],
+    db_session: AsyncSession,
+    monkeypatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
+    monkeypatch.setattr("papyrus.main.settings.file_storage_quota_bytes", 1_073_741_824)
+    book = await _create_owned_book(db_session, auth_user["user_id"])
+    first = await media_service.upload_media(
+        db_session,
+        UUID(auth_user["user_id"]),
+        book_id=book.book_id,
+        kind="book_file",
+        file=UploadFile(filename="book.epub", file=BytesIO(b"first book")),
+    )
+    first_path = tmp_path / first.storage_path
+    assert first_path.read_bytes() == b"first book"
+
+    async def fail_commit() -> None:
+        raise RuntimeError("database commit failed")
+
+    monkeypatch.setattr(db_session, "commit", fail_commit)
+
+    with pytest.raises(RuntimeError, match="database commit failed"):
+        await media_service.upload_media(
+            db_session,
+            UUID(auth_user["user_id"]),
+            book_id=book.book_id,
+            kind="book_file",
+            file=UploadFile(filename="book.epub", file=BytesIO(b"second book")),
+        )
+
+    assert first_path.read_bytes() == b"first book"
+    assert sorted(path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()) == [b"first book"]

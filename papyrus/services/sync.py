@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -172,13 +173,17 @@ async def apply_powersync_upload_batch(
 ) -> int:
     """Apply one PowerSync CRUD transaction and commit it atomically."""
     applied_count = 0
+    media_paths_to_delete: list[Path] = []
     try:
         for mutation in batch:
-            applied_count += await _apply_book_mutation(session, user_id, mutation)
+            applied, deleted_media_paths = await _apply_book_mutation(session, user_id, mutation)
+            applied_count += applied
+            media_paths_to_delete.extend(deleted_media_paths)
         await session.commit()
     except Exception:
         await session.rollback()
         raise
+    media_service.delete_physical_paths(media_paths_to_delete)
     return applied_count
 
 
@@ -186,17 +191,17 @@ async def _apply_book_mutation(
     session: AsyncSession,
     user_id: UUID,
     mutation: PowerSyncCrudMutation,
-) -> int:
+) -> tuple[int, list[Path]]:
     book_id = _uuid(mutation.id, "id")
     operation = mutation.op.upper()
 
     if operation == "DELETE":
         book = await _get_owned_book(session, user_id, book_id)
         if book is None:
-            return 0
-        await media_service.delete_book_media(session, user_id, book_id)
+            return 0, []
+        deleted_media_paths = await media_service.delete_book_media(session, user_id, book_id)
         await session.delete(book)
-        return 1
+        return 1, deleted_media_paths
 
     payload = _validate_payload(mutation.op_data or {})
     book = await _get_owned_book(session, user_id, book_id)
@@ -247,4 +252,4 @@ async def _apply_book_mutation(
     book.rating = _optional_int(payload, "rating", book.rating)
     book.custom_metadata = _optional_json_object(payload, "custom_metadata", book.custom_metadata)
     book.updated_at = now
-    return 1
+    return 1, []

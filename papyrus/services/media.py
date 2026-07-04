@@ -17,6 +17,7 @@ from papyrus.models import MediaAsset, SyncBook
 BOOK_EXTENSIONS = {"epub", "pdf", "mobi", "azw3", "txt", "cbr", "cbz"}
 COVER_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
 MEDIA_KINDS = {"book_file", "cover_image"}
+UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 
 def media_root() -> Path:
@@ -53,49 +54,61 @@ async def upload_media(
     content_type = file.content_type or "application/octet-stream"
     _validate_media_type(kind, extension, content_type)
 
-    content = await file.read()
-    if not content:
-        raise ValidationError("Uploaded file is empty")
-
     existing = await _existing_asset_for_kind(session, book, kind)
     used = await _used_bytes(session, user_id)
     used_without_existing = used - (existing.size_bytes if existing is not None else 0)
     quota = get_settings().file_storage_quota_bytes
-    if used_without_existing + len(content) > quota:
-        raise ConflictError("Storage quota exceeded")
 
     asset_id = uuid4()
     storage_path = f"{user_id}/{book_id}/{asset_id}.{extension}"
     absolute_path = media_root() / storage_path
+    temp_path = absolute_path.with_name(f".{asset_id}.{extension}.tmp")
     absolute_path.parent.mkdir(parents=True, exist_ok=True)
-    absolute_path.write_bytes(content)
+    final_file_written = False
 
-    asset = MediaAsset(
-        asset_id=asset_id,
-        owner_user_id=user_id,
-        book_id=book_id,
-        kind=kind,
-        original_filename=filename,
-        content_type=content_type,
-        extension=extension,
-        size_bytes=len(content),
-        sha256=hashlib.sha256(content).hexdigest(),
-        storage_path=storage_path,
-    )
-    session.add(asset)
+    try:
+        size_bytes, sha256_hex = await _write_upload_to_temp_file(
+            file,
+            temp_path,
+            quota_remaining=quota - used_without_existing,
+        )
+        temp_path.replace(absolute_path)
+        final_file_written = True
 
-    if kind == "book_file":
-        book.file_media_id = asset.asset_id
-    else:
-        book.cover_media_id = asset.asset_id
+        asset = MediaAsset(
+            asset_id=asset_id,
+            owner_user_id=user_id,
+            book_id=book_id,
+            kind=kind,
+            original_filename=filename,
+            content_type=content_type,
+            extension=extension,
+            size_bytes=size_bytes,
+            sha256=sha256_hex,
+            storage_path=storage_path,
+        )
+        session.add(asset)
 
-    if existing is not None:
-        await session.delete(existing)
-        _delete_physical_file(existing)
+        if kind == "book_file":
+            book.file_media_id = asset.asset_id
+        else:
+            book.cover_media_id = asset.asset_id
 
-    await session.commit()
-    await session.refresh(asset)
-    return asset
+        if existing is not None:
+            await session.delete(existing)
+
+        await session.commit()
+        if existing is not None:
+            delete_physical_file(existing)
+        await session.refresh(asset)
+        return asset
+    except Exception:
+        await session.rollback()
+        _delete_path(temp_path)
+        if final_file_written:
+            _delete_path(absolute_path)
+        _delete_empty_parent_dirs(absolute_path.parent, stop_at=media_root())
+        raise
 
 
 async def get_owned_asset(session: AsyncSession, user_id: UUID, asset_id: UUID) -> MediaAsset:
@@ -116,17 +129,19 @@ async def delete_media(session: AsyncSession, user_id: UUID, asset_id: UUID) -> 
         if book.cover_media_id == asset.asset_id:
             book.cover_media_id = None
     await session.delete(asset)
-    _delete_physical_file(asset)
     await session.commit()
+    delete_physical_file(asset)
 
 
-async def delete_book_media(session: AsyncSession, user_id: UUID, book_id: UUID) -> None:
+async def delete_book_media(session: AsyncSession, user_id: UUID, book_id: UUID) -> list[Path]:
     result = await session.execute(
         select(MediaAsset).where(MediaAsset.owner_user_id == user_id, MediaAsset.book_id == book_id)
     )
+    deleted_paths: list[Path] = []
     for asset in result.scalars():
+        deleted_paths.append(asset_path(asset))
         await session.delete(asset)
-        _delete_physical_file(asset)
+    return deleted_paths
 
 
 async def validate_media_reference(
@@ -159,6 +174,29 @@ async def _used_bytes(session: AsyncSession, user_id: UUID) -> int:
     return int(result.scalar_one())
 
 
+async def _write_upload_to_temp_file(
+    file: UploadFile,
+    temp_path: Path,
+    *,
+    quota_remaining: int,
+) -> tuple[int, str]:
+    hasher = hashlib.sha256()
+    size_bytes = 0
+
+    with temp_path.open("wb") as output:
+        while chunk := await file.read(UPLOAD_CHUNK_SIZE):
+            size_bytes += len(chunk)
+            if size_bytes > quota_remaining:
+                raise ConflictError("Storage quota exceeded")
+            hasher.update(chunk)
+            output.write(chunk)
+
+    if size_bytes == 0:
+        raise ValidationError("Uploaded file is empty")
+
+    return size_bytes, hasher.hexdigest()
+
+
 async def _existing_asset_for_kind(session: AsyncSession, book: SyncBook, kind: str) -> MediaAsset | None:
     asset_id = book.file_media_id if kind == "book_file" else book.cover_media_id
     if asset_id is None:
@@ -180,7 +218,26 @@ def _validate_media_type(kind: str, extension: str, content_type: str) -> None:
         raise ValidationError("Unsupported cover image type")
 
 
-def _delete_physical_file(asset: MediaAsset) -> None:
-    path = asset_path(asset)
+def delete_physical_file(asset: MediaAsset) -> None:
+    _delete_path(asset_path(asset))
+
+
+def delete_physical_paths(paths: list[Path]) -> None:
+    for path in paths:
+        _delete_path(path)
+
+
+def _delete_path(path: Path) -> None:
     if path.exists():
         path.unlink()
+
+
+def _delete_empty_parent_dirs(path: Path, *, stop_at: Path) -> None:
+    current = path
+    stop = stop_at.resolve()
+    while current.resolve() != stop:
+        try:
+            current.rmdir()
+        except OSError:
+            return
+        current = current.parent
