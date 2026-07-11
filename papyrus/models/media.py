@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Uuid, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from papyrus.core.database import Base
@@ -15,6 +15,7 @@ class MediaAsset(Base):
     """A private uploaded book file or cover image owned by one user."""
 
     __tablename__ = "media_assets"
+    __table_args__ = (UniqueConstraint("book_id", "kind", name="uq_media_assets_book_kind"),)
 
     asset_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     owner_user_id: Mapped[UUID] = mapped_column(

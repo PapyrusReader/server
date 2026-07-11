@@ -1,5 +1,6 @@
 """Tests for authenticated media storage routes."""
 
+import asyncio
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
@@ -8,9 +9,11 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import UploadFile
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from papyrus.models import SyncBook, User
+from papyrus.core.exceptions import ConflictError
+from papyrus.models import MediaAsset, SyncBook, User
 from papyrus.services import media as media_service
 
 
@@ -218,3 +221,94 @@ async def test_replacing_media_keeps_existing_file_when_commit_fails(
 
     assert first_path.read_bytes() == b"first book"
     assert sorted(path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()) == [b"first book"]
+
+
+async def test_concurrent_same_kind_uploads_leave_one_asset(
+    auth_user: dict[str, str],
+    test_session_maker: async_sessionmaker[AsyncSession],
+    monkeypatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
+    monkeypatch.setattr("papyrus.main.settings.file_storage_quota_bytes", 1_073_741_824)
+    user_id = UUID(auth_user["user_id"])
+    async with test_session_maker() as setup_session:
+        book = await _create_owned_book(setup_session, auth_user["user_id"])
+        book_id = book.book_id
+
+    async def upload(contents: bytes) -> MediaAsset:
+        async with test_session_maker() as session:
+            return await media_service.upload_media(
+                session,
+                user_id,
+                book_id=book_id,
+                kind="book_file",
+                file=UploadFile(filename="book.epub", file=BytesIO(contents)),
+            )
+
+    first, second = await asyncio.gather(upload(b"first"), upload(b"second"))
+
+    async with test_session_maker() as session:
+        assets = list((await session.execute(select(MediaAsset).where(MediaAsset.book_id == book_id))).scalars())
+        stored_book = await session.get(SyncBook, book_id)
+
+    assert first.asset_id != second.asset_id
+    assert len(assets) == 1
+    assert stored_book is not None
+    assert stored_book.file_media_id == assets[0].asset_id
+    assert [path for path in tmp_path.rglob("*") if path.is_file()] == [tmp_path / assets[0].storage_path]
+
+
+async def test_user_upload_lock_blocks_a_second_session(
+    auth_user: dict[str, str],
+    test_session_maker: async_sessionmaker[AsyncSession],
+):
+    user_id = UUID(auth_user["user_id"])
+    async with test_session_maker() as first_session, test_session_maker() as second_session:
+        await media_service._lock_user_uploads(first_session, user_id)
+        second_lock = asyncio.create_task(media_service._lock_user_uploads(second_session, user_id))
+        await asyncio.sleep(0.05)
+        assert not second_lock.done()
+        await first_session.rollback()
+        await asyncio.wait_for(second_lock, timeout=1)
+
+
+async def test_concurrent_uploads_enforce_aggregate_user_quota(
+    auth_user: dict[str, str],
+    test_session_maker: async_sessionmaker[AsyncSession],
+    monkeypatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
+    monkeypatch.setattr("papyrus.main.settings.file_storage_quota_bytes", 5)
+    user_id = UUID(auth_user["user_id"])
+    async with test_session_maker() as setup_session:
+        first_book = await _create_owned_book(setup_session, auth_user["user_id"])
+        second_book = await _create_owned_book(setup_session, auth_user["user_id"])
+        book_ids = (first_book.book_id, second_book.book_id)
+
+    async def upload(book_id: UUID) -> MediaAsset:
+        async with test_session_maker() as session:
+            return await media_service.upload_media(
+                session,
+                user_id,
+                book_id=book_id,
+                kind="book_file",
+                file=UploadFile(filename="book.epub", file=BytesIO(b"1234")),
+            )
+
+    results = await asyncio.gather(*(upload(book_id) for book_id in book_ids), return_exceptions=True)
+
+    async with test_session_maker() as session:
+        asset_count = await session.scalar(
+            select(func.count()).select_from(MediaAsset).where(MediaAsset.owner_user_id == user_id)
+        )
+        used_bytes = await session.scalar(
+            select(func.coalesce(func.sum(MediaAsset.size_bytes), 0)).where(MediaAsset.owner_user_id == user_id)
+        )
+
+    assert sum(isinstance(result, MediaAsset) for result in results) == 1
+    assert sum(isinstance(result, ConflictError) for result in results) == 1
+    assert asset_count == 1
+    assert used_bytes == 4
+    assert sum(path.stat().st_size for path in tmp_path.rglob("*") if path.is_file()) == 4

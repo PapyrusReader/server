@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.config import get_settings
 from papyrus.core.exceptions import ConflictError, ForbiddenError, NotFoundError, ValidationError
-from papyrus.models import MediaAsset, SyncBook
+from papyrus.models import MediaAsset, SyncBook, User
 
 BOOK_EXTENSIONS = {"epub", "pdf", "mobi", "azw3", "txt", "cbr", "cbz"}
 COVER_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
@@ -43,7 +43,10 @@ async def upload_media(
     if kind not in MEDIA_KINDS:
         raise ValidationError("Unsupported media kind")
 
-    book = await session.get(SyncBook, book_id)
+    await _lock_user_uploads(session, user_id)
+    book = (
+        await session.execute(select(SyncBook).where(SyncBook.book_id == book_id).with_for_update())
+    ).scalar_one_or_none()
     if book is None:
         raise NotFoundError("Book was not found")
     if book.owner_user_id != user_id:
@@ -87,15 +90,15 @@ async def upload_media(
             sha256=sha256_hex,
             storage_path=storage_path,
         )
-        session.add(asset)
+        if existing is not None:
+            await session.delete(existing)
+            await session.flush()
 
+        session.add(asset)
         if kind == "book_file":
             book.file_media_id = asset.asset_id
         else:
             book.cover_media_id = asset.asset_id
-
-        if existing is not None:
-            await session.delete(existing)
 
         await session.commit()
         if existing is not None:
@@ -170,8 +173,15 @@ def asset_path(asset: MediaAsset) -> Path:
 
 
 async def _used_bytes(session: AsyncSession, user_id: UUID) -> int:
-    result = await session.execute(select(func.coalesce(func.sum(MediaAsset.size_bytes), 0)).where(MediaAsset.owner_user_id == user_id))
+    result = await session.execute(
+        select(func.coalesce(func.sum(MediaAsset.size_bytes), 0)).where(MediaAsset.owner_user_id == user_id)
+    )
     return int(result.scalar_one())
+
+
+async def _lock_user_uploads(session: AsyncSession, user_id: UUID) -> None:
+    """Serialize quota and replacement decisions for one user's uploads."""
+    await session.execute(select(User.user_id).where(User.user_id == user_id).with_for_update())
 
 
 async def _write_upload_to_temp_file(
@@ -198,10 +208,9 @@ async def _write_upload_to_temp_file(
 
 
 async def _existing_asset_for_kind(session: AsyncSession, book: SyncBook, kind: str) -> MediaAsset | None:
-    asset_id = book.file_media_id if kind == "book_file" else book.cover_media_id
-    if asset_id is None:
-        return None
-    return await session.get(MediaAsset, asset_id)
+    return (
+        await session.execute(select(MediaAsset).where(MediaAsset.book_id == book.book_id, MediaAsset.kind == kind))
+    ).scalar_one_or_none()
 
 
 def _extension(filename: str) -> str:

@@ -41,6 +41,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["book_id"], ["books.book_id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["owner_user_id"], ["users.user_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("asset_id"),
+        sa.UniqueConstraint("book_id", "kind", name="uq_media_assets_book_kind"),
     )
     op.create_index(op.f("ix_media_assets_book_id"), "media_assets", ["book_id"], unique=False)
     op.create_index(op.f("ix_media_assets_owner_user_id"), "media_assets", ["owner_user_id"], unique=False)
