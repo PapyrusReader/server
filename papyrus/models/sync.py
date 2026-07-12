@@ -32,6 +32,8 @@ class SyncBook(Base):
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     cover_image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    file_media_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
+    cover_media_id: Mapped[UUID | None] = mapped_column(Uuid, nullable=True)
     reading_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     current_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
     current_position: Mapped[float | None] = mapped_column(Float, nullable=True)

@@ -1,16 +1,29 @@
 """Model metadata registration tests."""
 
+from sqlalchemy import UniqueConstraint
+
 from papyrus.models import (
     AuthExchangeCode,
     AuthSession,
     Base,
     EmailActionToken,
+    MediaAsset,
     PasswordCredential,
     PowerSyncDemoItem,
     SyncBook,
     User,
     UserIdentity,
 )
+
+
+def test_media_asset_kind_is_unique_per_book() -> None:
+    """Ensure concurrent replacements cannot leave duplicate book media."""
+    table = MediaAsset.__table__
+    unique_columns = {
+        tuple(constraint.columns.keys()) for constraint in table.constraints if isinstance(constraint, UniqueConstraint)
+    }
+
+    assert ("book_id", "kind") in unique_columns
 
 
 def test_auth_models_are_registered_with_metadata() -> None:

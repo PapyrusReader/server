@@ -11,6 +11,7 @@ from papyrus.api.routes import (
     dev_powersync_sandbox,
     files,
     goals,
+    media,
     notes,
     progress,
     reading_profiles,
@@ -37,6 +38,7 @@ api_router.include_router(bookmarks.router, prefix="/bookmarks", tags=["Bookmark
 api_router.include_router(progress.router, prefix="/progress", tags=["Progress"])
 api_router.include_router(goals.router, prefix="/goals", tags=["Goals"])
 api_router.include_router(sync.router, prefix="/sync", tags=["Sync"])
+api_router.include_router(media.router, prefix="/media", tags=["Media"])
 api_router.include_router(storage.router, prefix="/storage", tags=["Storage"])
 api_router.include_router(files.router, prefix="/files", tags=["Files"])
 api_router.include_router(reading_profiles.router, prefix="/reading-profiles", tags=["Reading Profiles"])

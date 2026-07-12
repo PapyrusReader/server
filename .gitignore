@@ -70,3 +70,6 @@ logs/
 Thumbs.db
 .codex
 .agents
+
+# Uploads.
+.media/

@@ -19,6 +19,8 @@ streams:
         page_count,
         description,
         cover_image_url,
+        file_media_id::text AS file_media_id,
+        cover_media_id::text AS cover_media_id,
         reading_status,
         current_page,
         current_position,

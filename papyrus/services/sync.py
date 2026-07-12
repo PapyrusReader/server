@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from papyrus.core.exceptions import ForbiddenError, ValidationError
 from papyrus.models import SyncBook
 from papyrus.schemas.sync import PowerSyncCrudMutation
+from papyrus.services import media as media_service
 
 BOOK_FIELDS = frozenset(
     {
@@ -24,6 +26,8 @@ BOOK_FIELDS = frozenset(
         "page_count",
         "description",
         "cover_image_url",
+        "file_media_id",
+        "cover_media_id",
         "reading_status",
         "current_page",
         "current_position",
@@ -62,6 +66,15 @@ def _optional_text(payload: dict[str, object], key: str, default: str | None = N
         return default
     value = payload[key]
     return None if value is None else str(value)
+
+
+def _optional_uuid(payload: dict[str, object], key: str, default: UUID | None = None) -> UUID | None:
+    if key not in payload:
+        return default
+    value = payload[key]
+    if value is None:
+        return None
+    return _uuid(value, key)
 
 
 def _required_text(payload: dict[str, object], key: str, default: str | None = None) -> str:
@@ -160,13 +173,17 @@ async def apply_powersync_upload_batch(
 ) -> int:
     """Apply one PowerSync CRUD transaction and commit it atomically."""
     applied_count = 0
+    media_paths_to_delete: list[Path] = []
     try:
         for mutation in batch:
-            applied_count += await _apply_book_mutation(session, user_id, mutation)
+            applied, deleted_media_paths = await _apply_book_mutation(session, user_id, mutation)
+            applied_count += applied
+            media_paths_to_delete.extend(deleted_media_paths)
         await session.commit()
     except Exception:
         await session.rollback()
         raise
+    media_service.delete_physical_paths(media_paths_to_delete)
     return applied_count
 
 
@@ -174,16 +191,17 @@ async def _apply_book_mutation(
     session: AsyncSession,
     user_id: UUID,
     mutation: PowerSyncCrudMutation,
-) -> int:
+) -> tuple[int, list[Path]]:
     book_id = _uuid(mutation.id, "id")
     operation = mutation.op.upper()
 
     if operation == "DELETE":
         book = await _get_owned_book(session, user_id, book_id)
         if book is None:
-            return 0
+            return 0, []
+        deleted_media_paths = await media_service.delete_book_media(session, user_id, book_id)
         await session.delete(book)
-        return 1
+        return 1, deleted_media_paths
 
     payload = _validate_payload(mutation.op_data or {})
     book = await _get_owned_book(session, user_id, book_id)
@@ -210,6 +228,22 @@ async def _apply_book_mutation(
     book.page_count = _optional_int(payload, "page_count", book.page_count)
     book.description = _optional_text(payload, "description", book.description)
     book.cover_image_url = _optional_text(payload, "cover_image_url", book.cover_image_url)
+    book.file_media_id = await media_service.validate_media_reference(
+        session,
+        user_id,
+        book.book_id,
+        _optional_uuid(payload, "file_media_id", book.file_media_id),
+        field_name="file_media_id",
+        expected_kind="book_file",
+    )
+    book.cover_media_id = await media_service.validate_media_reference(
+        session,
+        user_id,
+        book.book_id,
+        _optional_uuid(payload, "cover_media_id", book.cover_media_id),
+        field_name="cover_media_id",
+        expected_kind="cover_image",
+    )
     book.reading_status = _optional_text(payload, "reading_status", book.reading_status)
     book.current_page = _optional_int(payload, "current_page", book.current_page)
     book.current_position = _optional_float(payload, "current_position", book.current_position)
@@ -218,4 +252,4 @@ async def _apply_book_mutation(
     book.rating = _optional_int(payload, "rating", book.rating)
     book.custom_metadata = _optional_json_object(payload, "custom_metadata", book.custom_metadata)
     book.updated_at = now
-    return 1
+    return 1, []
