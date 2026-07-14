@@ -16,6 +16,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from papyrus.core.security import decrypt_secret_payload
 from papyrus.models.acquisition import AcquisitionEndpoint, AcquisitionJob, AcquisitionRule
 from papyrus.schemas.acquisition import Release
 
@@ -43,11 +44,18 @@ async def _request(
 
 
 def _credentials(endpoint: AcquisitionEndpoint) -> dict[str, str]:
-    return endpoint.credentials or {}
+    credentials = endpoint.credentials or {}
+    encrypted = credentials.get("encrypted")
+    if encrypted is None:
+        return credentials
+    try:
+        return decrypt_secret_payload(encrypted)
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail="Stored integration credentials are invalid") from exc
 
 
 async def search_endpoint(endpoint: AcquisitionEndpoint, query: str) -> list[Release]:
-    """Search Prowlarr or a Torznab/Newznab-compatible indexer."""
+    """Search Prowlarr or a Torznab-compatible torrent indexer."""
     credentials = _credentials(endpoint)
     if endpoint.kind == "prowlarr":
         request_url = _url(endpoint, f"api/v1/search?{urlencode({'query': query})}")
@@ -59,23 +67,24 @@ async def search_endpoint(endpoint: AcquisitionEndpoint, query: str) -> list[Rel
             Release(
                 title=item.get("title", "Untitled"),
                 download_url=item.get("downloadUrl") or item.get("magnetUrl") or item.get("guid", ""),
-                protocol="torrent" if item.get("protocol", "torrent") == "torrent" else "usenet",
+                protocol="torrent",
                 indexer=item.get("indexer", "Prowlarr"),
                 size_bytes=item.get("size"),
                 seeders=item.get("seeders"),
             )
             for item in data
-            if item.get("downloadUrl") or item.get("magnetUrl") or item.get("guid")
+            if (item.get("downloadUrl") or item.get("magnetUrl") or item.get("guid"))
+            and item.get("protocol", "torrent") == "torrent"
         ]
 
     params = urlencode({"t": "search", "q": query, "apikey": credentials.get("api_key", "")})
     response_status, _, payload = await _request(_url(endpoint, f"api?{params}"))
     if response_status >= 400:
         raise HTTPException(status_code=502, detail=f"{endpoint.kind.title()} search failed")
-    return _parse_newznab(payload, endpoint.name)
+    return _parse_torznab(payload, endpoint.name)
 
 
-def _parse_newznab(payload: bytes, indexer: str) -> list[Release]:
+def _parse_torznab(payload: bytes, indexer: str) -> list[Release]:
     try:
         root = ElementTree.fromstring(payload)
     except ElementTree.ParseError as exc:
@@ -93,7 +102,7 @@ def _parse_newznab(payload: bytes, indexer: str) -> list[Release]:
             Release(
                 title=item.findtext("title") or "Untitled",
                 download_url=link,
-                protocol="torrent" if link.startswith("magnet:") or ".torrent" in link else "usenet",
+                protocol="torrent",
                 indexer=indexer,
                 size_bytes=int(size) if size is not None and size.isdigit() else None,
                 seeders=int(seeders) if seeders is not None and seeders.isdigit() else None,

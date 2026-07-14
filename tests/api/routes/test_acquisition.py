@@ -1,9 +1,29 @@
 """Tests for private BitTorrent acquisition configuration."""
 
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from papyrus.core.security import decrypt_secret_payload
+from papyrus.models.acquisition import AcquisitionEndpoint
 
 
-async def test_create_and_list_endpoint_hides_credentials(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+async def test_capabilities_advertise_torrent_only_scope(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+    response = await client.get("/v1/acquisition/capabilities", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["indexer_kinds"] == ["prowlarr", "torznab"]
+    assert body["download_client_kinds"] == ["qbittorrent", "transmission", "deluge"]
+    assert "newznab" not in body["endpoint_kinds"]
+    assert body["arr_commands"]["readarr"] == ["AuthorSearch", "BookSearch"]
+
+
+async def test_create_and_list_endpoint_hides_and_encrypts_credentials(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
     """Credentials can be configured but must never be returned to a client."""
     response = await client.post(
         "/v1/acquisition/endpoints",
@@ -25,6 +45,14 @@ async def test_create_and_list_endpoint_hides_credentials(client: AsyncClient, a
     response = await client.get("/v1/acquisition/endpoints", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == [endpoint]
+
+    stored = (await db_session.execute(select(AcquisitionEndpoint))).scalar_one()
+    assert stored.credentials is not None
+    assert "password" not in stored.credentials
+    assert decrypt_secret_payload(stored.credentials["encrypted"]) == {
+        "username": "admin",
+        "password": "secret",
+    }
 
 
 async def test_create_rule_requires_owned_download_client(client: AsyncClient, auth_headers: dict[str, str]) -> None:
@@ -57,3 +85,32 @@ async def test_readarr_endpoint_is_a_supported_integration(client: AsyncClient, 
 
     assert response.status_code == 201
     assert response.json()["kind"] == "readarr"
+
+
+async def test_newznab_endpoint_is_rejected(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+    response = await client.post(
+        "/v1/acquisition/endpoints",
+        headers=auth_headers,
+        json={
+            "name": "Usenet",
+            "kind": "newznab",
+            "base_url": "http://newznab.local",
+            "api_key": "private-key",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+async def test_endpoint_url_rejects_embedded_credentials(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+    response = await client.post(
+        "/v1/acquisition/endpoints",
+        headers=auth_headers,
+        json={
+            "name": "Bad URL",
+            "kind": "qbittorrent",
+            "base_url": "http://user:secret@127.0.0.1:8080",
+        },
+    )
+
+    assert response.status_code == 422

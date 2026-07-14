@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr, field_validator
 
 
 class EndpointKind(StrEnum):
@@ -13,12 +13,20 @@ class EndpointKind(StrEnum):
     DELUGE = "deluge"
     PROWLARR = "prowlarr"
     TORZNAB = "torznab"
-    NEWZNAB = "newznab"
     READARR = "readarr"
     SONARR = "sonarr"
     RADARR = "radarr"
     LIDARR = "lidarr"
     WHISPARR = "whisparr"
+
+
+class AcquisitionCapabilities(BaseModel):
+    enabled: bool = True
+    endpoint_kinds: list[EndpointKind]
+    indexer_kinds: list[EndpointKind]
+    download_client_kinds: list[EndpointKind]
+    arr_kinds: list[EndpointKind]
+    arr_commands: dict[EndpointKind, list[str]]
 
 
 class AcquisitionEndpointCreate(BaseModel):
@@ -30,6 +38,11 @@ class AcquisitionEndpointCreate(BaseModel):
     password: SecretStr | None = None
     settings: dict[str, object] | None = None
 
+    @field_validator("base_url")
+    @classmethod
+    def validate_endpoint_url(cls, value: HttpUrl) -> HttpUrl:
+        return validate_endpoint_url(value)
+
 
 class AcquisitionEndpointUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=120)
@@ -39,6 +52,13 @@ class AcquisitionEndpointUpdate(BaseModel):
     password: SecretStr | None = None
     settings: dict[str, object] | None = None
     enabled: bool | None = None
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_endpoint_url(cls, value: HttpUrl | None) -> HttpUrl | None:
+        if value is None:
+            return None
+        return validate_endpoint_url(value)
 
 
 class AcquisitionEndpoint(BaseModel):
@@ -73,6 +93,15 @@ class SubmitRequest(BaseModel):
     download_url: str = Field(min_length=1, max_length=4096)
     category: str | None = Field(None, max_length=100)
     save_path: str | None = Field(None, max_length=1024)
+
+    @field_validator("download_url")
+    @classmethod
+    def validate_torrent_download_url(cls, value: str) -> str:
+        if value.startswith("magnet:"):
+            return value
+        if value.startswith(("http://", "https://")):
+            return value
+        raise ValueError("download_url must be a magnet, HTTP, or HTTPS torrent URL")
 
 
 class ArrCommandRequest(BaseModel):
@@ -114,3 +143,11 @@ class AcquisitionJob(BaseModel):
     client_reference: str | None = None
     error: str | None = None
     created_at: datetime | None = None
+
+
+def validate_endpoint_url(value: HttpUrl) -> HttpUrl:
+    if value.username or value.password:
+        raise ValueError("Endpoint URL must not include credentials")
+    if value.scheme not in {"http", "https"}:
+        raise ValueError("Endpoint URL must use HTTP or HTTPS")
+    return value

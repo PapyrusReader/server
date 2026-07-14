@@ -9,10 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.api.deps import CurrentUserId
 from papyrus.core.database import get_db
+from papyrus.core.security import decrypt_secret_payload, encrypt_secret_payload
 from papyrus.models.acquisition import AcquisitionEndpoint as AcquisitionEndpointModel
 from papyrus.models.acquisition import AcquisitionJob as AcquisitionJobModel
 from papyrus.models.acquisition import AcquisitionRule as AcquisitionRuleModel
 from papyrus.schemas.acquisition import (
+    AcquisitionCapabilities,
     AcquisitionEndpoint,
     AcquisitionEndpointCreate,
     AcquisitionEndpointUpdate,
@@ -40,7 +42,48 @@ def _credentials(api_key: str | None, username: str | None, password: str | None
     values = {
         key: value for key, value in {"api_key": api_key, "username": username, "password": password}.items() if value
     }
-    return values or None
+    if not values:
+        return None
+    return {"encrypted": encrypt_secret_payload(values)}
+
+
+def _merge_credentials(endpoint: AcquisitionEndpointModel, replacement: dict[str, str] | None) -> None:
+    if replacement is None:
+        return
+    current = endpoint.credentials or {}
+    if encrypted := current.get("encrypted"):
+        current = decrypt_secret_payload(encrypted)
+    endpoint.credentials = {
+        "encrypted": encrypt_secret_payload({**current, **decrypt_secret_payload(replacement["encrypted"])})
+    }
+
+
+@router.get("/capabilities", response_model=AcquisitionCapabilities)
+async def acquisition_capabilities() -> AcquisitionCapabilities:
+    return AcquisitionCapabilities(
+        endpoint_kinds=[
+            "qbittorrent",
+            "transmission",
+            "deluge",
+            "prowlarr",
+            "torznab",
+            "readarr",
+            "sonarr",
+            "radarr",
+            "lidarr",
+            "whisparr",
+        ],
+        indexer_kinds=["prowlarr", "torznab"],
+        download_client_kinds=["qbittorrent", "transmission", "deluge"],
+        arr_kinds=["readarr", "sonarr", "radarr", "lidarr", "whisparr"],
+        arr_commands={
+            "readarr": ["AuthorSearch", "BookSearch"],
+            "sonarr": ["SeriesSearch", "EpisodeSearch", "MissingEpisodeSearch"],
+            "radarr": ["MoviesSearch", "MissingMoviesSearch"],
+            "lidarr": ["ArtistSearch", "AlbumSearch", "MissingAlbumSearch"],
+            "whisparr": ["SeriesSearch", "EpisodeSearch", "MissingEpisodeSearch"],
+        },
+    )
 
 
 @router.get("/endpoints", response_model=list[AcquisitionEndpoint])
@@ -88,8 +131,7 @@ async def update_endpoint(
         request.username.get_secret_value() if request.username else None,
         request.password.get_secret_value() if request.password else None,
     )
-    if replacement:
-        endpoint.credentials = {**(endpoint.credentials or {}), **replacement}
+    _merge_credentials(endpoint, replacement)
     await db.commit()
     await db.refresh(endpoint)
     return endpoint
@@ -107,7 +149,7 @@ async def search_releases(user_id: CurrentUserId, request: SearchRequest, db: Db
     statement = select(AcquisitionEndpointModel).where(
         AcquisitionEndpointModel.owner_user_id == user_id,
         AcquisitionEndpointModel.enabled.is_(True),
-        AcquisitionEndpointModel.kind.in_(("prowlarr", "torznab", "newznab")),
+        AcquisitionEndpointModel.kind.in_(("prowlarr", "torznab")),
     )
     if request.endpoint_ids:
         statement = statement.where(AcquisitionEndpointModel.endpoint_id.in_(request.endpoint_ids))
