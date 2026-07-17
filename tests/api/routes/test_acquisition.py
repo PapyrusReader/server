@@ -1,5 +1,7 @@
 """Tests for private BitTorrent acquisition configuration."""
 
+from uuid import UUID
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -7,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.core.security import decrypt_secret_payload
 from papyrus.main import settings as app_settings
-from papyrus.models.acquisition import AcquisitionEndpoint
+from papyrus.models.acquisition import AcquisitionEndpoint, AcquisitionJob, AcquisitionRule
 from papyrus.services import acquisition as acquisition_service
 
 
@@ -184,3 +186,50 @@ async def test_rejected_submission_persists_failed_job(
     assert response.status_code == 201
     assert response.json()["status"] == "failed"
     assert response.json()["error"] == "Transmission rejected the release"
+
+
+async def test_delete_endpoint_preserves_jobs_and_disables_rules(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    auth_user: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    endpoint_response = await client.post(
+        "/v1/acquisition/endpoints",
+        headers=auth_headers,
+        json={
+            "name": "Disposable client",
+            "kind": "qbittorrent",
+            "base_url": "http://qbittorrent.local:8080",
+        },
+    )
+    endpoint_id = UUID(endpoint_response.json()["endpoint_id"])
+    owner_user_id = UUID(auth_user["user_id"])
+    rule = AcquisitionRule(
+        owner_user_id=owner_user_id,
+        name="Affected rule",
+        query="book",
+        endpoint_ids=[str(endpoint_id)],
+        download_client_id=endpoint_id,
+        enabled=True,
+    )
+    job = AcquisitionJob(
+        owner_user_id=owner_user_id,
+        endpoint_id=endpoint_id,
+        title="Audited release",
+        download_url="magnet:?xt=urn:btih:test",
+        status="submitted",
+    )
+
+    db_session.add_all([rule, job])
+    await db_session.commit()
+
+    response = await client.delete(f"/v1/acquisition/endpoints/{endpoint_id}", headers=auth_headers)
+
+    assert response.status_code == 204
+    await db_session.refresh(job)
+    await db_session.refresh(rule)
+    assert job.endpoint_id is None
+    assert rule.download_client_id is None
+    assert rule.endpoint_ids == []
+    assert rule.enabled is False

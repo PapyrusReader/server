@@ -135,7 +135,7 @@ class AcquisitionRule(BaseModel):
 class AcquisitionJob(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     job_id: UUID
-    endpoint_id: UUID
+    endpoint_id: UUID | None
     rule_id: UUID | None
     title: str
     download_url: str

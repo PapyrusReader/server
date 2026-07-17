@@ -314,6 +314,33 @@ async def owned_endpoint(session: AsyncSession, owner_user_id: Any, endpoint_id:
     return endpoint
 
 
+async def delete_acquisition_endpoint(session: AsyncSession, owner_user_id: Any, endpoint_id: Any) -> None:
+    endpoint = await owned_endpoint(session, owner_user_id, endpoint_id)
+    result = await session.execute(
+        select(AcquisitionRule).where(AcquisitionRule.owner_user_id == owner_user_id).with_for_update()
+    )
+
+    for rule in result.scalars():
+        endpoint_ids = rule.endpoint_ids or []
+        remaining_endpoint_ids = [value for value in endpoint_ids if value != str(endpoint_id)]
+        indexer_deleted = remaining_endpoint_ids != endpoint_ids
+        download_client_deleted = rule.download_client_id == endpoint_id
+
+        if indexer_deleted:
+            rule.endpoint_ids = remaining_endpoint_ids
+
+        if download_client_deleted:
+            rule.download_client_id = None
+
+        if download_client_deleted or (indexer_deleted and not remaining_endpoint_ids):
+            rule.enabled = False
+
+    await session.flush()
+
+    await session.delete(endpoint)
+    await session.commit()
+
+
 async def run_rule(session: AsyncSession, rule: AcquisitionRule) -> list[AcquisitionJob]:
     """Run one rule once; callers may schedule this from their worker/cron service."""
     client = await owned_endpoint(session, rule.owner_user_id, rule.download_client_id)

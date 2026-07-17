@@ -39,7 +39,11 @@ class AcquisitionRule(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     query: Mapped[str] = mapped_column(String(500), nullable=False)
     endpoint_ids: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
-    download_client_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("acquisition_endpoints.endpoint_id"))
+    download_client_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("acquisition_endpoints.endpoint_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     filters: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -53,7 +57,11 @@ class AcquisitionJob(Base):
 
     job_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     owner_user_id: Mapped[UUID] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), index=True)
-    endpoint_id: Mapped[UUID] = mapped_column(Uuid, ForeignKey("acquisition_endpoints.endpoint_id"), nullable=False)
+    endpoint_id: Mapped[UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("acquisition_endpoints.endpoint_id", ondelete="SET NULL"),
+        nullable=True,
+    )
     rule_id: Mapped[UUID | None] = mapped_column(Uuid, ForeignKey("acquisition_rules.rule_id", ondelete="SET NULL"))
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     download_url: Mapped[str] = mapped_column(Text, nullable=False)

@@ -28,6 +28,7 @@ from papyrus.schemas.acquisition import (
     SubmitRequest,
 )
 from papyrus.services.acquisition import (
+    delete_acquisition_endpoint,
     dispatch_arr_command,
     owned_endpoint,
     run_rule,
@@ -158,9 +159,7 @@ async def update_endpoint(
 
 @protected_router.delete("/endpoints/{endpoint_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_endpoint(user_id: CurrentUserId, endpoint_id: UUID, db: DbSession) -> None:
-    endpoint = await owned_endpoint(db, user_id, endpoint_id)
-    await db.delete(endpoint)
-    await db.commit()
+    await delete_acquisition_endpoint(db, user_id, endpoint_id)
 
 
 @protected_router.post("/search", response_model=list[Release])
