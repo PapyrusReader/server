@@ -54,6 +54,35 @@ def _credentials(endpoint: AcquisitionEndpoint) -> dict[str, str]:
         raise HTTPException(status_code=500, detail="Stored integration credentials are invalid") from exc
 
 
+def _json_value(payload: bytes, integration: str) -> object:
+    try:
+        return json.loads(payload)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=502, detail=f"{integration} returned invalid JSON") from exc
+
+
+def _json_object(payload: bytes, integration: str) -> dict[str, object]:
+    value = _json_value(payload, integration)
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=502, detail=f"{integration} returned an invalid response")
+    return value
+
+
+def _json_array(payload: bytes, integration: str) -> list[dict[str, object]]:
+    value = _json_value(payload, integration)
+    if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+        raise HTTPException(status_code=502, detail=f"{integration} returned an invalid response")
+    return value
+
+
+def _require_deluge_result(payload: bytes) -> object:
+    response = _json_object(payload, "Deluge")
+    result = response.get("result")
+    if response.get("error") is not None or result is None or result is False:
+        raise HTTPException(status_code=502, detail="Deluge rejected the request")
+    return result
+
+
 async def search_endpoint(endpoint: AcquisitionEndpoint, query: str) -> list[Release]:
     """Search Prowlarr or a Torznab-compatible torrent indexer."""
     credentials = _credentials(endpoint)
@@ -62,7 +91,7 @@ async def search_endpoint(endpoint: AcquisitionEndpoint, query: str) -> list[Rel
         response_status, _, payload = await _request(request_url, headers={"X-Api-Key": credentials.get("api_key", "")})
         if response_status >= 400:
             raise HTTPException(status_code=502, detail="Prowlarr search failed")
-        data = json.loads(payload)
+        data = _json_array(payload, "Prowlarr")
         return [
             Release(
                 title=item.get("title", "Untitled"),
@@ -167,7 +196,7 @@ async def dispatch_arr_command(endpoint: AcquisitionEndpoint, command: str, ids:
     )
     if response_status >= 400:
         raise HTTPException(status_code=502, detail=f"{endpoint.kind.title()} command failed")
-    response = json.loads(response_payload)
+    response = _json_object(response_payload, endpoint.kind.title())
     return str(response.get("id")) if response.get("id") is not None else None
 
 
@@ -225,26 +254,52 @@ async def _submit_transmission(endpoint: AcquisitionEndpoint, download_url: str,
         )
     if response_status >= 400:
         raise HTTPException(status_code=502, detail="Transmission rejected the release")
-    return str(json.loads(payload).get("arguments", {}).get("torrent-added", {}).get("hashString") or "") or None
+
+    response = _json_object(payload, "Transmission")
+    if response.get("result") != "success":
+        raise HTTPException(status_code=502, detail="Transmission rejected the release")
+
+    response_arguments = response.get("arguments")
+    if not isinstance(response_arguments, dict):
+        raise HTTPException(status_code=502, detail="Transmission returned an invalid response")
+
+    torrent = response_arguments.get("torrent-added") or response_arguments.get("torrent-duplicate")
+    if not isinstance(torrent, dict):
+        return None
+
+    reference = torrent.get("hashString")
+    return str(reference) if reference is not None else None
 
 
 async def _submit_deluge(endpoint: AcquisitionEndpoint, download_url: str, save_path: str | None) -> str | None:
     credentials = _credentials(endpoint)
     headers = {"Content-Type": "application/json"}
     login = json.dumps({"method": "auth.login", "params": [credentials.get("password", "")], "id": 1}).encode()
-    response_status, response_headers, _ = await _request(
+    response_status, response_headers, login_payload = await _request(
         _url(endpoint, "json"), method="POST", headers=headers, body=login
     )
     if response_status >= 400:
         raise HTTPException(status_code=502, detail="Deluge authentication failed")
+
+    try:
+        _require_deluge_result(login_payload)
+    except HTTPException as exc:
+        raise HTTPException(status_code=502, detail="Deluge authentication failed") from exc
+
     options = {"download_location": save_path} if save_path else {}
-    body = json.dumps({"method": "core.add_torrent_magnet", "params": [download_url, options], "id": 2}).encode()
+    method = "core.add_torrent_magnet" if download_url.startswith("magnet:") else "core.add_torrent_url"
+    body = json.dumps({"method": method, "params": [download_url, options], "id": 2}).encode()
     headers["Cookie"] = response_headers.get("Set-Cookie", "").split(";", 1)[0]
     response_status, _, payload = await _request(_url(endpoint, "json"), method="POST", headers=headers, body=body)
     if response_status >= 400:
         raise HTTPException(status_code=502, detail="Deluge rejected the release")
-    result = json.loads(payload).get("result")
-    return str(result) if result is not None else None
+
+    try:
+        result = _require_deluge_result(payload)
+    except HTTPException as exc:
+        raise HTTPException(status_code=502, detail="Deluge rejected the release") from exc
+
+    return str(result)
 
 
 async def owned_endpoint(session: AsyncSession, owner_user_id: Any, endpoint_id: Any) -> AcquisitionEndpoint:

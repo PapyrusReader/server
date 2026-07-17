@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from papyrus.core.security import decrypt_secret_payload
 from papyrus.main import settings as app_settings
 from papyrus.models.acquisition import AcquisitionEndpoint
+from papyrus.services import acquisition as acquisition_service
 
 
 @pytest.fixture(autouse=True)
@@ -148,3 +149,38 @@ async def test_endpoint_url_rejects_embedded_credentials(client: AsyncClient, au
     )
 
     assert response.status_code == 422
+
+
+async def test_rejected_submission_persists_failed_job(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
+        return 200, {}, b'{"result":"invalid or corrupt torrent file","arguments":{}}'
+
+    monkeypatch.setattr(acquisition_service, "_request", request)
+    endpoint_response = await client.post(
+        "/v1/acquisition/endpoints",
+        headers=auth_headers,
+        json={
+            "name": "Transmission",
+            "kind": "transmission",
+            "base_url": "http://transmission.local:9091",
+        },
+    )
+    endpoint_id = endpoint_response.json()["endpoint_id"]
+
+    response = await client.post(
+        "/v1/acquisition/submissions",
+        headers=auth_headers,
+        json={
+            "endpoint_id": endpoint_id,
+            "title": "Rejected release",
+            "download_url": "magnet:?xt=urn:btih:test",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["status"] == "failed"
+    assert response.json()["error"] == "Transmission rejected the release"
