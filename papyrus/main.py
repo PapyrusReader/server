@@ -1,9 +1,8 @@
 """FastAPI application factory and configuration."""
 
-import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, Request, status
@@ -17,11 +16,9 @@ from slowapi.errors import RateLimitExceeded
 
 from papyrus.api.routes import api_router, include_debug_routers
 from papyrus.config import get_settings
-from papyrus.core.database import async_session_maker
 from papyrus.core.dev_pages import DEV_PAGES_DIST_DIR, DEV_PAGES_STATIC_URL
 from papyrus.core.exceptions import AppError
 from papyrus.core.rate_limit import limiter
-from papyrus.services.acquisition import run_enabled_rules
 
 settings = get_settings()
 
@@ -43,20 +40,7 @@ def configure_logging() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan events."""
-
-    async def acquisition_worker() -> None:
-        while True:
-            async with async_session_maker() as session:
-                await run_enabled_rules(session)
-            await asyncio.sleep(settings.acquisition_automation_interval_seconds)
-
-    worker = asyncio.create_task(acquisition_worker())
-    try:
-        yield
-    finally:
-        worker.cancel()
-        with suppress(asyncio.CancelledError):
-            await worker
+    yield
 
 
 def create_app() -> FastAPI:

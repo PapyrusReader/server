@@ -1,11 +1,45 @@
 """Tests for private BitTorrent acquisition configuration."""
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.core.security import decrypt_secret_payload
+from papyrus.main import settings as app_settings
 from papyrus.models.acquisition import AcquisitionEndpoint
+
+
+@pytest.fixture(autouse=True)
+def enable_acquisition(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(app_settings, "acquisition_enabled", True, raising=False)
+
+
+async def test_disabled_capabilities_hide_acquisition_scope(client: AsyncClient) -> None:
+    app_settings.acquisition_enabled = False
+
+    response = await client.get("/v1/acquisition/capabilities")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "enabled": False,
+        "endpoint_kinds": [],
+        "indexer_kinds": [],
+        "download_client_kinds": [],
+        "arr_kinds": [],
+        "arr_commands": {},
+    }
+
+
+async def test_disabled_acquisition_routes_are_not_found(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+) -> None:
+    app_settings.acquisition_enabled = False
+
+    response = await client.get("/v1/acquisition/endpoints", headers=auth_headers)
+
+    assert response.status_code == 404
 
 
 async def test_capabilities_advertise_torrent_only_scope(client: AsyncClient, auth_headers: dict[str, str]) -> None:

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.api.deps import CurrentUserId
+from papyrus.config import get_settings
 from papyrus.core.database import get_db
 from papyrus.core.security import decrypt_secret_payload, encrypt_secret_payload
 from papyrus.models.acquisition import AcquisitionEndpoint as AcquisitionEndpointModel
@@ -38,6 +39,14 @@ router = APIRouter()
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 
+def require_acquisition_enabled() -> None:
+    if not get_settings().acquisition_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+
+
+protected_router = APIRouter(dependencies=[Depends(require_acquisition_enabled)])
+
+
 def _credentials(api_key: str | None, username: str | None, password: str | None) -> dict[str, str] | None:
     values = {
         key: value for key, value in {"api_key": api_key, "username": username, "password": password}.items() if value
@@ -60,6 +69,16 @@ def _merge_credentials(endpoint: AcquisitionEndpointModel, replacement: dict[str
 
 @router.get("/capabilities", response_model=AcquisitionCapabilities)
 async def acquisition_capabilities() -> AcquisitionCapabilities:
+    if not get_settings().acquisition_enabled:
+        return AcquisitionCapabilities(
+            enabled=False,
+            endpoint_kinds=[],
+            indexer_kinds=[],
+            download_client_kinds=[],
+            arr_kinds=[],
+            arr_commands={},
+        )
+
     return AcquisitionCapabilities(
         endpoint_kinds=[
             "qbittorrent",
@@ -86,7 +105,7 @@ async def acquisition_capabilities() -> AcquisitionCapabilities:
     )
 
 
-@router.get("/endpoints", response_model=list[AcquisitionEndpoint])
+@protected_router.get("/endpoints", response_model=list[AcquisitionEndpoint])
 async def list_endpoints(user_id: CurrentUserId, db: DbSession) -> list[AcquisitionEndpointModel]:
     result = await db.execute(
         select(AcquisitionEndpointModel)
@@ -96,7 +115,7 @@ async def list_endpoints(user_id: CurrentUserId, db: DbSession) -> list[Acquisit
     return list(result.scalars())
 
 
-@router.post("/endpoints", response_model=AcquisitionEndpoint, status_code=status.HTTP_201_CREATED)
+@protected_router.post("/endpoints", response_model=AcquisitionEndpoint, status_code=status.HTTP_201_CREATED)
 async def create_endpoint(
     user_id: CurrentUserId, request: AcquisitionEndpointCreate, db: DbSession
 ) -> AcquisitionEndpointModel:
@@ -118,7 +137,7 @@ async def create_endpoint(
     return endpoint
 
 
-@router.patch("/endpoints/{endpoint_id}", response_model=AcquisitionEndpoint)
+@protected_router.patch("/endpoints/{endpoint_id}", response_model=AcquisitionEndpoint)
 async def update_endpoint(
     user_id: CurrentUserId, endpoint_id: UUID, request: AcquisitionEndpointUpdate, db: DbSession
 ) -> AcquisitionEndpointModel:
@@ -137,14 +156,14 @@ async def update_endpoint(
     return endpoint
 
 
-@router.delete("/endpoints/{endpoint_id}", status_code=status.HTTP_204_NO_CONTENT)
+@protected_router.delete("/endpoints/{endpoint_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_endpoint(user_id: CurrentUserId, endpoint_id: UUID, db: DbSession) -> None:
     endpoint = await owned_endpoint(db, user_id, endpoint_id)
     await db.delete(endpoint)
     await db.commit()
 
 
-@router.post("/search", response_model=list[Release])
+@protected_router.post("/search", response_model=list[Release])
 async def search_releases(user_id: CurrentUserId, request: SearchRequest, db: DbSession) -> list[Release]:
     statement = select(AcquisitionEndpointModel).where(
         AcquisitionEndpointModel.owner_user_id == user_id,
@@ -160,7 +179,7 @@ async def search_releases(user_id: CurrentUserId, request: SearchRequest, db: Db
     return releases
 
 
-@router.post("/submissions", response_model=AcquisitionJob, status_code=status.HTTP_201_CREATED)
+@protected_router.post("/submissions", response_model=AcquisitionJob, status_code=status.HTTP_201_CREATED)
 async def submit_release(user_id: CurrentUserId, request: SubmitRequest, db: DbSession) -> AcquisitionJobModel:
     endpoint = await owned_endpoint(db, user_id, request.endpoint_id)
     job = AcquisitionJobModel(
@@ -180,7 +199,9 @@ async def submit_release(user_id: CurrentUserId, request: SubmitRequest, db: DbS
     return job
 
 
-@router.post("/arr/{endpoint_id}/commands", response_model=AcquisitionJob, status_code=status.HTTP_201_CREATED)
+@protected_router.post(
+    "/arr/{endpoint_id}/commands", response_model=AcquisitionJob, status_code=status.HTTP_201_CREATED
+)
 async def run_arr_command(
     user_id: CurrentUserId, endpoint_id: UUID, request: ArrCommandRequest, db: DbSession
 ) -> AcquisitionJobModel:
@@ -204,7 +225,7 @@ async def run_arr_command(
     return job
 
 
-@router.get("/jobs", response_model=list[AcquisitionJob])
+@protected_router.get("/jobs", response_model=list[AcquisitionJob])
 async def list_jobs(user_id: CurrentUserId, db: DbSession) -> list[AcquisitionJobModel]:
     result = await db.execute(
         select(AcquisitionJobModel)
@@ -214,13 +235,13 @@ async def list_jobs(user_id: CurrentUserId, db: DbSession) -> list[AcquisitionJo
     return list(result.scalars())
 
 
-@router.get("/rules", response_model=list[AcquisitionRule])
+@protected_router.get("/rules", response_model=list[AcquisitionRule])
 async def list_rules(user_id: CurrentUserId, db: DbSession) -> list[AcquisitionRuleModel]:
     result = await db.execute(select(AcquisitionRuleModel).where(AcquisitionRuleModel.owner_user_id == user_id))
     return list(result.scalars())
 
 
-@router.post("/rules", response_model=AcquisitionRule, status_code=status.HTTP_201_CREATED)
+@protected_router.post("/rules", response_model=AcquisitionRule, status_code=status.HTTP_201_CREATED)
 async def create_rule(user_id: CurrentUserId, request: AcquisitionRuleCreate, db: DbSession) -> AcquisitionRuleModel:
     await owned_endpoint(db, user_id, request.download_client_id)
     rule = AcquisitionRuleModel(
@@ -238,7 +259,7 @@ async def create_rule(user_id: CurrentUserId, request: AcquisitionRuleCreate, db
     return rule
 
 
-@router.post("/rules/{rule_id}/run", response_model=list[AcquisitionJob])
+@protected_router.post("/rules/{rule_id}/run", response_model=list[AcquisitionJob])
 async def run_acquisition_rule(user_id: CurrentUserId, rule_id: UUID, db: DbSession) -> list[AcquisitionJobModel]:
     result = await db.execute(
         select(AcquisitionRuleModel).where(
@@ -249,3 +270,6 @@ async def run_acquisition_rule(user_id: CurrentUserId, rule_id: UUID, db: DbSess
     if rule is None:
         raise HTTPException(status_code=404, detail="Acquisition rule not found")
     return await run_rule(db, rule)
+
+
+router.include_router(protected_router)
