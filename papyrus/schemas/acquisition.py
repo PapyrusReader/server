@@ -2,9 +2,10 @@
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, SecretStr, field_validator, model_validator
 
 
 class EndpointKind(StrEnum):
@@ -59,6 +60,32 @@ class AcquisitionEndpointUpdate(BaseModel):
         if value is None:
             return None
         return validate_endpoint_url(value)
+
+
+class AcquisitionEndpointTest(BaseModel):
+    endpoint_id: UUID | None = None
+    kind: EndpointKind | None = None
+    base_url: HttpUrl | None = None
+    api_key: SecretStr | None = None
+    username: SecretStr | None = None
+    password: SecretStr | None = None
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_endpoint_url(cls, value: HttpUrl | None) -> HttpUrl | None:
+        if value is None:
+            return None
+        return validate_endpoint_url(value)
+
+    @model_validator(mode="after")
+    def validate_endpoint_target(self) -> Self:
+        if self.endpoint_id is None and (self.kind is None or self.base_url is None):
+            raise ValueError("kind and base_url are required for an unsaved endpoint")
+        return self
+
+
+class AcquisitionEndpointTestResult(BaseModel):
+    ok: bool
 
 
 class AcquisitionEndpoint(BaseModel):

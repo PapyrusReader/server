@@ -95,3 +95,35 @@ async def test_prowlarr_rejects_invalid_json(monkeypatch: pytest.MonkeyPatch) ->
 
     assert exc_info.value.status_code == 502
     assert exc_info.value.detail == "Prowlarr returned invalid JSON"
+
+
+async def test_qbittorrent_rejects_failed_login_body(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
+        return 200, {}, b"Fails."
+
+    monkeypatch.setattr(acquisition, "_request", request)
+
+    with pytest.raises(HTTPException) as exc_info:
+        await acquisition.submit_to_client(
+            _endpoint("qbittorrent"),
+            "magnet:?xt=urn:btih:test",
+            None,
+            None,
+        )
+
+    assert exc_info.value.status_code == 502
+    assert exc_info.value.detail == "qBittorrent authentication failed"
+
+
+async def test_arr_commands_use_v3_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    urls: list[str] = []
+
+    async def request(url: str, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
+        urls.append(url)
+        return 201, {}, b'{"id":1}'
+
+    monkeypatch.setattr(acquisition, "_request", request)
+
+    await acquisition.dispatch_arr_command(_endpoint("readarr"), "BookSearch", [1])
+
+    assert urls == ["http://integration.test/api/v3/command"]

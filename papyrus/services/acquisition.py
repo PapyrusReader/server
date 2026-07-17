@@ -16,9 +16,9 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from papyrus.core.security import decrypt_secret_payload
+from papyrus.core.security import decrypt_secret_payload, encrypt_secret_payload
 from papyrus.models.acquisition import AcquisitionEndpoint, AcquisitionJob, AcquisitionRule
-from papyrus.schemas.acquisition import Release
+from papyrus.schemas.acquisition import AcquisitionEndpointTest, Release
 
 
 def _url(endpoint: AcquisitionEndpoint, path: str) -> str:
@@ -189,7 +189,7 @@ async def dispatch_arr_command(endpoint: AcquisitionEndpoint, command: str, ids:
         payload[id_field] = ids[0] if id_field in {"seriesId"} else ids
 
     response_status, _, response_payload = await _request(
-        _url(endpoint, "api/v1/command"),
+        _url(endpoint, "api/v3/command"),
         method="POST",
         headers={"Content-Type": "application/json", "X-Api-Key": _credentials(endpoint).get("api_key", "")},
         body=json.dumps(payload).encode(),
@@ -207,13 +207,13 @@ async def _submit_qbittorrent(
     login = urlencode(
         {"username": credentials.get("username", ""), "password": credentials.get("password", "")}
     ).encode()
-    response_status, headers, _ = await _request(
+    response_status, headers, response_payload = await _request(
         _url(endpoint, "api/v2/auth/login"),
         method="POST",
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         body=login,
     )
-    if response_status >= 400:
+    if response_status >= 400 or response_payload.strip() != b"Ok.":
         raise HTTPException(status_code=502, detail="qBittorrent authentication failed")
     payload = {"urls": download_url}
     if category:
@@ -339,6 +339,146 @@ async def delete_acquisition_endpoint(session: AsyncSession, owner_user_id: Any,
 
     await session.delete(endpoint)
     await session.commit()
+
+
+async def build_test_endpoint(
+    session: AsyncSession,
+    owner_user_id: Any,
+    request: AcquisitionEndpointTest,
+) -> AcquisitionEndpoint:
+    stored_endpoint = None
+    stored_credentials: dict[str, str] = {}
+
+    if request.endpoint_id is not None:
+        stored_endpoint = await owned_endpoint(session, owner_user_id, request.endpoint_id)
+        stored_credentials = _credentials(stored_endpoint)
+
+    credentials = dict(stored_credentials)
+    for field in ("api_key", "username", "password"):
+        value = getattr(request, field)
+        if value is not None:
+            credentials[field] = value.get_secret_value()
+
+    if request.kind is not None:
+        kind = request.kind.value
+    elif stored_endpoint is not None:
+        kind = stored_endpoint.kind
+    else:
+        raise HTTPException(status_code=422, detail="Endpoint kind is required")
+
+    if request.base_url is not None:
+        base_url = str(request.base_url)
+    elif stored_endpoint is not None:
+        base_url = stored_endpoint.base_url
+    else:
+        raise HTTPException(status_code=422, detail="Endpoint URL is required")
+
+    encrypted_credentials = {"encrypted": encrypt_secret_payload(credentials)} if credentials else None
+
+    return AcquisitionEndpoint(
+        owner_user_id=owner_user_id,
+        name=stored_endpoint.name if stored_endpoint is not None else "Connection test",
+        kind=kind,
+        base_url=base_url,
+        credentials=encrypted_credentials,
+        settings=stored_endpoint.settings if stored_endpoint is not None else None,
+    )
+
+
+async def test_endpoint_connection(endpoint: AcquisitionEndpoint) -> None:
+    credentials = _credentials(endpoint)
+
+    if endpoint.kind == "prowlarr":
+        response_status, _, payload = await _request(
+            _url(endpoint, "api/v1/system/status"),
+            headers={"X-Api-Key": credentials.get("api_key", "")},
+        )
+        if response_status >= 400:
+            raise HTTPException(status_code=502, detail="Prowlarr connection test failed")
+
+        _json_object(payload, "Prowlarr")
+        return
+
+    if endpoint.kind == "torznab":
+        params = urlencode({"t": "caps", "apikey": credentials.get("api_key", "")})
+        response_status, _, payload = await _request(_url(endpoint, f"api?{params}"))
+        if response_status >= 400:
+            raise HTTPException(status_code=502, detail="Torznab connection test failed")
+
+        try:
+            ElementTree.fromstring(payload)
+        except ElementTree.ParseError as exc:
+            raise HTTPException(status_code=502, detail="Torznab returned invalid XML") from exc
+        return
+
+    if endpoint.kind in {"readarr", "sonarr", "radarr", "lidarr", "whisparr"}:
+        response_status, _, payload = await _request(
+            _url(endpoint, "api/v3/system/status"),
+            headers={"X-Api-Key": credentials.get("api_key", "")},
+        )
+        if response_status >= 400:
+            raise HTTPException(status_code=502, detail=f"{endpoint.kind.title()} connection test failed")
+
+        _json_object(payload, endpoint.kind.title())
+        return
+
+    if endpoint.kind == "qbittorrent":
+        login = urlencode(
+            {"username": credentials.get("username", ""), "password": credentials.get("password", "")}
+        ).encode()
+        response_status, _, payload = await _request(
+            _url(endpoint, "api/v2/auth/login"),
+            method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            body=login,
+        )
+        if response_status >= 400 or payload.strip() != b"Ok.":
+            raise HTTPException(status_code=502, detail="qBittorrent authentication failed")
+        return
+
+    if endpoint.kind == "transmission":
+        body = json.dumps({"method": "session-get", "arguments": {}}).encode()
+        headers = {"Content-Type": "application/json"}
+        if credentials.get("username"):
+            token = base64.b64encode(f"{credentials['username']}:{credentials.get('password', '')}".encode()).decode()
+            headers["Authorization"] = f"Basic {token}"
+
+        response_status, response_headers, payload = await _request(
+            _url(endpoint, "transmission/rpc"),
+            method="POST",
+            headers=headers,
+            body=body,
+        )
+        if response_status == 409:
+            headers["X-Transmission-Session-Id"] = response_headers.get("X-Transmission-Session-Id", "")
+            response_status, _, payload = await _request(
+                _url(endpoint, "transmission/rpc"),
+                method="POST",
+                headers=headers,
+                body=body,
+            )
+        if response_status >= 400 or _json_object(payload, "Transmission").get("result") != "success":
+            raise HTTPException(status_code=502, detail="Transmission connection test failed")
+        return
+
+    if endpoint.kind == "deluge":
+        login = json.dumps({"method": "auth.login", "params": [credentials.get("password", "")], "id": 1}).encode()
+        response_status, _, payload = await _request(
+            _url(endpoint, "json"),
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=login,
+        )
+        if response_status >= 400:
+            raise HTTPException(status_code=502, detail="Deluge authentication failed")
+
+        try:
+            _require_deluge_result(payload)
+        except HTTPException as exc:
+            raise HTTPException(status_code=502, detail="Deluge authentication failed") from exc
+        return
+
+    raise HTTPException(status_code=422, detail="Endpoint kind is not supported")
 
 
 async def run_rule(session: AsyncSession, rule: AcquisitionRule) -> list[AcquisitionJob]:

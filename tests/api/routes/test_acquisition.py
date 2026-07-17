@@ -4,12 +4,14 @@ from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from papyrus.api.routes import acquisition as acquisition_routes
 from papyrus.core.security import decrypt_secret_payload
 from papyrus.main import settings as app_settings
 from papyrus.models.acquisition import AcquisitionEndpoint, AcquisitionJob, AcquisitionRule
+from papyrus.models.user import User
 from papyrus.services import acquisition as acquisition_service
 
 
@@ -233,3 +235,104 @@ async def test_delete_endpoint_preserves_jobs_and_disables_rules(
     assert rule.download_client_id is None
     assert rule.endpoint_ids == []
     assert rule.enabled is False
+
+
+async def test_connection_checks_unsaved_endpoint_without_persisting(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[AcquisitionEndpoint] = []
+
+    async def test_connection(endpoint: AcquisitionEndpoint) -> None:
+        captured.append(endpoint)
+
+    monkeypatch.setattr(acquisition_routes, "test_endpoint_connection", test_connection, raising=False)
+    before_count = await db_session.scalar(select(func.count()).select_from(AcquisitionEndpoint))
+
+    response = await client.post(
+        "/v1/acquisition/endpoints/test",
+        headers=auth_headers,
+        json={
+            "kind": "prowlarr",
+            "base_url": "http://prowlarr.local:9696",
+            "api_key": "unsaved-key",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert captured[0].kind == "prowlarr"
+    assert decrypt_secret_payload(captured[0].credentials["encrypted"])["api_key"] == "unsaved-key"
+    after_count = await db_session.scalar(select(func.count()).select_from(AcquisitionEndpoint))
+    assert after_count == before_count
+
+
+async def test_connection_merges_owned_endpoint_overrides_without_persisting(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint_response = await client.post(
+        "/v1/acquisition/endpoints",
+        headers=auth_headers,
+        json={
+            "name": "Saved Prowlarr",
+            "kind": "prowlarr",
+            "base_url": "http://prowlarr.local:9696",
+            "api_key": "saved-key",
+        },
+    )
+    captured: list[AcquisitionEndpoint] = []
+
+    async def test_connection(endpoint: AcquisitionEndpoint) -> None:
+        captured.append(endpoint)
+
+    monkeypatch.setattr(acquisition_routes, "test_endpoint_connection", test_connection, raising=False)
+    before_count = await db_session.scalar(select(func.count()).select_from(AcquisitionEndpoint))
+
+    response = await client.post(
+        "/v1/acquisition/endpoints/test",
+        headers=auth_headers,
+        json={
+            "endpoint_id": endpoint_response.json()["endpoint_id"],
+            "base_url": "http://prowlarr-edited.local:9696",
+            "api_key": "override",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert captured[0].base_url == "http://prowlarr-edited.local:9696/"
+    assert decrypt_secret_payload(captured[0].credentials["encrypted"])["api_key"] == "override"
+    after_count = await db_session.scalar(select(func.count()).select_from(AcquisitionEndpoint))
+    assert after_count == before_count
+
+
+async def test_connection_rejects_another_users_endpoint(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    db_session: AsyncSession,
+) -> None:
+    other_user = User(display_name="Other User")
+    db_session.add(other_user)
+    await db_session.flush()
+
+    endpoint = AcquisitionEndpoint(
+        owner_user_id=other_user.user_id,
+        name="Other Prowlarr",
+        kind="prowlarr",
+        base_url="http://other-prowlarr.local:9696",
+    )
+    db_session.add(endpoint)
+    await db_session.commit()
+
+    response = await client.post(
+        "/v1/acquisition/endpoints/test",
+        headers=auth_headers,
+        json={"endpoint_id": str(endpoint.endpoint_id)},
+    )
+
+    assert response.status_code == 404
