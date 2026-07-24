@@ -97,6 +97,36 @@ async def test_prowlarr_rejects_invalid_json(monkeypatch: pytest.MonkeyPatch) ->
     assert exc_info.value.detail == "Prowlarr returned invalid JSON"
 
 
+async def test_qbittorrent_connection_test_accepts_empty_204_login(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
+        return 204, {"Set-Cookie": "QBT_SID_8082=test; path=/"}, b""
+
+    monkeypatch.setattr(acquisition, "_request", request)
+
+    await acquisition.test_endpoint_connection(_endpoint("qbittorrent"))
+
+
+async def test_qbittorrent_submission_accepts_empty_204_login(monkeypatch: pytest.MonkeyPatch) -> None:
+    responses = iter(
+        [
+            (204, {"Set-Cookie": "QBT_SID_8082=test; path=/"}, b""),
+            (200, {}, b""),
+        ]
+    )
+
+    async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
+        return next(responses)
+
+    monkeypatch.setattr(acquisition, "_request", request)
+
+    await acquisition.submit_to_client(
+        _endpoint("qbittorrent"),
+        "magnet:?xt=urn:btih:test",
+        None,
+        None,
+    )
+
+
 async def test_qbittorrent_rejects_failed_login_body(monkeypatch: pytest.MonkeyPatch) -> None:
     async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
         return 200, {}, b"Fails."

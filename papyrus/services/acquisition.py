@@ -213,7 +213,7 @@ async def _submit_qbittorrent(
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         body=login,
     )
-    if response_status >= 400 or response_payload.strip() != b"Ok.":
+    if not _qbittorrent_login_succeeded(response_status, response_payload):
         raise HTTPException(status_code=502, detail="qBittorrent authentication failed")
     payload = {"urls": download_url}
     if category:
@@ -232,6 +232,10 @@ async def _submit_qbittorrent(
     if response_status >= 400:
         raise HTTPException(status_code=502, detail="qBittorrent rejected the release")
     return None
+
+
+def _qbittorrent_login_succeeded(response_status: int, response_payload: bytes) -> bool:
+    return response_status < 400 and (response_status == 204 or response_payload.strip() == b"Ok.")
 
 
 async def _submit_transmission(endpoint: AcquisitionEndpoint, download_url: str, save_path: str | None) -> str | None:
@@ -432,7 +436,7 @@ async def test_endpoint_connection(endpoint: AcquisitionEndpoint) -> None:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             body=login,
         )
-        if response_status >= 400 or payload.strip() != b"Ok.":
+        if not _qbittorrent_login_succeeded(response_status, payload):
             raise HTTPException(status_code=502, detail="qBittorrent authentication failed")
         return
 
