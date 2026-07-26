@@ -1,13 +1,17 @@
 """Authentication and token security helpers."""
 
+from base64 import urlsafe_b64encode
 from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from hashlib import sha256
+from json import dumps as json_dumps
+from json import loads as json_loads
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any
 
 import jwt
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import serialization
 from jwt.algorithms import RSAAlgorithm
 from pwdlib import PasswordHash
@@ -123,6 +127,29 @@ def hash_opaque_token(token: str) -> str:
 
 def generate_opaque_token() -> str:
     return token_urlsafe(48)
+
+
+@lru_cache
+def _get_credentials_cipher() -> Fernet:
+    key = urlsafe_b64encode(sha256(get_settings().secret_key.encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def encrypt_secret_payload(payload: dict[str, str]) -> str:
+    return _get_credentials_cipher().encrypt(json_dumps(payload).encode("utf-8")).decode("utf-8")
+
+
+def decrypt_secret_payload(token: str) -> dict[str, str]:
+    try:
+        decoded = _get_credentials_cipher().decrypt(token.encode("utf-8")).decode("utf-8")
+    except InvalidToken as exc:
+        raise ValueError("Encrypted credential payload is invalid") from exc
+    payload = json_loads(decoded)
+    if not isinstance(payload, dict) or not all(
+        isinstance(key, str) and isinstance(value, str) for key, value in payload.items()
+    ):
+        raise ValueError("Encrypted credential payload has an invalid shape")
+    return payload
 
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:

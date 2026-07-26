@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     dev_pages_use_vite: bool = False
     dev_pages_vite_url: str = "http://localhost:5173"
     dev_pages_manifest_path: str = "frontend/dev-pages/dist/.vite/manifest.json"
+    acquisition_enabled: bool = False
 
     @field_validator("debug", mode="before")
     @classmethod

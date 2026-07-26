@@ -40,9 +40,7 @@ def configure_logging() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan events."""
-    # Startup
     yield
-    # Shutdown
 
 
 def create_app() -> FastAPI:
