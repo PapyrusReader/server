@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     dev_pages_vite_url: str = "http://localhost:5173"
     dev_pages_manifest_path: str = "frontend/dev-pages/dist/.vite/manifest.json"
     acquisition_enabled: bool = False
+    acquisition_import_root: str | None = None
+    acquisition_monitor_active_interval_seconds: float = 2
+    acquisition_monitor_idle_interval_seconds: float = 10
+    acquisition_monitor_lease_seconds: int = 30
 
     @field_validator("debug", mode="before")
     @classmethod
@@ -133,6 +137,7 @@ class Settings(BaseSettings):
         "powersync_storage_db",
         "powersync_storage_user",
         "powersync_storage_password",
+        "acquisition_import_root",
         mode="before",
     )
     @classmethod

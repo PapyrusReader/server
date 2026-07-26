@@ -1,8 +1,10 @@
 """FastAPI application factory and configuration."""
 
+import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 
 import structlog
 from fastapi import FastAPI, Request, status
@@ -16,9 +18,11 @@ from slowapi.errors import RateLimitExceeded
 
 from papyrus.api.routes import api_router, include_debug_routers
 from papyrus.config import get_settings
+from papyrus.core.database import async_session_maker
 from papyrus.core.dev_pages import DEV_PAGES_DIST_DIR, DEV_PAGES_STATIC_URL
 from papyrus.core.exceptions import AppError
 from papyrus.core.rate_limit import limiter
+from papyrus.services import acquisition_monitor
 
 settings = get_settings()
 
@@ -40,7 +44,25 @@ def configure_logging() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan events."""
-    yield
+    monitor_task: asyncio.Task[None] | None = None
+
+    if settings.acquisition_enabled and settings.acquisition_import_root is not None:
+        monitor_task = asyncio.create_task(
+            acquisition_monitor.run_monitor(
+                async_session_maker,
+                import_root=Path(settings.acquisition_import_root),
+            ),
+            name="acquisition-monitor",
+        )
+
+    try:
+        yield
+    finally:
+        if monitor_task is not None:
+            monitor_task.cancel()
+
+            with suppress(asyncio.CancelledError):
+                await monitor_task
 
 
 def create_app() -> FastAPI:

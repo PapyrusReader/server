@@ -3,6 +3,8 @@
 from sqlalchemy import UniqueConstraint
 
 from papyrus.models import (
+    AcquisitionEndpoint,
+    AcquisitionJob,
     AuthExchangeCode,
     AuthSession,
     Base,
@@ -14,6 +16,46 @@ from papyrus.models import (
     User,
     UserIdentity,
 )
+
+
+def test_managed_acquisition_models_expose_download_lifecycle() -> None:
+    endpoint_table = AcquisitionEndpoint.__table__
+    job_table = AcquisitionJob.__table__
+
+    assert "download_root" in endpoint_table.columns
+    assert endpoint_table.c.download_root.nullable is True
+
+    assert {
+        "book_id",
+        "client_hash",
+        "client_state",
+        "progress_basis_points",
+        "downloaded_bytes",
+        "total_bytes",
+        "download_speed_bytes_per_second",
+        "eta_seconds",
+        "selected_file_path",
+        "retry_count",
+        "next_poll_at",
+        "lease_owner",
+        "lease_until",
+        "submitted_at",
+        "started_at",
+        "updated_at",
+        "completed_at",
+        "cancelled_at",
+    }.issubset(job_table.columns.keys())
+    assert job_table.c.download_url.nullable is True
+    assert {index.name for index in job_table.indexes}.issuperset(
+        {
+            "ix_acquisition_jobs_owner_status",
+            "ix_acquisition_jobs_next_poll_at",
+        }
+    )
+    assert any(
+        foreign_key.target_fullname == "books.book_id"
+        for foreign_key in job_table.c.book_id.foreign_keys
+    )
 
 
 def test_media_asset_kind_is_unique_per_book() -> None:

@@ -69,6 +69,38 @@ async def test_upload_media_persists_file_and_updates_usage(
     }
 
 
+async def test_import_media_path_copies_download_and_keeps_source_for_seeding(
+    auth_user: dict[str, str],
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    media_root = tmp_path / "media"
+    source_path = tmp_path / "downloads" / "book.epub"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_bytes(b"downloaded epub")
+    monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(media_root), raising=False)
+    monkeypatch.setattr("papyrus.main.settings.file_storage_quota_bytes", 1_073_741_824)
+    book = await _create_owned_book(db_session, auth_user["user_id"])
+
+    asset = await media_service.import_media_path(
+        db_session,
+        UUID(auth_user["user_id"]),
+        book_id=book.book_id,
+        kind="book_file",
+        source_path=source_path,
+    )
+
+    assert asset.original_filename == "book.epub"
+    assert asset.size_bytes == len(b"downloaded epub")
+    assert asset.sha256 == "b7783cce10abf92f10284f7089ffd31daf92e0b532284a6e14488b20834b5e16"
+    assert (media_root / asset.storage_path).read_bytes() == b"downloaded epub"
+    assert source_path.read_bytes() == b"downloaded epub"
+
+    await db_session.refresh(book)
+    assert book.file_media_id == asset.asset_id
+
+
 async def test_download_and_delete_owned_media(
     client: AsyncClient,
     auth_headers: dict[str, str],

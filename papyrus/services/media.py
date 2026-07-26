@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import mimetypes
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -40,6 +43,73 @@ async def upload_media(
     file: UploadFile,
 ) -> MediaAsset:
     """Validate and persist an uploaded media asset."""
+    filename = file.filename or "upload"
+    content_type = file.content_type or "application/octet-stream"
+
+    async def write(temp_path: Path, quota_remaining: int) -> tuple[int, str]:
+        return await _write_upload_to_temp_file(
+            file,
+            temp_path,
+            quota_remaining=quota_remaining,
+        )
+
+    return await _persist_media(
+        session,
+        user_id,
+        book_id=book_id,
+        kind=kind,
+        filename=filename,
+        content_type=content_type,
+        write=write,
+    )
+
+
+async def import_media_path(
+    session: AsyncSession,
+    user_id: UUID,
+    *,
+    book_id: UUID,
+    kind: str,
+    source_path: Path,
+    before_commit: Callable[[MediaAsset], None] | None = None,
+) -> MediaAsset:
+    """Copy an existing file into private media storage."""
+    if not source_path.is_file():
+        raise NotFoundError("Imported media file was not found")
+
+    content_type = mimetypes.guess_type(source_path.name)[0] or "application/octet-stream"
+
+    async def write(temp_path: Path, quota_remaining: int) -> tuple[int, str]:
+        return await asyncio.to_thread(
+            _copy_path_to_temp_file,
+            source_path,
+            temp_path,
+            quota_remaining=quota_remaining,
+        )
+
+    return await _persist_media(
+        session,
+        user_id,
+        book_id=book_id,
+        kind=kind,
+        filename=source_path.name,
+        content_type=content_type,
+        write=write,
+        before_commit=before_commit,
+    )
+
+
+async def _persist_media(
+    session: AsyncSession,
+    user_id: UUID,
+    *,
+    book_id: UUID,
+    kind: str,
+    filename: str,
+    content_type: str,
+    write: Callable[[Path, int], Awaitable[tuple[int, str]]],
+    before_commit: Callable[[MediaAsset], None] | None = None,
+) -> MediaAsset:
     if kind not in MEDIA_KINDS:
         raise ValidationError("Unsupported media kind")
 
@@ -52,9 +122,7 @@ async def upload_media(
     if book.owner_user_id != user_id:
         raise ForbiddenError("Cannot access another user's book")
 
-    filename = file.filename or "upload"
     extension = _extension(filename)
-    content_type = file.content_type or "application/octet-stream"
     _validate_media_type(kind, extension, content_type)
 
     existing = await _existing_asset_for_kind(session, book, kind)
@@ -70,11 +138,7 @@ async def upload_media(
     final_file_written = False
 
     try:
-        size_bytes, sha256_hex = await _write_upload_to_temp_file(
-            file,
-            temp_path,
-            quota_remaining=quota - used_without_existing,
-        )
+        size_bytes, sha256_hex = await write(temp_path, quota - used_without_existing)
         temp_path.replace(absolute_path)
         final_file_written = True
 
@@ -99,6 +163,9 @@ async def upload_media(
             book.file_media_id = asset.asset_id
         else:
             book.cover_media_id = asset.asset_id
+
+        if before_commit is not None:
+            before_commit(asset)
 
         await session.commit()
         if existing is not None:
@@ -203,6 +270,31 @@ async def _write_upload_to_temp_file(
 
     if size_bytes == 0:
         raise ValidationError("Uploaded file is empty")
+
+    return size_bytes, hasher.hexdigest()
+
+
+def _copy_path_to_temp_file(
+    source_path: Path,
+    temp_path: Path,
+    *,
+    quota_remaining: int,
+) -> tuple[int, str]:
+    hasher = hashlib.sha256()
+    size_bytes = 0
+
+    with source_path.open("rb") as source, temp_path.open("wb") as output:
+        while chunk := source.read(UPLOAD_CHUNK_SIZE):
+            size_bytes += len(chunk)
+
+            if size_bytes > quota_remaining:
+                raise ConflictError("Storage quota exceeded")
+
+            hasher.update(chunk)
+            output.write(chunk)
+
+    if size_bytes == 0:
+        raise ValidationError("Imported file is empty")
 
     return size_bytes, hasher.hexdigest()
 
