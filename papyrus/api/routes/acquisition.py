@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,22 +21,36 @@ from papyrus.schemas.acquisition import (
     AcquisitionEndpointTest,
     AcquisitionEndpointTestResult,
     AcquisitionEndpointUpdate,
+    AcquisitionFileCandidate,
+    AcquisitionFileSelectionRequest,
     AcquisitionJob,
+    AcquisitionJobPage,
     AcquisitionRule,
     AcquisitionRuleCreate,
     ArrCommandRequest,
+    BatchSubmissionItem,
+    BatchSubmissionResponse,
+    BatchSubmitRequest,
     Release,
     SearchRequest,
     SubmitRequest,
 )
 from papyrus.services.acquisition import (
     build_test_endpoint,
+    cancel_job,
+    create_release_token,
     delete_acquisition_endpoint,
+    delete_terminal_job,
     dispatch_arr_command,
+    job_file_candidates,
     owned_endpoint,
+    owned_job,
+    paginated_jobs,
+    retry_job_import,
     run_rule,
     search_endpoint,
-    submit_to_client,
+    select_job_file,
+    submit_release_batch,
     test_endpoint_connection,
 )
 
@@ -77,6 +91,7 @@ async def acquisition_capabilities() -> AcquisitionCapabilities:
     if not get_settings().acquisition_enabled:
         return AcquisitionCapabilities(
             enabled=False,
+            managed_downloads_ready=False,
             endpoint_kinds=[],
             indexer_kinds=[],
             download_client_kinds=[],
@@ -85,6 +100,7 @@ async def acquisition_capabilities() -> AcquisitionCapabilities:
         )
 
     return AcquisitionCapabilities(
+        managed_downloads_ready=get_settings().acquisition_import_root is not None,
         endpoint_kinds=[
             "qbittorrent",
             "transmission",
@@ -129,6 +145,7 @@ async def create_endpoint(
         name=request.name,
         kind=request.kind.value,
         base_url=str(request.base_url),
+        download_root=request.download_root,
         credentials=_credentials(
             request.api_key.get_secret_value() if request.api_key else None,
             request.username.get_secret_value() if request.username else None,
@@ -191,28 +208,69 @@ async def search_releases(user_id: CurrentUserId, request: SearchRequest, db: Db
     result = await db.execute(statement)
     releases: list[Release] = []
     for endpoint in result.scalars():
-        releases.extend(await search_endpoint(endpoint, request.query))
+        for candidate in await search_endpoint(endpoint, request.query):
+            releases.append(
+                Release(
+                    title=candidate.title,
+                    release_token=create_release_token(candidate, endpoint),
+                    protocol=candidate.protocol,
+                    indexer=candidate.indexer,
+                    size_bytes=candidate.size_bytes,
+                    seeders=candidate.seeders,
+                    publish_date=candidate.publish_date,
+                    format_hints=candidate.format_hints,
+                )
+            )
     return releases
 
 
 @protected_router.post("/submissions", response_model=AcquisitionJob, status_code=status.HTTP_201_CREATED)
 async def submit_release(user_id: CurrentUserId, request: SubmitRequest, db: DbSession) -> AcquisitionJobModel:
-    endpoint = await owned_endpoint(db, user_id, request.endpoint_id)
-    job = AcquisitionJobModel(
-        owner_user_id=user_id, endpoint_id=endpoint.endpoint_id, title=request.title, download_url=request.download_url
-    )
-    db.add(job)
-    try:
-        job.client_reference = await submit_to_client(
-            endpoint, request.download_url, request.category, request.save_path
+    result = (
+        await submit_release_batch(
+            db,
+            user_id,
+            request.endpoint_id,
+            [request.release_token],
         )
-        job.status = "submitted"
-    except HTTPException as exc:
-        job.status = "failed"
-        job.error = str(exc.detail)
-    await db.commit()
-    await db.refresh(job)
-    return job
+    )[0]
+
+    if result.job is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=result.error or "Release could not be submitted",
+        )
+
+    return result.job
+
+
+@protected_router.post(
+    "/submissions/batch",
+    response_model=BatchSubmissionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def submit_release_batch_route(
+    user_id: CurrentUserId,
+    request: BatchSubmitRequest,
+    db: DbSession,
+) -> BatchSubmissionResponse:
+    results = await submit_release_batch(
+        db,
+        user_id,
+        request.endpoint_id,
+        request.release_tokens,
+    )
+
+    return BatchSubmissionResponse(
+        items=[
+            BatchSubmissionItem(
+                index=result.index,
+                job=AcquisitionJob.model_validate(result.job) if result.job is not None else None,
+                error=result.error,
+            )
+            for result in results
+        ]
+    )
 
 
 @protected_router.post(
@@ -241,14 +299,78 @@ async def run_arr_command(
     return job
 
 
-@protected_router.get("/jobs", response_model=list[AcquisitionJob])
-async def list_jobs(user_id: CurrentUserId, db: DbSession) -> list[AcquisitionJobModel]:
-    result = await db.execute(
-        select(AcquisitionJobModel)
-        .where(AcquisitionJobModel.owner_user_id == user_id)
-        .order_by(AcquisitionJobModel.created_at.desc())
+@protected_router.get("/jobs", response_model=AcquisitionJobPage)
+async def list_jobs(
+    user_id: CurrentUserId,
+    db: DbSession,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> AcquisitionJobPage:
+    jobs, total = await paginated_jobs(
+        db,
+        user_id,
+        limit=limit,
+        offset=offset,
     )
-    return list(result.scalars())
+
+    return AcquisitionJobPage(
+        items=[AcquisitionJob.model_validate(job) for job in jobs],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@protected_router.get("/jobs/{job_id}", response_model=AcquisitionJob)
+async def get_job(user_id: CurrentUserId, job_id: UUID, db: DbSession) -> AcquisitionJobModel:
+    return await owned_job(db, user_id, job_id)
+
+
+@protected_router.get("/jobs/{job_id}/files", response_model=list[AcquisitionFileCandidate])
+async def get_job_files(
+    user_id: CurrentUserId,
+    job_id: UUID,
+    db: DbSession,
+) -> list[AcquisitionFileCandidate]:
+    files = await job_file_candidates(db, user_id, job_id)
+    return [AcquisitionFileCandidate.model_validate(file, from_attributes=True) for file in files]
+
+
+@protected_router.post("/jobs/{job_id}/file-selection", response_model=AcquisitionJob)
+async def choose_job_file(
+    user_id: CurrentUserId,
+    job_id: UUID,
+    request: AcquisitionFileSelectionRequest,
+    db: DbSession,
+) -> AcquisitionJobModel:
+    return await select_job_file(db, user_id, job_id, request.file_index)
+
+
+@protected_router.post("/jobs/{job_id}/cancel", response_model=AcquisitionJob)
+async def cancel_acquisition_job(
+    user_id: CurrentUserId,
+    job_id: UUID,
+    db: DbSession,
+) -> AcquisitionJobModel:
+    return await cancel_job(db, user_id, job_id)
+
+
+@protected_router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_acquisition_job(
+    user_id: CurrentUserId,
+    job_id: UUID,
+    db: DbSession,
+) -> None:
+    await delete_terminal_job(db, user_id, job_id)
+
+
+@protected_router.post("/jobs/{job_id}/retry-import", response_model=AcquisitionJob)
+async def retry_acquisition_job_import(
+    user_id: CurrentUserId,
+    job_id: UUID,
+    db: DbSession,
+) -> AcquisitionJobModel:
+    return await retry_job_import(db, user_id, job_id)
 
 
 @protected_router.get("/rules", response_model=list[AcquisitionRule])

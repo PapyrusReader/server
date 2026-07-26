@@ -17,6 +17,7 @@ Read the focused guides:
 - [Flutter auth and PowerSync integration](docs/flutter-auth-integration.md)
 - [Authentication testing](docs/auth-testing.md)
 - [PowerSync sandbox](docs/powersync-sandbox.md)
+- [Managed book acquisition](docs/acquisition-downloads.md)
 
 ## Local Setup
 

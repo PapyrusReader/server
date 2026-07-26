@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from papyrus.config import Settings
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -34,3 +36,12 @@ def test_local_env_keys_match_example_when_env_exists() -> None:
     env_keys = _env_keys(env_path)
 
     assert env_keys == example_keys
+
+
+def test_managed_acquisition_settings_have_safe_defaults() -> None:
+    fields = Settings.model_fields
+
+    assert fields["acquisition_import_root"].default is None
+    assert fields["acquisition_monitor_active_interval_seconds"].default == 2
+    assert fields["acquisition_monitor_idle_interval_seconds"].default == 10
+    assert fields["acquisition_monitor_lease_seconds"].default == 30

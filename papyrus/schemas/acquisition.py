@@ -23,6 +23,7 @@ class EndpointKind(StrEnum):
 
 class AcquisitionCapabilities(BaseModel):
     enabled: bool = True
+    managed_downloads_ready: bool = False
     endpoint_kinds: list[EndpointKind]
     indexer_kinds: list[EndpointKind]
     download_client_kinds: list[EndpointKind]
@@ -37,6 +38,7 @@ class AcquisitionEndpointCreate(BaseModel):
     api_key: SecretStr | None = None
     username: SecretStr | None = None
     password: SecretStr | None = None
+    download_root: str | None = Field(None, min_length=1, max_length=2048)
     settings: dict[str, object] | None = None
 
     @field_validator("base_url")
@@ -51,6 +53,7 @@ class AcquisitionEndpointUpdate(BaseModel):
     api_key: SecretStr | None = None
     username: SecretStr | None = None
     password: SecretStr | None = None
+    download_root: str | None = Field(None, min_length=1, max_length=2048)
     settings: dict[str, object] | None = None
     enabled: bool | None = None
 
@@ -94,6 +97,7 @@ class AcquisitionEndpoint(BaseModel):
     name: str
     kind: EndpointKind
     base_url: str
+    download_root: str | None = None
     enabled: bool
     settings: dict[str, object] | None = None
     created_at: datetime | None = None
@@ -101,12 +105,13 @@ class AcquisitionEndpoint(BaseModel):
 
 class Release(BaseModel):
     title: str
-    download_url: str
+    release_token: str
     protocol: str
     indexer: str
     size_bytes: int | None = None
     seeders: int | None = None
     publish_date: datetime | None = None
+    format_hints: list[str] = Field(default_factory=list)
 
 
 class SearchRequest(BaseModel):
@@ -116,19 +121,12 @@ class SearchRequest(BaseModel):
 
 class SubmitRequest(BaseModel):
     endpoint_id: UUID
-    title: str = Field(min_length=1, max_length=500)
-    download_url: str = Field(min_length=1, max_length=4096)
-    category: str | None = Field(None, max_length=100)
-    save_path: str | None = Field(None, max_length=1024)
+    release_token: str = Field(min_length=1)
 
-    @field_validator("download_url")
-    @classmethod
-    def validate_torrent_download_url(cls, value: str) -> str:
-        if value.startswith("magnet:"):
-            return value
-        if value.startswith(("http://", "https://")):
-            return value
-        raise ValueError("download_url must be a magnet, HTTP, or HTTPS torrent URL")
+
+class BatchSubmitRequest(BaseModel):
+    endpoint_id: UUID
+    release_tokens: list[str] = Field(min_length=1, max_length=100)
 
 
 class ArrCommandRequest(BaseModel):
@@ -164,12 +162,57 @@ class AcquisitionJob(BaseModel):
     job_id: UUID
     endpoint_id: UUID | None
     rule_id: UUID | None
+    book_id: UUID | None
     title: str
-    download_url: str
     status: str
     client_reference: str | None = None
+    client_hash: str | None = None
+    client_state: str | None = None
+    progress_basis_points: int | None = None
+    downloaded_bytes: int | None = None
+    total_bytes: int | None = None
+    download_speed_bytes_per_second: int | None = None
+    eta_seconds: int | None = None
+    selected_file_path: str | None = None
+    retry_count: int = 0
     error: str | None = None
+    next_poll_at: datetime | None = None
     created_at: datetime | None = None
+    updated_at: datetime | None = None
+    submitted_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    cancelled_at: datetime | None = None
+
+
+class BatchSubmissionItem(BaseModel):
+    index: int
+    job: AcquisitionJob | None = None
+    error: str | None = None
+
+
+class BatchSubmissionResponse(BaseModel):
+    items: list[BatchSubmissionItem]
+
+
+class AcquisitionJobPage(BaseModel):
+    items: list[AcquisitionJob]
+    total: int
+    limit: int
+    offset: int
+
+
+class AcquisitionFileCandidate(BaseModel):
+    index: int
+    name: str
+    size_bytes: int
+    progress_basis_points: int
+    priority: int
+    supported: bool
+
+
+class AcquisitionFileSelectionRequest(BaseModel):
+    file_index: int = Field(ge=0)
 
 
 def validate_endpoint_url(value: HttpUrl) -> HttpUrl:
