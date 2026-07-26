@@ -150,14 +150,19 @@ class QbittorrentClient:
             raise HTTPException(status_code=409, detail="qBittorrent tag matched multiple torrents")
 
         item = payload[0]
+        progress_basis_points = _progress_basis_points(item.get("progress"))
+        completed_bytes = _optional_int(item.get("completed"))
+
         return QbittorrentTorrent(
             hash=_required_string(item, "hash", "qBittorrent torrent"),
             state=_required_string(item, "state", "qBittorrent torrent"),
-            progress_basis_points=_progress_basis_points(item.get("progress")),
-            downloaded_bytes=_required_int(item, "downloaded", "qBittorrent torrent"),
+            progress_basis_points=progress_basis_points,
+            downloaded_bytes=completed_bytes
+            if completed_bytes is not None
+            else _required_int(item, "downloaded", "qBittorrent torrent"),
             total_bytes=_required_int(item, "total_size", "qBittorrent torrent"),
             download_speed_bytes_per_second=_required_int(item, "dlspeed", "qBittorrent torrent"),
-            eta_seconds=_optional_int(item.get("eta")),
+            eta_seconds=0 if progress_basis_points == 10_000 else _optional_int(item.get("eta")),
         )
 
     async def files(self, torrent_hash: str) -> list[QbittorrentFile]:
@@ -179,7 +184,11 @@ class QbittorrentClient:
 
         other_indices = [index for index in file_indices if index != selected_index]
 
-        await self._post_form("api/v2/torrents/pause", {"hashes": torrent_hash})
+        await self._post_form(
+            "api/v2/torrents/pause",
+            {"hashes": torrent_hash},
+            fallback_path="api/v2/torrents/stop",
+        )
 
         if other_indices:
             await self._post_form(
@@ -199,10 +208,18 @@ class QbittorrentClient:
                 "priority": "1",
             },
         )
-        await self._post_form("api/v2/torrents/resume", {"hashes": torrent_hash})
+        await self._post_form(
+            "api/v2/torrents/resume",
+            {"hashes": torrent_hash},
+            fallback_path="api/v2/torrents/start",
+        )
 
     async def pause(self, torrent_hash: str) -> None:
-        await self._post_form("api/v2/torrents/pause", {"hashes": torrent_hash})
+        await self._post_form(
+            "api/v2/torrents/pause",
+            {"hashes": torrent_hash},
+            fallback_path="api/v2/torrents/stop",
+        )
 
     async def delete_torrent(self, torrent_hash: str) -> None:
         await self._post_form(
@@ -224,7 +241,13 @@ class QbittorrentClient:
 
         return _json_array(payload, "qBittorrent")
 
-    async def _post_form(self, path: str, values: dict[str, str]) -> None:
+    async def _post_form(
+        self,
+        path: str,
+        values: dict[str, str],
+        *,
+        fallback_path: str | None = None,
+    ) -> None:
         response_status, _, _ = await _request(
             _url(self.endpoint, path),
             method="POST",
@@ -234,6 +257,17 @@ class QbittorrentClient:
             },
             body=urlencode(values).encode(),
         )
+
+        if response_status == 404 and fallback_path is not None:
+            response_status, _, _ = await _request(
+                _url(self.endpoint, fallback_path),
+                method="POST",
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Cookie": self.cookie,
+                },
+                body=urlencode(values).encode(),
+            )
 
         if response_status >= 400:
             raise HTTPException(status_code=502, detail="qBittorrent request failed")

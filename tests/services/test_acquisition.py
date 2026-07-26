@@ -268,6 +268,35 @@ async def test_qbittorrent_client_reuses_login_for_torrent_and_file_queries(
     assert requests[2][1]["Cookie"] == "QBT_SID_8082=test"
 
 
+async def test_qbittorrent_client_reports_completed_content_bytes_and_zero_eta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    responses = iter(
+        [
+            (204, {"Set-Cookie": "QBT_SID_8082=test; path=/"}, b""),
+            (
+                200,
+                {},
+                b'[{"hash":"abc123","state":"stalledUP","progress":1,'
+                b'"completed":1024,"downloaded":1088,"total_size":1024,'
+                b'"dlspeed":0,"eta":8640000}]',
+            ),
+        ]
+    )
+
+    async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
+        return next(responses)
+
+    monkeypatch.setattr(acquisition, "_request", request)
+
+    client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
+    torrent = await client.find_torrent(tag="papyrus:job")
+
+    assert torrent.downloaded_bytes == 1024
+    assert torrent.total_bytes == 1024
+    assert torrent.eta_seconds == 0
+
+
 async def test_qbittorrent_client_falls_back_to_job_tag_when_saved_hash_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -344,6 +373,41 @@ async def test_qbittorrent_client_pauses_and_prioritizes_one_file(
         "priority": ["1"],
     }
     assert requests[4][1] == {"hashes": ["abc123"]}
+
+
+async def test_qbittorrent_client_uses_v5_stop_and_start_when_legacy_actions_are_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    responses = iter(
+        [
+            (204, {"Set-Cookie": "QBT_SID_8082=test; path=/"}, b""),
+            (404, {}, b"Endpoint does not exist"),
+            (200, {}, b""),
+            (200, {}, b""),
+            (200, {}, b""),
+            (404, {}, b"Endpoint does not exist"),
+            (200, {}, b""),
+        ]
+    )
+    request_urls: list[str] = []
+
+    async def request(url: str, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
+        request_urls.append(url)
+        return next(responses)
+
+    monkeypatch.setattr(acquisition, "_request", request)
+
+    client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
+    await client.select_file("abc123", selected_index=1, file_indices=[0, 1, 2])
+
+    assert [url.rsplit("/", 1)[-1] for url in request_urls[1:]] == [
+        "pause",
+        "stop",
+        "filePrio",
+        "filePrio",
+        "resume",
+        "start",
+    ]
 
 
 async def test_qbittorrent_client_deletes_torrent_and_downloaded_data(
