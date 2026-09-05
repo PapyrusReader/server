@@ -13,7 +13,7 @@ def test_library_streams_filter_owners_and_setup_publishes_tables() -> None:
     root = Path(__file__).parents[1]
     config = (root / "powersync/sync-config.yaml").read_text()
     setup = (root / "scripts/setup_local_powersync.sh").read_text()
-    for table in ("books", "shelves", "tags", "notes", "annotations", "book_shelves", "book_tags"):
+    for table in ("books", "shelves", "tags", "notes", "annotations", "bookmarks", "book_shelves", "book_tags"):
         stream = config.split(f"  {table}:\n", 1)[1].split("\n\n", 1)[0]
         assert "auto_subscribe: true" in stream
         assert "WHERE owner_user_id::text = auth.user_id()" in stream

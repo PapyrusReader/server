@@ -3,6 +3,7 @@ from papyrus.models.acquisition import AcquisitionEndpoint, AcquisitionJob, Acqu
 from papyrus.models.auth import AuthExchangeCode, AuthSession, EmailActionToken, PasswordCredential, UserIdentity
 from papyrus.models.library import (
     SyncAnnotation,
+    SyncBookmark,
     SyncBookShelf,
     SyncBookTag,
     SyncNote,
@@ -20,6 +21,7 @@ __all__ = [
     "SyncTag",
     "SyncNote",
     "SyncAnnotation",
+    "SyncBookmark",
     "SyncBookShelf",
     "SyncBookTag",
     "SyncTombstone",

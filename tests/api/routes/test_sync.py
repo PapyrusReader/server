@@ -161,7 +161,7 @@ async def test_powersync_upload_rejects_unsupported_table(
     response = await client.post(
         "/v1/sync/powersync-upload",
         headers=auth_headers,
-        json={"batch": [{"type": "bookmarks", "op": "PUT", "id": str(uuid4()), "data": {"name": "Shelf"}}]},
+        json={"batch": [{"type": "reading_sessions", "op": "PUT", "id": str(uuid4()), "data": {"name": "Shelf"}}]},
     )
     assert response.status_code == 422
 
@@ -170,8 +170,8 @@ async def test_powersync_upload_rejects_partial_future_tables(
     client: AsyncClient,
     auth_headers: dict[str, str],
 ):
-    """Bookmarks and reading sessions are outside the library sync contract."""
-    for table in ("bookmarks", "reading_sessions"):
+    """Reading sessions and goals are outside the library sync contract."""
+    for table in ("reading_sessions", "goals"):
         response = await client.post(
             "/v1/sync/powersync-upload",
             headers=auth_headers,
