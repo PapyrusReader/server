@@ -52,10 +52,7 @@ def test_managed_acquisition_models_expose_download_lifecycle() -> None:
             "ix_acquisition_jobs_next_poll_at",
         }
     )
-    assert any(
-        foreign_key.target_fullname == "books.book_id"
-        for foreign_key in job_table.c.book_id.foreign_keys
-    )
+    assert any(foreign_key.target_fullname == "books.book_id" for foreign_key in job_table.c.book_id.foreign_keys)
 
 
 def test_media_asset_kind_is_unique_per_book() -> None:
@@ -106,5 +103,6 @@ def test_auth_models_are_registered_with_metadata() -> None:
         "updated_at",
     }
     assert {"book_id", "owner_user_id", "title", "updated_at"}.issubset(books_table.columns.keys())
-    assert "annotations" not in Base.metadata.tables
+    for table_name in ("shelves", "tags", "notes", "annotations", "book_shelves", "book_tags"):
+        assert "owner_user_id" in Base.metadata.tables[table_name].columns
     assert "reading_sessions" not in Base.metadata.tables

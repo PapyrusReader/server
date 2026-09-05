@@ -29,8 +29,116 @@ streams:
         rating,
         custom_metadata::text AS custom_metadata,
         added_at::text AS added_at,
-        updated_at::text AS updated_at
+        updated_at::text AS updated_at,
+        publication_date::text AS publication_date,
+        file_format,
+        file_size,
+        file_hash,
+        is_physical,
+        physical_location,
+        lent_to,
+        lent_at::text AS lent_at,
+        series_id,
+        series_name,
+        series_number,
+        started_at::text AS started_at,
+        completed_at::text AS completed_at,
+        last_read_at::text AS last_read_at
       FROM books
+      WHERE owner_user_id::text = auth.user_id()
+
+  shelves:
+    auto_subscribe: true
+    query: |
+      SELECT
+        shelf_id AS id,
+        name,
+        description,
+        color_hex,
+        icon_code_point,
+        icon_font_family,
+        icon_font_package,
+        icon_match_text_direction,
+        parent_shelf_id::text AS parent_shelf_id,
+        is_smart,
+        smart_query,
+        sort_order,
+        created_at::text AS created_at,
+        updated_at::text AS updated_at,
+        owner_user_id::text AS owner_user_id
+      FROM shelves
+      WHERE owner_user_id::text = auth.user_id()
+
+  tags:
+    auto_subscribe: true
+    query: |
+      SELECT
+        tag_id AS id,
+        name,
+        color_hex,
+        description,
+        created_at::text AS created_at,
+        updated_at::text AS updated_at,
+        owner_user_id::text AS owner_user_id
+      FROM tags
+      WHERE owner_user_id::text = auth.user_id()
+
+  notes:
+    auto_subscribe: true
+    query: |
+      SELECT
+        note_id AS id,
+        book_id::text AS book_id,
+        title,
+        content,
+        location::text AS location,
+        tags::text AS tags,
+        is_pinned,
+        created_at::text AS created_at,
+        updated_at::text AS updated_at,
+        owner_user_id::text AS owner_user_id
+      FROM notes
+      WHERE owner_user_id::text = auth.user_id()
+
+  annotations:
+    auto_subscribe: true
+    query: |
+      SELECT
+        annotation_id AS id,
+        book_id::text AS book_id,
+        selected_text,
+        color,
+        location::text AS location,
+        note,
+        created_at::text AS created_at,
+        updated_at::text AS updated_at,
+        owner_user_id::text AS owner_user_id
+      FROM annotations
+      WHERE owner_user_id::text = auth.user_id()
+
+  book_shelves:
+    auto_subscribe: true
+    query: |
+      SELECT
+        id,
+        book_id::text AS book_id,
+        shelf_id::text AS shelf_id,
+        added_at::text AS added_at,
+        sort_order,
+        owner_user_id::text AS owner_user_id
+      FROM book_shelves
+      WHERE owner_user_id::text = auth.user_id()
+
+  book_tags:
+    auto_subscribe: true
+    query: |
+      SELECT
+        id,
+        book_id::text AS book_id,
+        tag_id::text AS tag_id,
+        created_at::text AS created_at,
+        owner_user_id::text AS owner_user_id
+      FROM book_tags
       WHERE owner_user_id::text = auth.user_id()
 
   demo_items:

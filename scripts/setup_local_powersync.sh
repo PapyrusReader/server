@@ -29,16 +29,15 @@ END
 \$\$;
 
 GRANT USAGE ON SCHEMA public TO "${POWERSYNC_SOURCE_ROLE}";
-GRANT SELECT ON TABLE public.books TO "${POWERSYNC_SOURCE_ROLE}";
-GRANT SELECT ON TABLE public.powersync_demo_items TO "${POWERSYNC_SOURCE_ROLE}";
+GRANT SELECT ON TABLE public.books, public.shelves, public.tags, public.notes, public.annotations, public.book_shelves, public.book_tags, public.powersync_demo_items TO "${POWERSYNC_SOURCE_ROLE}";
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO "${POWERSYNC_SOURCE_ROLE}";
 
 DO \$\$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'powersync') THEN
-    CREATE PUBLICATION powersync FOR TABLE public.books, public.powersync_demo_items;
+    CREATE PUBLICATION powersync FOR TABLE public.books, public.shelves, public.tags, public.notes, public.annotations, public.book_shelves, public.book_tags, public.powersync_demo_items;
   ELSE
-    ALTER PUBLICATION powersync SET TABLE public.books, public.powersync_demo_items;
+    ALTER PUBLICATION powersync SET TABLE public.books, public.shelves, public.tags, public.notes, public.annotations, public.book_shelves, public.book_tags, public.powersync_demo_items;
   END IF;
 END
 \$\$;
