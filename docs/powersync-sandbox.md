@@ -79,12 +79,12 @@ Clear browser storage for `http://localhost:8080/__dev/powersync-sandbox`.
 ## Library sync
 
 The production Flutter library uses `POST /v1/sync/powersync-upload`. Its automatic,
-owner-filtered streams contain `books`, `shelves`, `tags`, `notes`, `annotations`,
+owner-filtered streams contain `books`, `shelves`, `tags`, `notes`, `annotations`, `bookmarks`,
 `book_shelves`, and `book_tags`. The demo stream and sandbox remain available.
 The other library REST routers are placeholders; use PowerSync uploads for these
 persisted domains.
 
-Apply revision `dcd3b384e6a4` before starting an API or PowerSync version that uses
+Apply revision `af0fea8d6317` before starting an API or PowerSync version that uses
 these streams, then refresh the source publication and restart PowerSync:
 
 ```bash
@@ -143,6 +143,15 @@ Notes and annotations use a `location` object containing `page_number`, optional
 can be null. Annotation colors are `yellow`, `green`, `blue`, `pink`, `purple`,
 and `orange`. Note tags remain a list of free-text strings.
 
+Bookmarks use UUID `bookmark_id` source keys and reference an owned `book_id`.
+Their `position` is a number between 0 and 1, defaulting to 0. The optional
+`page_number`, `chapter_title`, and `note` fields can be cleared with null.
+`color_hex` defaults to `#FF5722`; `created_at` is preserved from the client,
+and `updated_at` is controlled by the server. Bookmark deletions leave durable
+tombstones, including bookmarks removed by book deletion. Revision `af0fea8d6317`
+adds this table without modifying existing library records. Its downgrade
+removes bookmark data, so export bookmarks before downgrading.
+
 Book columns additionally contain `publication_date`, `file_format`, `file_size`,
 `file_hash`, `is_physical`, `physical_location`, `lent_to`, `lent_at`, `series_id`,
 `series_name`, `series_number`, `started_at`, `completed_at`, and `last_read_at`.
@@ -163,7 +172,7 @@ back. Transactions for one owner serialize to preserve unrelated concurrent
 field changes.
 
 Entity deletion wins over stale offline writes through durable, server-only
-`sync_tombstones`. Deleting a book removes its notes, annotations, memberships,
+`sync_tombstones`. Deleting a book removes its notes, annotations, bookmarks, memberships,
 and existing media; physical files are removed only after commit. Deleting a
 shelf reparents its immediate children to the root and removes its memberships.
 Deleting a tag removes its memberships. Delayed entity writes and writes with
@@ -171,7 +180,7 @@ a tombstoned parent are acknowledged as no-ops so a device can drain its queue.
 Do not purge tombstones while offline clients may still upload old changes.
 
 For two-client library validation, use the same account in two independent
-Flutter browser profiles. Create a shelf, tag, note, annotation, and memberships
+Flutter browser profiles. Create a shelf, tag, note, annotation, bookmark, and memberships
 on one client, and confirm all appear on the other. Disconnect one client, edit
 an unrelated field on each client, reconnect, and verify both changes survive.
 Repeat with deletion on the connected client and a stale edit on the offline
@@ -189,9 +198,13 @@ With the local API on port 8080 and PowerSync running, execute from `client/app/
 PAPYRUS_LIVE_SYNC=1 flutter test test/powersync/library_live_sync_test.dart --reporter expanded
 ```
 
+The test also covers physical-book bookmarks and favorites across an offline
+restart. With the default upload rate limit, the extra transactions may take
+over a minute to drain; HTTP 429 responses are retried with the queue preserved.
+
 Client schema expansion preserves existing book databases and queued uploads.
 A one-time local migration promotes only compatible legacy metadata values;
 explicit column nulls remain cleared. Guest tables are local-only, and switching
 account or server invalidates the old repository handles and clears library
 views before loading the selected database. Previously memory-only shelves,
-topics, notes, and annotations are not automatically assigned to any account.
+topics, notes, annotations, and bookmarks are not automatically assigned to any account.

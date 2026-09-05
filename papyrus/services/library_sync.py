@@ -12,6 +12,7 @@ from papyrus.core.exceptions import ForbiddenError, ValidationError
 from papyrus.models import (
     SyncAnnotation,
     SyncBook,
+    SyncBookmark,
     SyncBookShelf,
     SyncBookTag,
     SyncNote,
@@ -29,6 +30,7 @@ MODELS: dict[str, Any] = {
     "tags": SyncTag,
     "notes": SyncNote,
     "annotations": SyncAnnotation,
+    "bookmarks": SyncBookmark,
     "book_shelves": SyncBookShelf,
     "book_tags": SyncBookTag,
 }
@@ -38,6 +40,7 @@ PRIMARY_KEYS = {
     "tags": "tag_id",
     "notes": "note_id",
     "annotations": "annotation_id",
+    "bookmarks": "bookmark_id",
     "book_shelves": "id",
     "book_tags": "id",
 }
@@ -78,7 +81,7 @@ async def delete_entity(session: AsyncSession, user_id: UUID, table: str, row_id
         return paths
 
     if table == "books":
-        for child_table in ("notes", "annotations"):
+        for child_table in ("notes", "annotations", "bookmarks"):
             model = MODELS[child_table]
             result = await session.execute(select(model).where(model.book_id == row_id))
 
@@ -209,6 +212,9 @@ async def apply_library_mutation(
 
     if stale_parent:
         return 0, []
+
+    if table == "bookmarks" and "position" in values and not 0 <= values["position"] <= 1:
+        raise ValidationError("position must be between 0 and 1")
 
     if table == "annotations" and values.get("color", "yellow") not in {
         "yellow",

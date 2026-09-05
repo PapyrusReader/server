@@ -71,6 +71,7 @@ UPLOAD_FIELDS = {
     "tags": ENTITY_FIELDS | {"name", "color_hex", "description"},
     "notes": ENTITY_FIELDS | {"book_id", "title", "content", "location", "tags", "is_pinned"},
     "annotations": ENTITY_FIELDS | {"book_id", "selected_text", "color", "location", "note"},
+    "bookmarks": ENTITY_FIELDS | {"book_id", "position", "page_number", "chapter_title", "note", "color_hex"},
     "book_shelves": {"owner_user_id", "book_id", "shelf_id", "added_at", "sort_order"},
     "book_tags": {"owner_user_id", "book_id", "tag_id", "created_at"},
 }
@@ -81,8 +82,8 @@ class PowerSyncCrudMutation(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    table: Literal["books", "shelves", "tags", "notes", "annotations", "book_shelves", "book_tags"] = Field(
-        alias="type"
+    table: Literal["books", "shelves", "tags", "notes", "annotations", "bookmarks", "book_shelves", "book_tags"] = (
+        Field(alias="type")
     )
     op: Literal["PUT", "PATCH", "DELETE", "put", "patch", "delete"]
     id: str

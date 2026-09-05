@@ -116,6 +116,23 @@ streams:
       FROM annotations
       WHERE owner_user_id::text = auth.user_id()
 
+  bookmarks:
+    auto_subscribe: true
+    query: |
+      SELECT
+        bookmark_id AS id,
+        book_id::text AS book_id,
+        position,
+        page_number,
+        chapter_title,
+        note,
+        color_hex,
+        created_at::text AS created_at,
+        updated_at::text AS updated_at,
+        owner_user_id::text AS owner_user_id
+      FROM bookmarks
+      WHERE owner_user_id::text = auth.user_id()
+
   book_shelves:
     auto_subscribe: true
     query: |

@@ -3,7 +3,18 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Text, UniqueConstraint, Uuid, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -66,6 +77,19 @@ class SyncAnnotation(LibraryEntity, Base):
     color: Mapped[str] = mapped_column(Text, default="yellow", server_default="yellow")
     location: Mapped[dict[str, object]] = mapped_column(JSONB)
     note: Mapped[str | None] = mapped_column(Text)
+
+
+class SyncBookmark(LibraryEntity, Base):
+    __tablename__ = "bookmarks"
+    __table_args__ = (CheckConstraint("position >= 0 AND position <= 1", name="ck_bookmarks_position_range"),)
+
+    bookmark_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    book_id: Mapped[UUID] = mapped_column(ForeignKey("books.book_id", ondelete="CASCADE"), index=True)
+    position: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
+    page_number: Mapped[int | None] = mapped_column(Integer)
+    chapter_title: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    color_hex: Mapped[str] = mapped_column(Text, default="#FF5722", server_default="#FF5722")
 
 
 class SyncBookShelf(OwnedLibraryRow, Base):
