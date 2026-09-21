@@ -141,6 +141,7 @@ Rate limits are enforced per user:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-OPDS-URL"],
     )
 
     @app.exception_handler(AppError)

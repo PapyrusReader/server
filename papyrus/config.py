@@ -72,6 +72,8 @@ class Settings(BaseSettings):
     dev_pages_vite_url: str = "http://localhost:5173"
     dev_pages_manifest_path: str = "frontend/dev-pages/dist/.vite/manifest.json"
     acquisition_enabled: bool = False
+    opds_relay_enabled: bool = True
+    opds_relay_allowed_hosts: list[str] = []
     acquisition_import_root: str | None = None
     acquisition_monitor_active_interval_seconds: float = 2
     acquisition_monitor_idle_interval_seconds: float = 10

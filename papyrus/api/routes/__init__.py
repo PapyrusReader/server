@@ -14,6 +14,7 @@ from papyrus.api.routes import (
     goals,
     media,
     notes,
+    opds,
     progress,
     reading_profiles,
     saved_filters,
@@ -26,6 +27,8 @@ from papyrus.api.routes import (
 )
 
 api_router = APIRouter()
+
+api_router.include_router(opds.router, prefix="/opds", tags=["OPDS"])
 
 api_router.include_router(acquisition.router, prefix="/acquisition", tags=["Acquisition"])
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
