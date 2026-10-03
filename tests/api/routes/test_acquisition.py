@@ -18,6 +18,7 @@ from papyrus.models.acquisition import AcquisitionEndpoint, AcquisitionJob, Acqu
 from papyrus.models.sync import SyncBook
 from papyrus.models.user import User
 from papyrus.services import acquisition as acquisition_service
+from papyrus.services.acquisition import jobs as acquisition_jobs
 
 
 @pytest.fixture(autouse=True)
@@ -309,7 +310,7 @@ async def test_batch_submission_creates_a_linked_placeholder_without_persisting_
         submissions.append((download_url, category, save_path, tags))
         return None
 
-    monkeypatch.setattr(acquisition_service, "submit_to_client", submit_to_client)
+    monkeypatch.setattr(acquisition_jobs, "submit_to_client", submit_to_client)
 
     response = await client.post(
         "/v1/acquisition/submissions/batch",
@@ -437,7 +438,7 @@ async def test_batch_submission_isolates_invalid_release_tokens(
     async def submit_to_client(*args: object, **kwargs: object) -> str | None:
         return None
 
-    monkeypatch.setattr(acquisition_service, "submit_to_client", submit_to_client)
+    monkeypatch.setattr(acquisition_jobs, "submit_to_client", submit_to_client)
 
     response = await client.post(
         "/v1/acquisition/submissions/batch",

@@ -58,7 +58,7 @@ async def test_powersync_sandbox_registered_in_debug_vite_mode(
     assert 'data-shell-marker="sticky-status-rail"' in response.text
     assert 'href="/__dev/auth-sandbox"' in response.text
     assert 'href="/__dev/powersync-sandbox"' in response.text
-    assert 'dev-page-nav__link--active' in response.text
+    assert "dev-page-nav__link--active" in response.text
     assert 'src="http://vite.test:5173/@vite/client"' in response.text
     assert 'src="http://vite.test:5173/src/pages/powersync-sandbox/main.ts"' in response.text
     assert '"powersync_endpoint": "http://localhost:8081"' in response.text
@@ -133,9 +133,7 @@ async def test_powersync_sandbox_worker_asset_is_served_from_backend_origin(
     assert response.headers["x-papyrus-vendor-path"] == "WASQLiteDB.umd.js"
     assert response.text == "// worker/WASQLiteDB.umd.js"
 
-    nested_response = await debug_client.get(
-        "/__dev/powersync-sandbox/worker/node_modules_pnpm_example_chunk.umd.js"
-    )
+    nested_response = await debug_client.get("/__dev/powersync-sandbox/worker/node_modules_pnpm_example_chunk.umd.js")
     assert nested_response.status_code == 200
     assert nested_response.headers["x-papyrus-vendor-path"] == "node_modules_pnpm_example_chunk.umd.js"
     assert nested_response.text == "// worker/node_modules_pnpm_example_chunk.umd.js"

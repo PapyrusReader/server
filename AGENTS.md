@@ -6,7 +6,8 @@
 - `papyrus/services`: service-layer business logic. Prefer new domain modules here instead of growing route handlers.
 - `papyrus/schemas`: Pydantic request and response models.
 - `papyrus/models`: SQLAlchemy models and metadata exports used by Alembic.
-- `papyrus/core`: shared infrastructure such as config, database, exceptions, and security.
+- `papyrus/config.py`: validated environment configuration.
+- `papyrus/core`: database, exceptions, security and shared infrastructure.
 - `alembic`: Alembic environment and migration revisions.
 - `tests/api/routes`: endpoint behavior and contract tests.
 - `tests/services`: service-layer tests.
@@ -77,8 +78,7 @@ Local auth testing supports Mailpit for SMTP capture, a dev auth sandbox at `/__
 
 Use `.env.example`, `tests/api/routes/test_auth.py`, and
 `tests/integration/test_auth_smoke.py` for current configuration and test entry points.
-The auth, Flutter integration, and PowerSync sandbox guides linked by the README
-are absent from this checkout; do not assume their contents or invent commands from them.
+See `README.md` for current auth/sync routes, local sandbox entry points and test lanes.
 
 For client/server contracts, use the workspace's `papyrus-sync-contract` skill and
 `../.agents/skills/papyrus-sync-contract/references/contract-map.md` when developing

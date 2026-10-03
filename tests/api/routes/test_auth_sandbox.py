@@ -47,14 +47,16 @@ async def test_auth_sandbox_renders_built_assets_when_manifest_exists(
     """Test the auth sandbox uses built assets when Vite mode is disabled."""
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text(
-        json.dumps({
-            "src/pages/auth-sandbox/main.ts": {
-                "file": "assets/auth-sandbox.js",
-                "css": ["assets/auth-sandbox.css"],
-                "imports": [],
-                "src": "src/pages/auth-sandbox/main.ts",
+        json.dumps(
+            {
+                "src/pages/auth-sandbox/main.ts": {
+                    "file": "assets/auth-sandbox.js",
+                    "css": ["assets/auth-sandbox.css"],
+                    "imports": [],
+                    "src": "src/pages/auth-sandbox/main.ts",
+                }
             }
-        }),
+        ),
         encoding="utf-8",
     )
 
