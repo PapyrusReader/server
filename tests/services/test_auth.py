@@ -250,7 +250,9 @@ async def test_reset_password_revokes_all_sessions(
         )
         await session.commit()
         await auth_service.reset_password(session, plain_token, "NewSecureP@ss123")
-        session_result = await session.execute(select(AuthSession).where(AuthSession.user_id == register_result.user.user_id))
+        session_result = await session.execute(
+            select(AuthSession).where(AuthSession.user_id == register_result.user.user_id)
+        )
         assert all(auth_session.revoked_at is not None for auth_session in session_result.scalars())
 
 

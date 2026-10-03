@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from papyrus.models.acquisition import AcquisitionEndpoint
 from papyrus.services import acquisition
+from papyrus.services.acquisition import providers
 
 
 def _endpoint(kind: str) -> AcquisitionEndpoint:
@@ -82,7 +83,7 @@ async def test_transmission_rejects_rpc_failure(monkeypatch: pytest.MonkeyPatch)
     async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
         return 200, {}, b'{"result":"invalid or corrupt torrent file","arguments":{}}'
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     with pytest.raises(HTTPException) as exc_info:
         await acquisition.submit_to_client(
@@ -106,7 +107,7 @@ async def test_deluge_uses_url_method_for_http_torrent(monkeypatch: pytest.Monke
 
         return 200, {}, b'{"result":"torrent-id","error":null,"id":2}'
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     await acquisition.submit_to_client(
         _endpoint("deluge"),
@@ -129,7 +130,7 @@ async def test_deluge_rejects_json_rpc_error(monkeypatch: pytest.MonkeyPatch) ->
     async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
         return next(responses)
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     with pytest.raises(HTTPException) as exc_info:
         await acquisition.submit_to_client(
@@ -146,7 +147,7 @@ async def test_prowlarr_rejects_invalid_json(monkeypatch: pytest.MonkeyPatch) ->
     async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
         return 200, {}, b"not-json"
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     with pytest.raises(HTTPException) as exc_info:
         await acquisition.search_endpoint(_endpoint("prowlarr"), "book")
@@ -159,7 +160,7 @@ async def test_qbittorrent_connection_test_accepts_empty_204_login(monkeypatch: 
     async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
         return 204, {"Set-Cookie": "QBT_SID_8082=test; path=/"}, b""
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     await acquisition.test_endpoint_connection(_endpoint("qbittorrent"))
 
@@ -175,7 +176,7 @@ async def test_qbittorrent_submission_accepts_empty_204_login(monkeypatch: pytes
     async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
         return next(responses)
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     await acquisition.submit_to_client(
         _endpoint("qbittorrent"),
@@ -200,7 +201,7 @@ async def test_qbittorrent_submission_sends_managed_tag_and_save_path(
         bodies.append(cast(bytes, kwargs["body"]))
         return next(responses)
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     await acquisition.submit_to_client(
         _endpoint("qbittorrent"),
@@ -241,7 +242,7 @@ async def test_qbittorrent_client_reuses_login_for_torrent_and_file_queries(
         requests.append((url, cast(dict[str, str], kwargs.get("headers", {}))))
         return next(responses)
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
     torrent = await client.find_torrent(tag="papyrus:job")
@@ -287,7 +288,7 @@ async def test_qbittorrent_client_reports_completed_content_bytes_and_zero_eta(
     async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
         return next(responses)
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
     torrent = await client.find_torrent(tag="papyrus:job")
@@ -318,7 +319,7 @@ async def test_qbittorrent_client_falls_back_to_job_tag_when_saved_hash_is_missi
         request_urls.append(url)
         return next(responses)
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
     torrent = await client.find_torrent(
@@ -350,7 +351,7 @@ async def test_qbittorrent_client_pauses_and_prioritizes_one_file(
             requests.append((url, parse_qs(cast(bytes, body).decode())))
         return next(responses)
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
     await client.select_file("abc123", selected_index=1, file_indices=[0, 1, 2])
@@ -395,7 +396,7 @@ async def test_qbittorrent_client_uses_v5_stop_and_start_when_legacy_actions_are
         request_urls.append(url)
         return next(responses)
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
     await client.select_file("abc123", selected_index=1, file_indices=[0, 1, 2])
@@ -426,7 +427,7 @@ async def test_qbittorrent_client_deletes_torrent_and_downloaded_data(
             requests.append((url, parse_qs(cast(bytes, body).decode())))
         return next(responses)
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
     await client.delete_torrent("abc123")
@@ -453,7 +454,7 @@ async def test_qbittorrent_submission_accepts_lowercase_session_cookie_header(
         request_headers.append(kwargs.get("headers", {}))
         return next(responses)
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     await acquisition.submit_to_client(
         _endpoint("qbittorrent"),
@@ -469,7 +470,7 @@ async def test_qbittorrent_rejects_failed_login_body(monkeypatch: pytest.MonkeyP
     async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
         return 200, {}, b"Fails."
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     with pytest.raises(HTTPException) as exc_info:
         await acquisition.submit_to_client(
@@ -490,7 +491,7 @@ async def test_arr_commands_use_v3_api(monkeypatch: pytest.MonkeyPatch) -> None:
         urls.append(url)
         return 201, {}, b'{"id":1}'
 
-    monkeypatch.setattr(acquisition, "_request", request)
+    monkeypatch.setattr(providers, "_request", request)
 
     await acquisition.dispatch_arr_command(_endpoint("readarr"), "BookSearch", [1])
 

@@ -35,14 +35,14 @@ async def test_smtp_password_reset_smoke(
 
     async with test_session_maker() as session:
         from papyrus.models import User
+
         session.add(User(display_name="SMTP Smoke", primary_email=recipient, primary_email_verified=True))
         await session.commit()
         message = await auth_service.begin_password_reset(session, recipient)
         assert message == "If the email is registered, a reset link has been sent"
 
 
-async def test_google_oauth_smoke(
-):
+async def test_google_oauth_smoke():
     """Exercise a live Google-authenticated Papyrus session against the running server."""
     if not _env_flag("RUN_GOOGLE_SMOKE_TEST"):
         pytest.skip("RUN_GOOGLE_SMOKE_TEST is not enabled")
