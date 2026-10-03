@@ -45,8 +45,7 @@
 - Run one test module: `uv run pytest tests/api/routes/test_<module>.py`
 - Lint: `uv run ruff check .`
 - Format: `uv run ruff format .`
-- Preferred typecheck command when available: `uv run pyright`
-- Current repo-configured fallback typecheck: `uv run mypy .`
+- Typecheck (installed, configured, and used in CI): `uv run --locked mypy .`
 
 ## Testing Rules
 
@@ -67,7 +66,7 @@
 
 - Relevant tests pass, or any unrun checks are called out with the reason.
 - Ruff passes on the changed scope.
-- Typechecking is run on the changed scope. Use `pyright` when available, otherwise use the repo's current `mypy` setup.
+- Typechecking is run on the changed scope using the repo's configured Mypy setup.
 - Schema changes include a migration and verification.
 - New backend behavior follows thin-route and service-layer separation.
 - No new dependencies were added unless explicitly requested.
@@ -76,14 +75,36 @@
 
 Local auth testing supports Mailpit for SMTP capture, a dev auth sandbox at `/__dev/auth-sandbox`, and opt-in provider smoke tests.
 
-See [`docs/auth-testing.md`](docs/auth-testing.md) for the exact `.env` values, Google OAuth setup, and end-to-end test workflow.
+Use `.env.example`, `tests/api/routes/test_auth.py`, and
+`tests/integration/test_auth_smoke.py` for current configuration and test entry points.
+The auth, Flutter integration, and PowerSync sandbox guides linked by the README
+are absent from this checkout; do not assume their contents or invent commands from them.
 
-For Flutter client integration guidance, see [`docs/flutter-auth-integration.md`](docs/flutter-auth-integration.md).
-
-For the self-hosted PowerSync sandbox and sync validation workflow, see [`docs/powersync-sandbox.md`](docs/powersync-sandbox.md).
+For client/server contracts, use the workspace's `papyrus-sync-contract` skill and
+`../.agents/skills/papyrus-sync-contract/references/contract-map.md` when developing
+inside the Papyrus workspace.
 
 To build the dev sandbox assets without the Vite dev server:
 
 ```bash
 npm --prefix frontend/dev-pages run build
 ```
+
+## Workspace tooling
+
+When checked out inside the Papyrus workspace, run from its root:
+
+- `tools/papyrus deps server` installs dev tools with `uv sync --locked --extra dev`.
+- `tools/papyrus check server` runs Ruff lint, non-mutating format checks, and Mypy.
+- `tools/papyrus test server -- tests/services/test_sync.py` runs focused tests.
+
+The shared fixtures drop and recreate test tables. Most route tests need PostgreSQL
+without being marked `integration`. Use a separate local test database, never the
+application database; do not run suites concurrently on the same database. The CLI
+checks the database target and holds a workspace test lock. External `auth_smoke`
+tests are excluded by default and require explicit provider configuration.
+
+Sync uploads in `papyrus/services/sync.py` lock per owner, commit mixed batches
+atomically, and delete physical media after commit. `library_sync.py` enforces
+ownership and tombstones so delayed offline writes cannot resurrect deleted rows.
+Preserve those semantics when changing persistence or upload validation.
