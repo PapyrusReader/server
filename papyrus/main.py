@@ -117,7 +117,7 @@ Rate limits are enforced per user:
 """,
         contact={
             "name": "Papyrus Support",
-            "url": "https://github.com/Eoic/Papyrus",
+            "url": "https://github.com/PapyrusReader/papyrus",
         },
         license_info={
             "name": "AGPL-3.0",
