@@ -1,0 +1,17 @@
+{
+	email {$ACME_EMAIL}
+}
+
+{$API_DOMAIN} {
+	reverse_proxy api:8080
+}
+
+{$SYNC_DOMAIN} {
+	reverse_proxy powersync:8080
+}
+
+{$APP_DOMAIN} {
+	root * /srv/web
+	try_files {path} /index.html
+	file_server
+}

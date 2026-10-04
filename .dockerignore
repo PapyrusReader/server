@@ -13,3 +13,8 @@ docs/
 tests/
 *.db
 *.sqlite3
+
+.local/
+.media/
+deploy/secrets/
+deploy/*.env

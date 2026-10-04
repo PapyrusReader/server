@@ -1,0 +1,117 @@
+name: papyrus-production
+
+x-api: &api
+  image: ghcr.io/papyrusreader/server:${PAPYRUS_VERSION:?Set PAPYRUS_VERSION to the release number}
+  env_file: production.env
+  environment:
+    DEBUG: 'false'
+    HOST: 0.0.0.0
+    PORT: '8080'
+    POSTGRES_HOST: database
+    POSTGRES_PORT: '5432'
+    MEDIA_STORAGE_ROOT: /var/lib/papyrus/media
+    PUBLIC_BASE_URL: https://${API_DOMAIN:?Set API_DOMAIN}
+    POWERSYNC_SERVICE_URL: https://${SYNC_DOMAIN:?Set SYNC_DOMAIN}
+    POWERSYNC_JWT_PRIVATE_KEY_FILE: /run/secrets/powersync-private.pem
+    POWERSYNC_JWT_PUBLIC_KEY_FILE: /run/secrets/powersync-public.pem
+  volumes:
+    - media:/var/lib/papyrus/media
+    - ./secrets/powersync-private.pem:/run/secrets/powersync-private.pem:ro
+    - ./secrets/powersync-public.pem:/run/secrets/powersync-public.pem:ro
+  depends_on:
+    database:
+      condition: service_healthy
+
+services:
+  database:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    command: ['postgres', '-c', 'wal_level=logical', '-c', 'max_replication_slots=10', '-c', 'max_wal_senders=10', '-c', 'max_slot_wal_keep_size=1GB']
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+      POWERSYNC_SOURCE_PASSWORD: ${POWERSYNC_SOURCE_PASSWORD:?Set POWERSYNC_SOURCE_PASSWORD}
+    volumes:
+      - database:/var/lib/postgresql/data
+      - ./bootstrap-powersync.sql:/bootstrap-powersync.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  powersync-storage:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POWERSYNC_STORAGE_USER:?Set POWERSYNC_STORAGE_USER}
+      POSTGRES_PASSWORD: ${POWERSYNC_STORAGE_PASSWORD:?Set POWERSYNC_STORAGE_PASSWORD}
+      POSTGRES_DB: ${POWERSYNC_STORAGE_DB:?Set POWERSYNC_STORAGE_DB}
+    volumes:
+      - powersync-storage:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    <<: *api
+    profiles: [maintenance]
+    command: ['alembic', 'upgrade', 'head']
+    restart: 'no'
+  api:
+    <<: *api
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 15
+  powersync:
+    image: journeyapps/powersync-service:1.23.0
+    restart: unless-stopped
+    command: ['start', '-r', 'unified']
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+      PS_DATA_SOURCE_URI: postgresql://powersync_role:${POWERSYNC_SOURCE_PASSWORD}@database:5432/${POSTGRES_DB}
+      PS_STORAGE_URI: postgresql://${POWERSYNC_STORAGE_USER}:${POWERSYNC_STORAGE_PASSWORD}@powersync-storage:5432/${POWERSYNC_STORAGE_DB}
+      PS_JWKS_URI: http://api:8080/v1/auth/jwks
+      PS_AUDIENCE: ${POWERSYNC_JWT_AUDIENCE:?Set POWERSYNC_JWT_AUDIENCE}
+    volumes:
+      - ../powersync:/config:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      powersync-storage:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:8080/probes/liveness').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 15
+  proxy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    ports: ['80:80', '443:443', '443:443/udp']
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      SYNC_DOMAIN: ${SYNC_DOMAIN}
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN for email verification and password reset}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - ./web:/srv/web:ro
+    depends_on:
+      api:
+        condition: service_healthy
+      powersync:
+        condition: service_healthy
+
+volumes:
+  database:
+  powersync-storage:
+  media:
+  caddy-data:
+  caddy-config:

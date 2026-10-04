@@ -1,0 +1,112 @@
+# Single-server production deployment
+
+This is a portable Docker Compose deployment for a Linux VM, including Hetzner
+Cloud. It is separate from the local `docker-compose.yml`. Nothing here provisions
+or changes a live server automatically.
+
+The API and migration job use `ghcr.io/papyrusreader/server:<version>`, built for
+amd64 and arm64 when the committed server version changes on `master`. API version
+metadata comes from the installed Python package. GitHub releases record the
+image digest; deploy a recorded digest instead of a mutable tag when stronger
+artifact pinning is needed. The runtime uses UID/GID 10001, not root.
+
+## Host and domains
+
+Use a VM with Docker Engine/Compose v2 and Python 3.12+, enough disk for uploaded
+books, and off-host backups. Avoid sizing from an untested load estimate; monitor
+memory, database storage and replication lag during internal testing. Configure
+SSH key access and a Hetzner firewall allowing SSH from your own IP and public
+TCP 80/443 (UDP 443 is optional for HTTP/3). Databases and PowerSync's internal
+listener have **no host port mappings**.
+
+Choose one domain you own. Use `api.<domain>`, `sync.<domain>` and `app.<domain>`.
+Point their DNS A records to the VM (add AAAA only if IPv6 routing works). Caddy
+obtains and renews HTTPS certificates and proxies PowerSync streaming. It also
+serves the built Flutter web app for verification/password-reset links. The client
+release environment must use the same API/sync origins. Set the Google OAuth web
+client's authorized redirect URI to
+`https://api.<domain>/v1/auth/oauth/google/callback`; mobile callbacks remain
+`papyrus://auth/callback`.
+
+## First deployment
+
+Check out the server release's source so PowerSync config and migrations match
+the container version. Run these commands from `server/deploy` on the VM:
+
+```sh
+cp production.env.example production.env
+chmod 600 production.env
+mkdir -p secrets web
+chmod 700 secrets
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out secrets/powersync-private.pem
+openssl pkey -in secrets/powersync-private.pem -pubout -out secrets/powersync-public.pem
+sudo chown 10001:10001 secrets/powersync-private.pem secrets/powersync-public.pem
+chmod 400 secrets/powersync-private.pem
+chmod 444 secrets/powersync-public.pem
+```
+
+Edit `production.env` locally on the VM. Replace placeholder domains and set
+`APP_PUBLIC_BASE_URL`, CORS and allowed web redirect hosts accordingly. Generate
+**separate** values for `SECRET_KEY`, `POSTGRES_PASSWORD`,
+`POWERSYNC_SOURCE_PASSWORD` and `POWERSYNC_STORAGE_PASSWORD` using
+`openssl rand -hex 32`. Database values must be URL-safe because connection URLs
+are assembled from them. Do not rotate the JWT private key on ordinary deploys.
+
+Configure a real SMTP provider with TLS, verified sender, and its credentials;
+Mailpit is for local development. Add Google OAuth credentials if testing Google
+sign-in. Extract the matching client's `web-release` artifact into `web/`, so
+`web/index.html` exists. The mobile app does not require visiting the web app for
+ordinary reading, but registration verification/reset emails use its routes.
+
+If the GHCR package is private, authenticate Docker on the VM with a restricted
+read-packages token; never reuse the CI publishing token. Ensure the requested
+image has actually been published. Then:
+
+```sh
+./deploy.sh
+```
+
+The script validates settings without printing credentials, pulls images, waits
+for both databases, stops app services, runs Alembic once, creates/updates the
+restricted PowerSync replication role and publication, then starts services with
+health checks. It intentionally causes a short maintenance window. If a migration
+fails, services stay stopped; inspect the failure before restoring service.
+Migrations do not run independently in every API replica.
+
+Verify externally: `https://api.<domain>/health`, `/openapi.json` (release version),
+`https://sync.<domain>/probes/liveness`, the web app, SMTP verification/reset, Google
+sign-in, book/media upload and sync from a Play-installed Android build. Monitor
+PowerSync replication slots: a 1 GB WAL retention cap protects disk but an
+extended outage can invalidate a slot and require a controlled resync.
+
+## Updating and recovery
+
+Deploy the backward-compatible server first, then roll out the client. Update
+`PAPYRUS_VERSION`, check out the corresponding source/config and install the web
+artifact before running `./deploy.sh`. Check Alembic current/head before/after a
+release and investigate `alembic check` differences. Do not downgrade migrations
+or assume rolling back an image reverses a data migration.
+
+Before each release, take a PostgreSQL dump of the application database and a
+consistent media backup. Keep encrypted, off-host backups of the database, media,
+production environment and JWT keys; perform an actual restore drill. The named
+volumes retain application/PostgreSQL/PowerSync data and Caddy certificates across
+container replacement. **Do not use `docker compose down -v`** for upgrades.
+VM snapshots alone are not a verified database/media backup. PowerSync storage
+can be rebuilt, but doing so requires coordinated client resync.
+
+For commands outside the script, always use:
+
+```sh
+docker compose --env-file production.env -f compose.yml ps
+docker compose --env-file production.env -f compose.yml logs --tail 100 api powersync
+```
+
+Do not expose logs containing tokens or environment values when asking for help.
+The first release still needs public DNS, SMTP/OAuth setup, credentials and a
+real-device sync/auth test; local container compilation is not a deployment test.
+
+References:
+- [Hetzner Cloud firewalls](https://docs.hetzner.com/cloud/firewalls/overview/)
+- [Docker Compose deployment](https://docs.docker.com/compose/how-tos/production/)
+- [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https)

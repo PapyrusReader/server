@@ -84,3 +84,10 @@ uv run --locked python scripts/export_openapi.py ../docs/_static/openapi.json --
 Export does not load `.env`, start services or connect to a database. Set the docs
 workflow's server revision to the source commit used for the snapshot. The runtime
 `/openapi.json` remains the specification for a configured deployment.
+
+## Production releases
+
+See [the deployment runbook](deploy/README.md) for version-triggered GHCR images
+and the separate production Compose stack, HTTPS, PowerSync, migrations and
+persistent database/media backups. API version metadata follows the installed
+package version in `pyproject.toml`.
