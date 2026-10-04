@@ -19,13 +19,14 @@ SSH key access and a Hetzner firewall allowing SSH from your own IP and public
 TCP 80/443 (UDP 443 is optional for HTTP/3). Databases and PowerSync's internal
 listener have **no host port mappings**.
 
-Choose one domain you own. Use `api.<domain>`, `sync.<domain>` and `app.<domain>`.
+The registered domain is `papyrus-reader.com`. Use `api.papyrus-reader.com`,
+`sync.papyrus-reader.com` and `app.papyrus-reader.com`.
 Point their DNS A records to the VM (add AAAA only if IPv6 routing works). Caddy
 obtains and renews HTTPS certificates and proxies PowerSync streaming. It also
 serves the built Flutter web app for verification/password-reset links. The client
 release environment must use the same API/sync origins. Set the Google OAuth web
 client's authorized redirect URI to
-`https://api.<domain>/v1/auth/oauth/google/callback`; mobile callbacks remain
+`https://api.papyrus-reader.com/v1/auth/oauth/google/callback`; mobile callbacks remain
 `papyrus://auth/callback`.
 
 ## First deployment
@@ -45,8 +46,8 @@ chmod 400 secrets/powersync-private.pem
 chmod 444 secrets/powersync-public.pem
 ```
 
-Edit `production.env` locally on the VM. Replace placeholder domains and set
-`APP_PUBLIC_BASE_URL`, CORS and allowed web redirect hosts accordingly. Generate
+Edit `production.env` locally on the VM. The domain, `APP_PUBLIC_BASE_URL`, CORS and allowed web redirect hosts already
+match `papyrus-reader.com`; keep these aligned if you change a hostname. Generate
 **separate** values for `SECRET_KEY`, `POSTGRES_PASSWORD`,
 `POWERSYNC_SOURCE_PASSWORD` and `POWERSYNC_STORAGE_PASSWORD` using
 `openssl rand -hex 32`. Database values must be URL-safe because connection URLs
@@ -73,8 +74,8 @@ health checks. It intentionally causes a short maintenance window. If a migratio
 fails, services stay stopped; inspect the failure before restoring service.
 Migrations do not run independently in every API replica.
 
-Verify externally: `https://api.<domain>/health`, `/openapi.json` (release version),
-`https://sync.<domain>/probes/liveness`, the web app, SMTP verification/reset, Google
+Verify externally: `https://api.papyrus-reader.com/health`, `/openapi.json` (release version),
+`https://sync.papyrus-reader.com/probes/liveness`, the web app, SMTP verification/reset, Google
 sign-in, book/media upload and sync from a Play-installed Android build. Monitor
 PowerSync replication slots: a 1 GB WAL retention cap protects disk but an
 extended outage can invalidate a slot and require a controlled resync.
