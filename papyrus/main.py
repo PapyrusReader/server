@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from papyrus import __version__
 from papyrus.api.routes import api_router, include_debug_routers
 from papyrus.config import get_settings
 from papyrus.core.database import async_session_maker
@@ -72,7 +73,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="Papyrus Server API",
-        version="1.0.0",
+        version=__version__,
         description=f"""
 REST API for Papyrus - a cross-platform book management application.
 
