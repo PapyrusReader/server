@@ -103,6 +103,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
       - ./web:/srv/web:ro
+      - ./website:/srv/website:ro
     depends_on:
       api:
         condition: service_healthy

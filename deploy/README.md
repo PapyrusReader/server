@@ -29,6 +29,14 @@ client's authorized redirect URI to
 `https://api.papyrus-reader.com/v1/auth/oauth/google/callback`; mobile callbacks remain
 `papyrus://auth/callback`.
 
+Point `papyrus-reader.com` and `www.papyrus-reader.com` to the VM as well. Caddy
+serves the public website from `website/current` and redirects `www` to the main
+domain, preserving the path and query string. The website has a separate release
+and deployment workflow in the `PapyrusReader/website` repository. Keep its release
+directories and the relative `current` symlink inside `website/`, which is mounted
+read-only into Caddy. If using a different domain, update these two site addresses
+in `Caddyfile`.
+
 ## First deployment
 
 Check out the server release's source so PowerSync config and migrations match
