@@ -62,6 +62,10 @@ services:
   api:
     <<: *api
     restart: unless-stopped
+    networks:
+      default:
+      edge:
+        aliases: [papyrus-api]
     healthcheck:
       test: ['CMD', 'python', '-c', "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
       interval: 10s
@@ -70,6 +74,10 @@ services:
   powersync:
     image: journeyapps/powersync-service:1.23.0
     restart: unless-stopped
+    networks:
+      default:
+      edge:
+        aliases: [papyrus-sync]
     command: ['start', '-r', 'unified']
     environment:
       POWERSYNC_CONFIG_PATH: /config/service.yaml
@@ -89,30 +97,27 @@ services:
       interval: 10s
       timeout: 3s
       retries: 15
-  proxy:
+  web:
     image: caddy:2.10.2-alpine
     restart: unless-stopped
-    ports: ['80:80', '443:443', '443:443/udp']
-    environment:
-      API_DOMAIN: ${API_DOMAIN}
-      SYNC_DOMAIN: ${SYNC_DOMAIN}
-      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN for email verification and password reset}
-      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
       - ./web:/srv/web:ro
-      - ./website:/srv/website:ro
-    depends_on:
-      api:
-        condition: service_healthy
-      powersync:
-        condition: service_healthy
+    networks:
+      edge:
+        aliases: [papyrus-app]
+    healthcheck:
+      test: ['CMD', 'wget', '--spider', '-q', 'http://127.0.0.1:8080/']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+networks:
+  edge:
+    external: true
+    name: papyrus-edge
 
 volumes:
   database:
   powersync-storage:
   media:
-  caddy-data:
-  caddy-config:

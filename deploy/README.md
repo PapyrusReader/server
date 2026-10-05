@@ -16,26 +16,27 @@ Use a VM with Docker Engine/Compose v2 and Python 3.12+, enough disk for uploade
 books, and off-host backups. Avoid sizing from an untested load estimate; monitor
 memory, database storage and replication lag during internal testing. Configure
 SSH key access and a Hetzner firewall allowing SSH from your own IP and public
-TCP 80/443 (UDP 443 is optional for HTTP/3). Databases and PowerSync's internal
-listener have **no host port mappings**.
+TCP 80/443 (UDP 443 is optional for HTTP/3). This Compose project publishes no
+host ports. Databases remain on its private network; only API, sync and the
+Flutter web server join the external `papyrus-edge` network.
 
 The registered domain is `papyrus-reader.com`. Use `api.papyrus-reader.com`,
 `sync.papyrus-reader.com` and `app.papyrus-reader.com`.
-Point their DNS A records to the VM (add AAAA only if IPv6 routing works). Caddy
-obtains and renews HTTPS certificates and proxies PowerSync streaming. It also
-serves the built Flutter web app for verification/password-reset links. The client
+Point their DNS A records to the VM (add AAAA only if IPv6 routing works). The
+independent `papyrus-edge` Compose project owns public ports and HTTPS certificates.
+Its configuration is in the workspace repository's `deploy/edge` directory and
+uses `papyrus-api:8080`, `papyrus-sync:8080` and `papyrus-app:8080` as upstreams.
+The `web` service here serves the built Flutter app over internal HTTP, including
+verification/password-reset routes. The client
 release environment must use the same API/sync origins. Set the Google OAuth web
 client's authorized redirect URI to
 `https://api.papyrus-reader.com/v1/auth/oauth/google/callback`; mobile callbacks remain
 `papyrus://auth/callback`.
 
-Point `papyrus-reader.com` and `www.papyrus-reader.com` to the VM as well. Caddy
-serves the public website from `website/current` and redirects `www` to the main
-domain, preserving the path and query string. The website has a separate release
-and deployment workflow in the `PapyrusReader/website` repository. Keep its release
-directories and the relative `current` symlink inside `website/`, which is mounted
-read-only into Caddy. If using a different domain, update these two site addresses
-in `Caddyfile`.
+Provision the shared edge project and its `papyrus-edge` network before deploying
+these services. Keep domain values aligned with `edge.env`; the ACME contact email
+belongs there. The public landing page is a separate Compose project owned by the
+website repository and is not started, stopped or mounted by this deployment.
 
 ## First deployment
 
@@ -105,8 +106,9 @@ or assume rolling back an image reverses a data migration.
 Before each release, take a PostgreSQL dump of the application database and a
 consistent media backup. Keep encrypted, off-host backups of the database, media,
 production environment and JWT keys; perform an actual restore drill. The named
-volumes retain application/PostgreSQL/PowerSync data and Caddy certificates across
-container replacement. **Do not use `docker compose down -v`** for upgrades.
+volumes retain application/PostgreSQL/PowerSync data across container replacement.
+The shared proxy's separate volumes retain certificates. **Do not use
+`docker compose down -v`** for upgrades.
 VM snapshots alone are not a verified database/media backup. PowerSync storage
 can be rebuilt, but doing so requires coordinated client resync.
 

@@ -41,6 +41,11 @@ class DeploymentTest(unittest.TestCase):
     def test_valid_config(self) -> None:
         config.validate(self.values())
 
+    def test_app_deployment_does_not_require_proxy_contact_settings(self) -> None:
+        values = self.values()
+        del values["ACME_EMAIL"]
+        config.validate(values)
+
     def test_placeholder_secret_or_url_drift_is_rejected(self) -> None:
         for key, value in (
             ("API_DOMAIN", "api.example.com"),

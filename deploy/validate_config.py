@@ -24,7 +24,7 @@ def validate(values: dict[str, str]) -> None:
     for key in ("POSTGRES_USER", "POSTGRES_DB", "POWERSYNC_STORAGE_USER", "POWERSYNC_STORAGE_DB"):
         if not re.fullmatch(r"[a-z][a-z0-9_]*", values.get(key, "")):
             raise ValueError(f"{key} must be a lowercase database identifier")
-    for key in ("ACME_EMAIL", "SMTP_HOST", "SMTP_FROM_EMAIL", "POWERSYNC_JWT_KEY_ID", "POWERSYNC_JWT_AUDIENCE"):
+    for key in ("SMTP_HOST", "SMTP_FROM_EMAIL", "POWERSYNC_JWT_KEY_ID", "POWERSYNC_JWT_AUDIENCE"):
         if not values.get(key):
             raise ValueError(f"{key} is required")
     if values.get("APP_PUBLIC_BASE_URL") != f"https://{values['APP_DOMAIN']}":
