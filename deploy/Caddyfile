@@ -1,26 +1,4 @@
-{
-	email {$ACME_EMAIL}
-}
-
-papyrus-reader.com {
-	root * /srv/website/current
-	encode zstd gzip
-	file_server
-}
-
-www.papyrus-reader.com {
-	redir https://papyrus-reader.com{uri} permanent
-}
-
-{$API_DOMAIN} {
-	reverse_proxy api:8080
-}
-
-{$SYNC_DOMAIN} {
-	reverse_proxy powersync:8080
-}
-
-{$APP_DOMAIN} {
+:8080 {
 	root * /srv/web
 	try_files {path} /index.html
 	file_server
