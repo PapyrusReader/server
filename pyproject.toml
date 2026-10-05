@@ -1,6 +1,6 @@
 [project]
 name = "papyrus-server"
-version = "1.0.0"
+version = "0.0.1"
 description = "REST API server for Papyrus, a cross platform book management application."
 requires-python = ">=3.12"
 license = { text = "AGPL-3.0" }
