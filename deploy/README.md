@@ -82,6 +82,12 @@ extended outage can invalidate a slot and require a controlled resync.
 
 ## Updating and recovery
 
+The initial testing baseline is `0.0.1`. Its release workflow removes the unused
+`1.0.0` container by its exact manifest digest after publishing the replacement.
+It preserves shared manifests and refuses to delete versions with unrelated tags.
+The package itself stays public. This cleanup uses the publishing repository's
+package admin access through `GITHUB_TOKEN` and only runs for `0.0.1`.
+
 Deploy the backward-compatible server first, then roll out the client. Update
 `PAPYRUS_VERSION`, check out the corresponding source/config and install the web
 artifact before running `./deploy.sh`. Check Alembic current/head before/after a

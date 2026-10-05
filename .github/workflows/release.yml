@@ -82,3 +82,10 @@ jobs:
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
           files: image.txt
+      - name: Remove superseded initial container
+        if: needs.version.outputs.version == '0.0.1'
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python tools/remove_superseded_release.py
