@@ -2,6 +2,7 @@
 
 import importlib.util
 import unittest
+from email.message import Message
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -42,7 +43,7 @@ class CleanupTest(unittest.TestCase):
                 return {"manifests": [{"digest": "removed"}, {"digest": "remaining"}]}
 
             if url.endswith("/removed"):
-                raise HTTPError(url, 404, "Not Found", None, None)
+                raise HTTPError(url, 404, "Not Found", Message(), None)
 
             return {}
 
