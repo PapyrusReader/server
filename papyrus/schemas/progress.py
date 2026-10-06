@@ -35,14 +35,16 @@ class ReadingSessionList(BaseModel):
 
 
 class CreateReadingSessionRequest(BaseModel):
-    """Reading session creation request."""
+    """Reading session creation request; optional id supports retry-safe uploads."""
+
+    session_id: UUID | None = None
 
     book_id: UUID
     start_time: datetime
     end_time: datetime | None = None
     start_position: float | None = Field(None, ge=0, le=1)
     end_position: float | None = Field(None, ge=0, le=1)
-    pages_read: int | None = None
+    pages_read: int | None = Field(default=None, ge=0)
     device_type: str | None = None
     device_name: str | None = None
 

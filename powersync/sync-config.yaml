@@ -170,3 +170,27 @@ streams:
         updated_at::text AS updated_at
       FROM powersync_demo_items
       WHERE owner_user_id::text = auth.user_id()
+
+  reading_goals:
+    auto_subscribe: true
+    query: |
+      SELECT id, owner_user_id::text AS owner_user_id, payload::text AS payload,
+        created_at::text AS created_at, updated_at::text AS updated_at
+      FROM reading_goals
+      WHERE owner_user_id::text = auth.user_id()
+
+  reading_activities:
+    auto_subscribe: true
+    query: |
+      SELECT id, owner_user_id::text AS owner_user_id, payload::text AS payload,
+        created_at::text AS created_at, updated_at::text AS updated_at
+      FROM reading_activities
+      WHERE owner_user_id::text = auth.user_id()
+
+  goal_periods:
+    auto_subscribe: true
+    query: |
+      SELECT id, owner_user_id::text AS owner_user_id, payload::text AS payload,
+        created_at::text AS created_at, updated_at::text AS updated_at
+      FROM goal_periods
+      WHERE owner_user_id::text = auth.user_id()
