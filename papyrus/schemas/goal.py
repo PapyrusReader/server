@@ -2,6 +2,7 @@
 
 from datetime import date, datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,6 +14,7 @@ class GoalType(StrEnum):
     BOOKS_COUNT = "books_count"
     PAGES_COUNT = "pages_count"
     READING_TIME = "reading_time"
+    READING_DAYS = "reading_days"
 
 
 class TimePeriod(StrEnum):
@@ -40,6 +42,12 @@ class Goal(BaseModel):
     time_period: TimePeriod
     start_date: date
     end_date: date
+    is_recurring: bool = True
+    is_archived: bool = False
+    timezone: str = "UTC"
+    scope: Literal["library", "book", "shelf"] = "library"
+    scope_id: UUID | None = None
+    minimum_minutes: int = 5
     is_active: bool = True
     is_completed: bool = False
     completed_at: datetime | None = None
@@ -56,6 +64,11 @@ class GoalList(BaseModel):
 class CreateGoalRequest(BaseModel):
     """Goal creation request."""
 
+    is_recurring: bool = True
+    timezone: str = "UTC"
+    scope: Literal["library", "book", "shelf"] = "library"
+    scope_id: UUID | None = None
+    minimum_minutes: int = Field(default=5, ge=1, le=1440)
     title: str = Field(..., max_length=255)
     description: str | None = None
     goal_type: GoalType
@@ -73,3 +86,4 @@ class UpdateGoalRequest(BaseModel):
     target_value: int | None = Field(None, ge=1)
     end_date: date | None = None
     is_active: bool | None = None
+    is_archived: bool | None = None

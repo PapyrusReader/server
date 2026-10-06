@@ -15,7 +15,10 @@ from papyrus.models import (
     SyncBookmark,
     SyncBookShelf,
     SyncBookTag,
+    SyncGoalPeriod,
     SyncNote,
+    SyncReadingActivity,
+    SyncReadingGoal,
     SyncShelf,
     SyncTag,
     SyncTombstone,
@@ -25,6 +28,9 @@ from papyrus.services import media as media_service
 from papyrus.services.library_validation import convert_value, normalize_book_payload, uuid_value
 
 MODELS: dict[str, Any] = {
+    "reading_goals": SyncReadingGoal,
+    "reading_activities": SyncReadingActivity,
+    "goal_periods": SyncGoalPeriod,
     "books": SyncBook,
     "shelves": SyncShelf,
     "tags": SyncTag,
@@ -35,6 +41,9 @@ MODELS: dict[str, Any] = {
     "book_tags": SyncBookTag,
 }
 PRIMARY_KEYS = {
+    "reading_goals": "id",
+    "reading_activities": "id",
+    "goal_periods": "id",
     "books": "book_id",
     "shelves": "shelf_id",
     "tags": "tag_id",
@@ -196,6 +205,14 @@ async def apply_library_mutation(
         return 0, []
 
     if mutation.op.upper() == "DELETE":
+        if table in {"reading_activities", "goal_periods"}:
+            raise ValidationError("Retain history and append an activity correction instead")
+
+        if table == "reading_goals" and row is not None:
+            from papyrus.services.goal_history import preserve_goal_history
+
+            await preserve_goal_history(session, user_id, row)
+
         if is_membership:
             await validate_references(session, user_id, table, row_id, payload, row, deleting=True)
 
@@ -206,6 +223,11 @@ async def apply_library_mutation(
 
         paths = await delete_entity(session, user_id, table, uuid_value(row_id, "id"), row)
         return int(row is not None), paths
+
+    if table in {"reading_goals", "reading_activities", "goal_periods"}:
+        from papyrus.services.tracking_validation import validate_tracking_mutation
+
+        payload = await validate_tracking_mutation(session, user_id, table, row_id, payload, row)
 
     values = {key: convert_value(model.__table__.columns[key], value) for key, value in payload.items()}
     stale_parent = await validate_references(session, user_id, table, row_id, values, row)
