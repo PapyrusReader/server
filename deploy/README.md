@@ -10,6 +10,16 @@ metadata comes from the installed Python package. GitHub releases record the
 image digest; deploy a recorded digest instead of a mutable tag when stronger
 artifact pinning is needed. The runtime uses UID/GID 10001, not root.
 
+## Branch workflow
+
+Feature/fix PRs target the default `development` branch and leave versions
+unchanged. CI checks integration work without publishing a container. When ready,
+prepare the coordinated version bump on `development`, then promote it to
+`master` with a release PR using **Create a merge commit**. The existing version
+gate publishes only from `master`. Bring `master` back into `development` after
+the release, and deploy additive server changes before a client that needs them.
+See the workspace `RELEASING.md` for coordination and merge order.
+
 ## Host and domains
 
 Use a VM with Docker Engine/Compose v2 and Python 3.12+, enough disk for uploaded
