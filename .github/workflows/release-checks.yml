@@ -4,7 +4,7 @@ on:
   pull_request:
     paths: ['tools/**', '.github/workflows/**', 'pyproject.toml', 'deploy/**']
   push:
-    branches: [master]
+    branches: [development, master]
     paths: ['tools/**', '.github/workflows/**', 'pyproject.toml', 'deploy/**']
 
 permissions:
