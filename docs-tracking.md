@@ -1,6 +1,6 @@
 # Reading tracking contract and rollout
 
-Tracking schema version 1 is advertised additively by `GET /v1/sync/settings`.
+Tracking schema version 2 is advertised additively by `GET /v1/sync/settings`.
 Goals/session/statistics REST endpoints now return owned persisted records and
 ledger-derived progress. Existing metric strings remain valid; `reading_days` is
 additive. Goal definition, activity, and period payloads are validated in the same
@@ -35,3 +35,18 @@ blocks ordinary library uploads. Versions remain unchanged in these development
 PRs. Run server tests only against a separate test database; the fixtures recreate
 tables. The tracking migration test verifies existing books survive and Alembic
 metadata matches the upgraded schema.
+
+## Selected books (schema v2)
+
+A goal with `scope: "book"` may include `book_ids`, a canonical list of selected
+book UUIDs. `scope_id` remains a selected book for legacy payload compatibility.
+Omitting `book_ids` retains the original single-book meaning. Every selected book
+is ownership-checked; changing the selection requires a replacement goal.
+Completion targets cannot exceed the number of distinct selected books.
+
+The client omits the additive field for single-book goals and stages multiple-book
+goals and their period snapshots separately on v1 servers. Ordinary tracking and
+library uploads continue. Staged records promote when v2 is discovered. Deploy
+the v2 server before releasing this client; use the updated client on all devices
+to calculate multiple-book progress. Existing JSONB and SQLite payload columns
+carry the selection; no additional database migration or stream changes are needed.

@@ -136,6 +136,6 @@ class FileStorageSettings(BaseModel):
 class DataSyncSettingsResponse(BaseModel):
     """Public sync settings used by clients for custom server discovery."""
 
-    tracking_schema_version: int = 1
+    tracking_schema_version: int = 2
     data_sync_url: str
     file_storage: FileStorageSettings

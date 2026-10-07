@@ -74,3 +74,53 @@ async def test_create_reading_days_goal(client, auth_headers):
     assert response.status_code == 201
     assert response.json()["goal_type"] == "reading_days"
     assert response.json()["timezone"] == "Europe/Vilnius"
+
+
+async def test_create_selected_books_goal_round_trips_and_bounds_target(client, auth_headers):
+    books = []
+
+    for title in ["First selected book", "Second selected book"]:
+        book_id = str(uuid4())
+        response = await client.post(
+            "/v1/sync/powersync-upload",
+            headers=auth_headers,
+            json={
+                "batch": [
+                    {"type": "books", "op": "PUT", "id": book_id, "data": {"title": title, "author": "Test Author"}}
+                ]
+            },
+        )
+        assert response.status_code == 200, response.text
+        books.append(book_id)
+
+    today = datetime.now(UTC).date().isoformat()
+    request = {
+        "title": "Finish these books",
+        "goal_type": "books_count",
+        "target_value": 2,
+        "time_period": "daily",
+        "start_date": today,
+        "end_date": today,
+        "scope": "book",
+        "book_ids": books,
+    }
+    response = await client.post("/v1/goals", headers=auth_headers, json=request)
+    assert response.status_code == 201, response.text
+    goal = response.json()
+    assert set(goal["book_ids"]) == set(books)
+    assert goal["scope_id"] in books
+    result = await client.get(f"/v1/goals/{goal['goal_id']}", headers=auth_headers)
+    assert set(result.json()["book_ids"]) == set(books)
+    invalid = await client.post("/v1/goals", headers=auth_headers, json={**request, "target_value": 12})
+    assert invalid.status_code == 400
+    single = await client.post(
+        "/v1/goals", headers=auth_headers, json={**request, "book_ids": books[:1], "target_value": 1}
+    )
+    assert single.status_code == 201
+    assert single.json()["scope_id"] == books[0]
+    assert single.json()["book_ids"] == []
+    saved = await client.patch(
+        f"/v1/goals/{single.json()['goal_id']}", headers=auth_headers, json={"title": "One selected book"}
+    )
+    assert saved.status_code == 200
+    assert saved.json()["scope_id"] == books[0]

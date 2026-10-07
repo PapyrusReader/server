@@ -1,4 +1,4 @@
-"""Version-one tracking payloads shared by REST and PowerSync."""
+"""Tracking payloads shared by REST and PowerSync."""
 
 from typing import Literal
 from uuid import UUID
@@ -35,11 +35,21 @@ class GoalDefinition(TrackingPayload):
     timezone: str = "UTC"
     scope: Literal["library", "book", "shelf"] = "library"
     scope_id: UUID | None = None
+    book_ids: list[UUID] = Field(default_factory=list, max_length=1000)
     minimum_minutes: int = Field(default=5, ge=1, le=1440)
     rules: list[GoalRule] = Field(default_factory=list, max_length=10000)
     is_active: bool = True
     is_recurring: bool = True
     is_archived: bool = False
+
+    @field_validator("book_ids")
+    @classmethod
+    def unique_books(cls, value: list[UUID]) -> list[UUID]:
+        return sorted(set(value), key=str)
+
+    @property
+    def selected_book_ids(self) -> list[UUID]:
+        return self.book_ids or ([self.scope_id] if self.scope == "book" and self.scope_id else [])
 
     @field_validator("timezone")
     @classmethod
@@ -58,6 +68,15 @@ class GoalDefinition(TrackingPayload):
 
         if (self.scope == "library") != (self.scope_id is None):
             raise ValueError("Only book and shelf scopes require scope_id")
+
+        if self.book_ids and (self.scope != "book" or self.scope_id not in self.book_ids):
+            raise ValueError("book_ids require a book scope containing scope_id")
+
+        if self.book_ids and self.goal_type == GoalType.BOOKS_COUNT and self.target_value > len(self.book_ids):
+            raise ValueError("Target cannot exceed the number of selected books")
+
+        if len(self.book_ids) == 1:
+            self.book_ids = []
 
         if self.time_period == TimePeriod.CUSTOM and self.is_recurring:
             raise ValueError("Custom deadlines cannot recur")

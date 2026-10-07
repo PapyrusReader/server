@@ -87,7 +87,7 @@ def project_goal(goal: GoalDefinition, ledger: list[Activity], now: datetime) ->
     counted = []
 
     for activity in sorted(effective_activities(ledger), key=lambda activity: (activity.end_time, str(activity.id))):
-        if goal.scope == "book" and activity.book_id != goal.scope_id:
+        if goal.scope == "book" and activity.book_id not in goal.selected_book_ids:
             continue
 
         if goal.scope == "shelf" and goal.scope_id not in activity.shelf_ids:
