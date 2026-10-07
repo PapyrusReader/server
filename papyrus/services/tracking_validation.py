@@ -56,6 +56,12 @@ async def validate_tracking_mutation(
         if parsed.created_at > datetime.now(UTC) + timedelta(minutes=5):
             raise ValidationError("Goal creation cannot be in the future")
 
+        if parsed.scope == "book" and parsed.goal_type.value == "books_count":
+            old_target = row.payload["target_value"] if row is not None else None
+
+            if parsed.target_value > len(parsed.selected_book_ids) and parsed.target_value != old_target:
+                raise ValidationError("Target cannot exceed the number of selected books")
+
         if row is not None:
             old = GoalDefinition.model_validate(row.payload)
             fixed = (
@@ -63,6 +69,7 @@ async def validate_tracking_mutation(
                 "time_period",
                 "scope",
                 "scope_id",
+                "book_ids",
                 "timezone",
                 "created_at",
                 "start_date",
@@ -90,8 +97,12 @@ async def validate_tracking_mutation(
             parsed.is_archived = latest.archived
             payload = parsed.model_dump(mode="json")
 
-        if parsed.scope_id is not None:
-            await check_reference(session, user_id, "books" if parsed.scope == "book" else "shelves", parsed.scope_id)
+        if parsed.scope == "book":
+            for book_id in parsed.selected_book_ids:
+                await check_reference(session, user_id, "books", book_id)
+
+        if parsed.scope_id is not None and parsed.scope != "book":
+            await check_reference(session, user_id, "shelves", parsed.scope_id)
 
     if isinstance(parsed, Activity):
         if parsed.created_at > datetime.now(UTC) + timedelta(minutes=5):
@@ -120,6 +131,9 @@ async def validate_tracking_mutation(
                 raise ValidationError("Period identity cannot change")
 
         await check_reference(session, user_id, "reading_goals", parsed.goal_id)
+
+        for book_id in parsed.definition.selected_book_ids:
+            await check_reference(session, user_id, "books", book_id)
 
     return {**values, "payload": payload}
 

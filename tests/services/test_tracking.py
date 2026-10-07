@@ -8,8 +8,9 @@ from sqlalchemy import select
 
 from papyrus.core.exceptions import ForbiddenError, ValidationError
 from papyrus.models import SyncGoalPeriod, SyncReadingActivity, SyncReadingGoal
+from papyrus.schemas.goal import GoalType
 from papyrus.schemas.sync import PowerSyncCrudMutation
-from papyrus.schemas.tracking import Activity, GoalDefinition, GoalRule
+from papyrus.schemas.tracking import Activity, GoalDefinition, GoalRule, PeriodRecord
 from papyrus.services.sync import apply_powersync_upload_batch
 from tests.services.test_sync import _create_book, _create_user
 
@@ -154,3 +155,80 @@ async def test_book_goal_deletion_preserves_activity_and_periods(test_session_ma
         )
         await apply_powersync_upload_batch(session, owner, [mutation("reading_activities", reverse)])
         assert await session.get(SyncReadingActivity, reverse.id) is not None
+
+
+async def test_selected_book_goals_validate_every_owner_and_keep_selection_immutable(test_session_maker):
+    async with test_session_maker() as session:
+        owner, book_id, goal, _ = await setup(session)
+        from papyrus.models import User
+
+        user = await session.get(User, owner)
+        other = await _create_book(session, user)
+        foreign_owner = await _create_user(session, f"{uuid4()}@example.com")
+        foreign = await _create_book(session, foreign_owner)
+        other_id, foreign_id = other.book_id, foreign.book_id
+        await session.commit()
+        selected = goal.model_copy(update={"scope": "book", "scope_id": book_id, "book_ids": [book_id, other_id]})
+        await apply_powersync_upload_batch(session, owner, [mutation("reading_goals", selected)])
+        await apply_powersync_upload_batch(session, owner, [mutation("reading_goals", selected)])
+        persisted = GoalDefinition.model_validate((await session.get(SyncReadingGoal, goal.id)).payload)
+        assert set(persisted.selected_book_ids) == {book_id, other_id}
+        changed = selected.model_copy(update={"book_ids": [book_id]})
+
+        with pytest.raises(ValidationError, match="replacement"):
+            await apply_powersync_upload_batch(session, owner, [mutation("reading_goals", changed)])
+
+        history = PeriodRecord(
+            id=uuid4(), goal_id=selected.id, definition=selected.model_copy(update={"is_recurring": False})
+        )
+        await apply_powersync_upload_batch(session, owner, [mutation("goal_periods", history)])
+        assert set(
+            GoalDefinition.model_validate(
+                (await session.get(SyncGoalPeriod, history.id)).payload["definition"]
+            ).book_ids
+        ) == {book_id, other_id}
+        foreign_history = history.model_copy(
+            update={
+                "id": uuid4(),
+                "definition": history.definition.model_copy(update={"book_ids": [book_id, foreign_id]}),
+            }
+        )
+
+        with pytest.raises(ForbiddenError):
+            await apply_powersync_upload_batch(session, owner, [mutation("goal_periods", foreign_history)])
+
+        invalid = selected.model_copy(update={"id": uuid4(), "book_ids": [book_id, foreign_id]})
+
+        with pytest.raises(ForbiddenError):
+            await apply_powersync_upload_batch(session, owner, [mutation("reading_goals", invalid)])
+
+        assert await session.get(SyncReadingGoal, invalid.id) is None
+        assert set(GoalDefinition.model_validate((await session.get(SyncReadingGoal, goal.id)).payload).book_ids) == {
+            book_id,
+            other_id,
+        }
+
+
+async def test_completion_target_is_bounded_by_distinct_selected_books(test_session_maker):
+    async with test_session_maker() as session:
+        owner, book_id, goal, _ = await setup(session)
+        invalid = goal.model_copy(
+            update={
+                "scope": "book",
+                "scope_id": book_id,
+                "book_ids": [book_id, book_id],
+                "goal_type": GoalType.BOOKS_COUNT,
+                "target_value": 2,
+                "rules": [GoalRule(at=goal.created_at, target=2)],
+            }
+        )
+
+        with pytest.raises(ValidationError, match="number of selected books"):
+            await apply_powersync_upload_batch(session, owner, [mutation("reading_goals", invalid)])
+
+        single = invalid.model_copy(update={"book_ids": []})
+
+        with pytest.raises(ValidationError, match="number of selected books"):
+            await apply_powersync_upload_batch(session, owner, [mutation("reading_goals", single)])
+
+        assert await session.get(SyncReadingGoal, goal.id) is None

@@ -47,6 +47,7 @@ class Goal(BaseModel):
     timezone: str = "UTC"
     scope: Literal["library", "book", "shelf"] = "library"
     scope_id: UUID | None = None
+    book_ids: list[UUID] = Field(default_factory=list, max_length=1000)
     minimum_minutes: int = 5
     is_active: bool = True
     is_completed: bool = False
@@ -68,6 +69,7 @@ class CreateGoalRequest(BaseModel):
     timezone: str = "UTC"
     scope: Literal["library", "book", "shelf"] = "library"
     scope_id: UUID | None = None
+    book_ids: list[UUID] = Field(default_factory=list, max_length=1000)
     minimum_minutes: int = Field(default=5, ge=1, le=1440)
     title: str = Field(..., max_length=255)
     description: str | None = None

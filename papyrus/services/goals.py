@@ -45,6 +45,7 @@ def goal_response(definition: GoalDefinition, ledger: list[Activity]) -> Goal:
         timezone=definition.timezone,
         scope=definition.scope,
         scope_id=definition.scope_id,
+        book_ids=definition.book_ids,
         minimum_minutes=definition.minimum_minutes,
         is_completed=progress["progress_percentage"] >= 100,
         created_at=definition.created_at,
@@ -88,7 +89,9 @@ async def create_goal(session: AsyncSession, user_id: UUID, request: CreateGoalR
             created_at=now,
             timezone=request.timezone,
             scope=request.scope,
-            scope_id=request.scope_id,
+            scope_id=request.scope_id
+            or (min(request.book_ids, key=str) if request.scope == "book" and request.book_ids else None),
+            book_ids=request.book_ids,
             minimum_minutes=request.minimum_minutes,
             is_recurring=request.is_recurring and request.time_period != "custom",
             rules=[GoalRule(at=now, title=request.title, target=request.target_value)],

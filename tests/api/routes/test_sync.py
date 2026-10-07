@@ -26,7 +26,7 @@ async def test_sync_settings_are_public_and_hide_implementation_details(client: 
 
     assert response.status_code == 200
     assert response.json() == {
-        "tracking_schema_version": 1,
+        "tracking_schema_version": 2,
         "data_sync_url": "https://sync.papyrus.test",
         "file_storage": {
             "supported": True,
