@@ -1,6 +1,6 @@
 """Tests for reading progress and statistics endpoints."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -104,3 +104,48 @@ async def test_missing_book_is_rejected(client, auth_headers):
         json={"book_id": str(uuid4()), "start_time": datetime.now(UTC).isoformat(), "pages_read": 2},
     )
     assert response.status_code == 404
+
+
+async def test_statistics_group_reader_checkpoints_as_one_session(client, auth_headers, book_id):
+    end = datetime.now(UTC)
+    session_id = str(uuid4())
+    response = await client.post(
+        "/v1/sync/powersync-upload",
+        headers=auth_headers,
+        json={
+            "batch": [
+                {
+                    "type": "reading_activities",
+                    "op": "PUT",
+                    "id": identifier,
+                    "data": {
+                        "payload": {
+                            "id": identifier,
+                            "session_id": session_id,
+                            "book_id": book_id,
+                            "book_title": "Reading book",
+                            "source": "reader",
+                            "start_time": (end - timedelta(minutes=20 - index * 10)).isoformat(),
+                            "end_time": (end - timedelta(minutes=10 - index * 10)).isoformat(),
+                            "created_at": end.isoformat(),
+                        }
+                    },
+                }
+                for index, identifier in enumerate([str(uuid4()), str(uuid4())])
+            ]
+        },
+    )
+    assert response.status_code == 200, response.text
+    sessions = (await client.get("/v1/progress/sessions", headers=auth_headers)).json()
+    assert sessions["pagination"]["total"] == 1
+    assert sessions["sessions"][0]["duration_minutes"] == 20
+    result = await client.get(
+        "/v1/progress/statistics",
+        headers=auth_headers,
+        params={"start_date": (end - timedelta(minutes=20)).date().isoformat(), "end_date": end.date().isoformat()},
+    )
+    assert result.status_code == 200
+    statistics = result.json()
+    assert statistics["totals"]["sessions_count"] == 1
+    assert statistics["totals"]["average_session_minutes"] == 20
+    assert statistics["books_breakdown"][0]["sessions_count"] == 1

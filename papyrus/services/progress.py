@@ -254,9 +254,11 @@ async def statistics(
                 title=title,
                 reading_time_minutes=values["seconds"] // 60,
                 pages_read=int(values["pages"]),
-                sessions_count=sum(entry.book_id == book_id for entry in counted),
+                sessions_count=len({entry.session_id or entry.id for entry in counted if entry.book_id == book_id}),
             )
         )
+
+    sessions_count = len({entry.session_id or entry.id for entry in counted})
 
     return ReadingStatistics(
         period=StatisticsPeriod(start_date=first, end_date=last),
@@ -264,8 +266,8 @@ async def statistics(
             reading_time_minutes=total["seconds"] // 60,
             pages_read=int(total["pages"]),
             books_completed=total["finished_books"],
-            sessions_count=len({entry.session_id or entry.id for entry in counted}),
-            average_session_minutes=total["seconds"] / 60 / len(counted) if counted else 0,
+            sessions_count=sessions_count,
+            average_session_minutes=total["seconds"] / 60 / sessions_count if sessions_count else 0,
             reading_days=total["days"],
             current_streak=current,
             longest_streak=longest,

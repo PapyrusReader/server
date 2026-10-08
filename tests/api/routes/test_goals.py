@@ -55,6 +55,50 @@ async def test_unknown_goal_is_not_an_example(client, auth_headers):
     assert (await client.get(f"/v1/goals/{uuid4()}", headers=auth_headers)).status_code == 404
 
 
+async def test_nonrecurring_calendar_goal_retains_future_dates(client, auth_headers):
+    year = datetime.now(UTC).year + 1
+    response = await client.post(
+        "/v1/goals",
+        headers=auth_headers,
+        json={
+            "title": "Next year's books",
+            "goal_type": "books_count",
+            "target_value": 12,
+            "time_period": "yearly",
+            "is_recurring": False,
+            "timezone": "Europe/Vilnius",
+            "start_date": f"{year}-01-01",
+            "end_date": f"{year}-12-31",
+        },
+    )
+    assert response.status_code == 201, response.text
+    saved = response.json()
+    fetched = (await client.get(f"/v1/goals/{saved['goal_id']}", headers=auth_headers)).json()
+
+    for goal in [saved, fetched]:
+        assert goal["start_date"] == f"{year}-01-01"
+        assert goal["end_date"] == f"{year}-12-31"
+        assert goal["is_recurring"] is False
+
+
+@pytest.mark.parametrize("field", ["title", "target_value", "is_active", "is_archived"])
+async def test_null_goal_settings_are_rejected_without_modification(client, auth_headers, goal_id, field):
+    before = (await client.get(f"/v1/goals/{goal_id}", headers=auth_headers)).json()
+    response = await client.patch(f"/v1/goals/{goal_id}", headers=auth_headers, json={field: None})
+    assert response.status_code == 422
+    after = (await client.get(f"/v1/goals/{goal_id}", headers=auth_headers)).json()
+    assert after == before
+
+
+async def test_goal_description_can_be_cleared(client, auth_headers, goal_id):
+    response = await client.patch(f"/v1/goals/{goal_id}", headers=auth_headers, json={"description": "A note"})
+    assert response.status_code == 200
+    assert response.json()["description"] == "A note"
+    response = await client.patch(f"/v1/goals/{goal_id}", headers=auth_headers, json={"description": None})
+    assert response.status_code == 200
+    assert response.json()["description"] is None
+
+
 async def test_create_reading_days_goal(client, auth_headers):
     today = datetime.now(UTC).date().isoformat()
     response = await client.post(

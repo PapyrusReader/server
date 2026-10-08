@@ -99,7 +99,7 @@ async def create_goal(session: AsyncSession, user_id: UUID, request: CreateGoalR
     except (PayloadError, ZoneInfoNotFoundError) as exc:
         raise ValidationError(str(exc)) from exc
 
-    if definition.time_period != "custom":
+    if definition.is_recurring and definition.time_period != "custom":
         definition.start_date, definition.end_date = calendar_period(definition, now)
 
     await apply_powersync_upload_batch(

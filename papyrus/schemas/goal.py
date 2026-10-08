@@ -5,7 +5,7 @@ from enum import StrEnum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class GoalType(StrEnum):
@@ -89,3 +89,12 @@ class UpdateGoalRequest(BaseModel):
     end_date: date | None = None
     is_active: bool | None = None
     is_archived: bool | None = None
+
+    @field_validator("title", "target_value", "is_active", "is_archived")
+    @classmethod
+    def reject_null_settings(cls, value: str | int | bool | None) -> str | int | bool:
+        """Omitted settings are unchanged; supplied settings cannot be null."""
+        if value is None:
+            raise ValueError("Goal settings cannot be null")
+
+        return value
