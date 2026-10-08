@@ -93,6 +93,32 @@ async def test_tracking_ownership_applies_to_payload_references(test_session_mak
             await apply_powersync_upload_batch(session, intruder_id, [mutation("reading_goals", goal)])
 
 
+@pytest.mark.parametrize("operation", ["PUT", "PATCH"])
+async def test_period_snapshot_retries_are_allowed_but_rule_changes_are_rejected(test_session_maker, operation):
+    async with test_session_maker() as session:
+        owner, _, goal, _ = await setup(session)
+        period = PeriodRecord(id=uuid4(), goal_id=goal.id, definition=goal.model_copy(update={"is_recurring": False}))
+        await apply_powersync_upload_batch(
+            session, owner, [mutation("reading_goals", goal), mutation("goal_periods", period)]
+        )
+        retry = mutation("goal_periods", period).model_copy(update={"op": operation})
+        await apply_powersync_upload_batch(session, owner, [retry])
+        changed = period.model_copy(
+            update={
+                "definition": period.definition.model_copy(
+                    update={"target_value": 50, "rules": [GoalRule(at=goal.created_at, target=50)]}
+                )
+            }
+        )
+        rewrite = mutation("goal_periods", changed).model_copy(update={"op": operation})
+
+        with pytest.raises(ValidationError, match="immutable"):
+            await apply_powersync_upload_batch(session, owner, [rewrite])
+
+        persisted = await session.get(SyncGoalPeriod, period.id)
+        assert PeriodRecord.model_validate(persisted.payload) == period
+
+
 async def test_goal_rule_branches_merge_without_rewriting_existing_history(test_session_maker):
     async with test_session_maker() as session:
         owner, _, goal, _ = await setup(session)

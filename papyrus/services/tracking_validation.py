@@ -49,7 +49,11 @@ async def validate_tracking_mutation(
 
     payload = parsed.model_dump(mode="json")
 
-    if table == "reading_activities" and row is not None and schema.model_validate(row.payload) != parsed:
+    if (
+        table in {"reading_activities", "goal_periods"}
+        and row is not None
+        and schema.model_validate(row.payload) != parsed
+    ):
         raise ValidationError("Activity and period history are immutable; append a correction")
 
     if isinstance(parsed, GoalDefinition):
