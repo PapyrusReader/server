@@ -40,6 +40,7 @@ MODELS: dict[str, Any] = {
     "book_shelves": SyncBookShelf,
     "book_tags": SyncBookTag,
 }
+
 PRIMARY_KEYS = {
     "reading_goals": "id",
     "reading_activities": "id",
@@ -53,6 +54,7 @@ PRIMARY_KEYS = {
     "book_shelves": "id",
     "book_tags": "id",
 }
+
 REFERENCES = {"book_id": "books", "shelf_id": "shelves", "tag_id": "tags", "parent_shelf_id": "shelves"}
 MEMBERSHIPS = {"book_shelves", "book_tags"}
 
@@ -76,14 +78,32 @@ async def tombstoned(session: AsyncSession, user_id: UUID, table: str, row_id: U
 
 
 async def mark_deleted(session: AsyncSession, user_id: UUID, table: str, row_id: UUID) -> None:
-    if not await tombstoned(session, user_id, table, row_id):
-        session.add(SyncTombstone(table_name=table, entity_id=row_id, owner_user_id=user_id))
+    if not await tombstoned(
+        session,
+        user_id,
+        table,
+        row_id,
+    ):
+        session.add(
+            SyncTombstone(
+                table_name=table,
+                entity_id=row_id,
+                owner_user_id=user_id,
+            )
+        )
+
         await session.flush()
 
 
 async def delete_entity(session: AsyncSession, user_id: UUID, table: str, row_id: UUID, row: Any) -> list[Path]:
     """Record deletion before cascading so delayed entity writes cannot revive it."""
-    await mark_deleted(session, user_id, table, row_id)
+    await mark_deleted(
+        session,
+        user_id,
+        table,
+        row_id,
+    )
+
     paths: list[Path] = []
 
     if row is None:
@@ -95,7 +115,12 @@ async def delete_entity(session: AsyncSession, user_id: UUID, table: str, row_id
             result = await session.execute(select(model).where(model.book_id == row_id))
 
             for child in result.scalars():
-                await mark_deleted(session, user_id, child_table, getattr(child, PRIMARY_KEYS[child_table]))
+                await mark_deleted(
+                    session,
+                    user_id,
+                    child_table,
+                    getattr(child, PRIMARY_KEYS[child_table]),
+                )
 
         paths = await media_service.delete_book_media(session, user_id, row_id)
 
@@ -133,8 +158,20 @@ async def validate_references(
         if ref is None:
             continue
 
-        parent = await owned_row(session, user_id, target, ref)
-        deleted_parent = await tombstoned(session, user_id, target, ref)
+        parent = await owned_row(
+            session,
+            user_id,
+            target,
+            ref,
+        )
+
+        deleted_parent = await tombstoned(
+            session,
+            user_id,
+            target,
+            ref,
+        )
+
         stale |= deleted_parent
 
         if parent is None and not deleted_parent and not deleting:
@@ -148,8 +185,14 @@ async def validate_references(
                     raise ValidationError("Shelf hierarchy cannot contain cycles")
 
                 visited.add(parent.shelf_id)
+
                 parent = (
-                    await owned_row(session, user_id, "shelves", parent.parent_shelf_id)
+                    await owned_row(
+                        session,
+                        user_id,
+                        "shelves",
+                        parent.parent_shelf_id,
+                    )
                     if parent.parent_shelf_id is not None
                     else None
                 )
@@ -196,9 +239,19 @@ async def apply_library_mutation(
     if is_membership:
         payload = membership_values(table, mutation.id, payload)
 
-    row = await owned_row(session, user_id, table, row_id)
+    row = await owned_row(
+        session,
+        user_id,
+        table,
+        row_id,
+    )
 
-    if not is_membership and await tombstoned(session, user_id, table, uuid_value(row_id, "id")):
+    if not is_membership and await tombstoned(
+        session,
+        user_id,
+        table,
+        uuid_value(row_id, "id"),
+    ):
         return 0, []
 
     if mutation.op.upper() == "PATCH" and row is None:
@@ -214,23 +267,53 @@ async def apply_library_mutation(
             await preserve_goal_history(session, user_id, row)
 
         if is_membership:
-            await validate_references(session, user_id, table, row_id, payload, row, deleting=True)
+            await validate_references(
+                session,
+                user_id,
+                table,
+                row_id,
+                payload,
+                row,
+                deleting=True,
+            )
 
             if row is not None:
                 await session.execute(delete(model).where(model.id == row_id))
 
             return int(row is not None), []
 
-        paths = await delete_entity(session, user_id, table, uuid_value(row_id, "id"), row)
+        paths = await delete_entity(
+            session,
+            user_id,
+            table,
+            uuid_value(row_id, "id"),
+            row,
+        )
+
         return int(row is not None), paths
 
     if table in {"reading_goals", "reading_activities", "goal_periods"}:
         from papyrus.services.tracking_validation import validate_tracking_mutation
 
-        payload = await validate_tracking_mutation(session, user_id, table, row_id, payload, row)
+        payload = await validate_tracking_mutation(
+            session,
+            user_id,
+            table,
+            row_id,
+            payload,
+            row,
+        )
 
     values = {key: convert_value(model.__table__.columns[key], value) for key, value in payload.items()}
-    stale_parent = await validate_references(session, user_id, table, row_id, values, row)
+
+    stale_parent = await validate_references(
+        session,
+        user_id,
+        table,
+        row_id,
+        values,
+        row,
+    )
 
     if stale_parent:
         return 0, []
@@ -252,7 +335,12 @@ async def apply_library_mutation(
         for key, kind in (("file_media_id", "book_file"), ("cover_media_id", "cover_image")):
             if key in values:
                 values[key] = await media_service.validate_media_reference(
-                    session, user_id, uuid_value(row_id, "id"), values[key], field_name=key, expected_kind=kind
+                    session,
+                    user_id,
+                    uuid_value(row_id, "id"),
+                    values[key],
+                    field_name=key,
+                    expected_kind=kind,
                 )
 
     if row is None:

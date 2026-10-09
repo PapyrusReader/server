@@ -45,6 +45,7 @@ async def test_anonymous_stream_preserves_final_url_and_exposes_cors_metadata(mo
     open_resource = Mock(return_value=resource)
     monkeypatch.setattr(route, "open_resource", open_resource)
     monkeypatch.setattr(get_settings(), "cors_origins", ["https://papyrus.example"])
+
     async with AsyncClient(transport=ASGITransport(app=create_app()), base_url="http://test") as client:
         response = await client.post(
             f"{get_settings().api_prefix}/opds/relay",
@@ -67,6 +68,7 @@ async def test_anonymous_stream_preserves_final_url_and_exposes_cors_metadata(mo
 
 async def test_relay_rate_limits_anonymous_requests(monkeypatch) -> None:
     monkeypatch.setattr(get_settings(), "rate_limit_general", 1)
+
     async with AsyncClient(transport=ASGITransport(app=create_app()), base_url="http://test") as client:
         payload = {"url": "http://127.0.0.1/feed", "catalog_url": "https://books.example/feed"}
         first = await client.post(f"{get_settings().api_prefix}/opds/relay", json=payload)

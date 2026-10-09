@@ -70,7 +70,13 @@ class CreateGoalRequest(BaseModel):
     scope: Literal["library", "book", "shelf"] = "library"
     scope_id: UUID | None = None
     book_ids: list[UUID] = Field(default_factory=list, max_length=1000)
-    minimum_minutes: int = Field(default=5, ge=1, le=1440)
+
+    minimum_minutes: int = Field(
+        default=5,
+        ge=1,
+        le=1440,
+    )
+
     title: str = Field(..., max_length=255)
     description: str | None = None
     goal_type: GoalType
@@ -90,7 +96,12 @@ class UpdateGoalRequest(BaseModel):
     is_active: bool | None = None
     is_archived: bool | None = None
 
-    @field_validator("title", "target_value", "is_active", "is_archived")
+    @field_validator(
+        "title",
+        "target_value",
+        "is_active",
+        "is_archived",
+    )
     @classmethod
     def reject_null_settings(cls, value: str | int | bool | None) -> str | int | bool:
         """Omitted settings are unchanged; supplied settings cannot be null."""

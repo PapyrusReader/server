@@ -42,6 +42,7 @@ QbittorrentClientFactory = Callable[
     [AcquisitionEndpoint],
     Awaitable[QbittorrentMonitorClient],
 ]
+
 Sleep = Callable[[float], Awaitable[None]]
 
 
@@ -54,6 +55,7 @@ async def claim_due_jobs(
 ) -> list[UUID]:
     claimed_at = now or datetime.now(UTC)
     lease_until = claimed_at + timedelta(seconds=get_settings().acquisition_monitor_lease_seconds)
+
     result = await session.execute(
         select(AcquisitionJob)
         .join(
@@ -82,6 +84,7 @@ async def claim_due_jobs(
         .with_for_update(skip_locked=True)
         .limit(limit)
     )
+
     jobs = result.scalars().all()
 
     for job in jobs:
@@ -89,7 +92,6 @@ async def claim_due_jobs(
         job.lease_until = lease_until
 
     await session.commit()
-
     return [job.job_id for job in jobs]
 
 
@@ -123,6 +125,7 @@ async def run_monitor(
             logger.exception("Acquisition monitor cycle failed")
 
         settings = get_settings()
+
         delay = (
             settings.acquisition_monitor_active_interval_seconds
             if job_ids
@@ -147,6 +150,7 @@ async def process_claimed_jobs(
     result = await session.execute(
         select(AcquisitionJob.job_id, AcquisitionJob.endpoint_id).where(AcquisitionJob.job_id.in_(job_ids))
     )
+
     jobs_by_endpoint: dict[UUID, list[UUID]] = defaultdict(list)
     jobs_without_endpoint: list[UUID] = []
 
@@ -188,6 +192,7 @@ async def process_claimed_jobs(
             client = await connect(endpoint)
         except Exception as exc:
             await session.rollback()
+
             for job_id in endpoint_job_ids:
                 await _reschedule_job(
                     session,
@@ -257,10 +262,12 @@ async def process_job(
         return
 
     observed_at = now or datetime.now(UTC)
+
     torrent = await client.find_torrent(
         tag=f"papyrus:{job.job_id}",
         torrent_hash=job.client_hash,
     )
+
     job.client_hash = torrent.hash
     job.client_state = torrent.state
     job.progress_basis_points = torrent.progress_basis_points
@@ -296,7 +303,6 @@ async def process_job(
         job.status = "downloading"
         job.next_poll_at = _next_active_poll(observed_at)
         _release_lease(job)
-
         await session.commit()
         return
 
@@ -311,11 +317,9 @@ async def process_job(
 
     if len(candidates) > 1:
         await client.pause(torrent.hash)
-
         job.status = "needs_file_selection"
         job.next_poll_at = None
         _release_lease(job)
-
         await session.commit()
         return
 
@@ -326,7 +330,6 @@ async def process_job(
         job.selected_file_path = selected.name
         job.next_poll_at = _next_active_poll(observed_at)
         _release_lease(job)
-
         await session.commit()
         return
 
@@ -336,6 +339,7 @@ async def process_job(
         job.job_id,
         selected.name,
     )
+
     job.status = "importing"
     job.selected_file_path = selected.name
     job.next_poll_at = None
@@ -383,7 +387,6 @@ async def _mark_failed_job(
     job.next_poll_at = None
     job.updated_at = observed_at
     _release_lease(job)
-
     await session.commit()
 
 
@@ -409,7 +412,6 @@ async def _reschedule_job(
     job.next_poll_at = observed_at + _retry_delay(job.retry_count)
     job.updated_at = observed_at
     _release_lease(job)
-
     await session.commit()
 
 
@@ -441,7 +443,6 @@ async def _reschedule_missing_torrent(
         job.next_poll_at = observed_at + _retry_delay(job.retry_count)
 
     _release_lease(job)
-
     await session.commit()
 
 
@@ -457,6 +458,7 @@ async def _locked_claimed_job(
         .with_for_update()
         .execution_options(populate_existing=True)
     )
+
     job = result.scalar_one_or_none()
 
     if job is None or job.status not in ACTIVE_JOB_STATUSES:
@@ -498,6 +500,7 @@ def _retry_delay(attempt: int) -> timedelta:
         get_settings().acquisition_monitor_active_interval_seconds,
         1,
     )
+
     seconds = min(300, base_seconds * (2 ** min(max(attempt - 1, 0), 8)))
     return timedelta(seconds=seconds)
 

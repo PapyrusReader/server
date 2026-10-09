@@ -36,7 +36,13 @@ class GoalDefinition(TrackingPayload):
     scope: Literal["library", "book", "shelf"] = "library"
     scope_id: UUID | None = None
     book_ids: list[UUID] = Field(default_factory=list, max_length=1000)
-    minimum_minutes: int = Field(default=5, ge=1, le=1440)
+
+    minimum_minutes: int = Field(
+        default=5,
+        ge=1,
+        le=1440,
+    )
+
     rules: list[GoalRule] = Field(default_factory=list, max_length=10000)
     is_active: bool = True
     is_recurring: bool = True
@@ -128,9 +134,21 @@ class Activity(TrackingPayload):
     created_at: AwareDatetime
     source: Literal["reader", "manual"] = "manual"
     kind: Literal["reading", "completion", "reversal"] = "reading"
-    device_id: str = Field(default="manual", min_length=1, max_length=255)
+
+    device_id: str = Field(
+        default="manual",
+        min_length=1,
+        max_length=255,
+    )
+
     shelf_ids: list[UUID] = Field(default_factory=list, max_length=1000)
-    pages: int = Field(default=0, ge=0, le=100000)
+
+    pages: int = Field(
+        default=0,
+        ge=0,
+        le=100000,
+    )
+
     coverage: list[PageCoverage] = Field(default_factory=list, max_length=1000)
     note: str | None = Field(default=None, max_length=10000)
     correction_of: UUID | None = None

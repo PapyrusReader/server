@@ -24,6 +24,7 @@ async def test_tracking_upgrade_preserves_library_and_matches_metadata(db_sessio
             fn()
 
     await db_session.run_sync(lambda session: migrate(session, revision.downgrade))
+
     owner = User(
         user_id=uuid4(),
         display_name="Reader",
@@ -31,8 +32,10 @@ async def test_tracking_upgrade_preserves_library_and_matches_metadata(db_sessio
         primary_email_verified=True,
         last_login_at=datetime.now(UTC),
     )
+
     db_session.add(owner)
     await db_session.flush()
+
     book = SyncBook(
         book_id=uuid4(),
         owner_user_id=owner.user_id,
@@ -41,15 +44,20 @@ async def test_tracking_upgrade_preserves_library_and_matches_metadata(db_sessio
         added_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
     identifier = book.book_id
     db_session.add(book)
     await db_session.flush()
     await db_session.run_sync(lambda session: migrate(session, revision.upgrade))
+
     differences = await db_session.run_sync(
         lambda session: compare_metadata(MigrationContext.configure(session.connection()), Base.metadata)
     )
+
     assert differences == []
     assert (await db_session.get(SyncBook, identifier)).title == "Preserved"
+
     for table in ("reading_goals", "reading_activities", "goal_periods"):
         assert await db_session.run_sync(lambda session, name=table: inspect(session.connection()).has_table(name))
+
     await db_session.commit()

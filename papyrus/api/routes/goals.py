@@ -20,7 +20,12 @@ async def list_goals(user_id: CurrentUserId, db: DBSession, is_active: bool | No
     return GoalList(goals=await service.list_goals(db, user_id, is_active))
 
 
-@router.post("", response_model=Goal, status_code=status.HTTP_201_CREATED, summary="Create a new goal")
+@router.post(
+    "",
+    response_model=Goal,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new goal",
+)
 async def create_goal(user_id: CurrentUserId, request: CreateGoalRequest, db: DBSession) -> Goal:
     return await service.create_goal(db, user_id, request)
 
@@ -32,7 +37,12 @@ async def get_goal(user_id: CurrentUserId, goal_id: UUID, db: DBSession) -> Goal
 
 @router.patch("/{goal_id}", response_model=Goal, summary="Update goal")
 async def update_goal(user_id: CurrentUserId, goal_id: UUID, request: UpdateGoalRequest, db: DBSession) -> Goal:
-    return await service.update_goal(db, user_id, goal_id, request)
+    return await service.update_goal(
+        db,
+        user_id,
+        goal_id,
+        request,
+    )
 
 
 @router.delete("/{goal_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete goal")

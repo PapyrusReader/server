@@ -25,7 +25,14 @@ async def list_reading_sessions(
     start_date: date | None = None,
     end_date: date | None = None,
 ) -> ReadingSessionList:
-    return await service.list_sessions(db, user_id, pagination, book_id, start_date, end_date)
+    return await service.list_sessions(
+        db,
+        user_id,
+        pagination,
+        book_id,
+        start_date,
+        end_date,
+    )
 
 
 @router.post("/sessions", response_model=ReadingSession, summary="Record reading session")
@@ -39,4 +46,9 @@ async def create_reading_session(
 async def get_reading_statistics(
     user_id: CurrentUserId, db: DBSession, start_date: date | None = None, end_date: date | None = None
 ) -> ReadingStatistics:
-    return await service.statistics(db, user_id, start_date, end_date)
+    return await service.statistics(
+        db,
+        user_id,
+        start_date,
+        end_date,
+    )

@@ -18,9 +18,13 @@ class SyncBook(Base):
     __tablename__ = "books"
 
     book_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+
     owner_user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("users.user_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
+
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     subtitle: Mapped[str | None] = mapped_column(String(500), nullable=True)
     author: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -38,7 +42,14 @@ class SyncBook(Base):
     current_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
     current_position: Mapped[float | None] = mapped_column(Float, nullable=True)
     current_cfi: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_favorite: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+
+    is_favorite: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
     rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
     custom_metadata: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -47,7 +58,14 @@ class SyncBook(Base):
     file_format: Mapped[str | None] = mapped_column(Text, nullable=True)
     file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     file_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_physical: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+
+    is_physical: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+
     physical_location: Mapped[str | None] = mapped_column(Text, nullable=True)
     lent_to: Mapped[str | None] = mapped_column(Text, nullable=True)
     lent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

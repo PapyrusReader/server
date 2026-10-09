@@ -15,19 +15,23 @@
 
 ## Coding Conventions
 
+When working in the Papyrus workspace, read `../CODING_STYLE.md` for the
+maintainer's reviewed examples. The rules below also apply in standalone checkouts.
+
+- Use meaningful local and callback names; avoid single-letter operands and redundant qualifiers when a clear role name is available.
+- Prefer clear branches or named predicates to nested conditional expressions and substantial inline validation conditions. Preserve predicate polarity and null handling when extracting helpers.
+- Extract meaningful constants and focused helpers for distracting literals or construction details. Preserve types, scope, return values, and behavior.
+- Keep Ruff's 120-character line length. Use trailing commas for deliberate multiline argument layouts, and give multiline model/schema fields breathing room while keeping related simple fields together.
+- Remove documentation that merely repeats a declaration and decorative section banners. Retain substantive contracts and constraints in docstrings.
 - Keep route handlers thin. They should parse input, enforce dependencies/auth, call a service, translate errors, and return schemas.
 - Put business rules, query orchestration, and transaction-aware logic in `papyrus/services`, not in route modules.
 - Reuse or extend existing schema modules before creating new top-level packages.
 - Follow existing async patterns with `AsyncSession`, explicit return types, and Pydantic schemas.
-- Use vertical spacing to separate logical steps inside functions. Keep related statements together, but add a blank line when moving between setup, validation, branching, and side effects.
-- Prefer readable spacing over dense blocks. Short guard clauses, temporary assignments, and context-manager branches should usually be visually separated the way `papyrus/services/email.py` and `papyrus/services/auth/` are structured.
+- Keep consecutive single-line statements together. A change in purpose does not require a blank line, including query execution, result extraction, assignments, persistence calls, and returns.
 - Treat any multiline statement or block as a visual boundary inside a function. If one adjacent statement is multiline and both sides are real code, separate the two statements with a blank line.
 - Apply that rule to multiline conditionals, loops, `with` blocks, `try` blocks, multiline calls, multiline literals, and multiline return values. Treat `if` / `elif` / `else` as one block.
 - Do not add a blank line just because a docstring appears above the first statement in a function. The multiline-block rule applies between code statements, not between a docstring and the first line of code.
-- Add a blank line between query execution and result extraction, especially around `session.execute(...)` and subsequent `scalar*()` reads.
-- Add a blank line before persistence and side-effect boundaries such as `session.add(...)`, `send_email(...)`, `commit()`, redirects, and returned result objects when they start a new phase of the function.
-- Keep tightly coupled short sequences together when they are clearly one step. Do not add spacing mechanically when it makes a two-line operation harder to read.
-- Prefer extra spacing around state transitions and persistence boundaries rather than packing setup, branching, and writes into a single block.
+- Do not pad the start or end of a block. Spacing follows blocks and multiline statements, not inferred logical phases or side effects.
 - When adding a new router module, register it in `papyrus/api/routes/__init__.py`.
 - Avoid adding dependencies unless the user explicitly asks for them.
 - Keep changes scoped. Do not refactor unrelated areas as part of a focused fix.
