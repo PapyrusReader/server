@@ -15,5 +15,11 @@ class OpdsRelayRequest(BaseModel):
 
     url: str = Field(min_length=1, max_length=8192)
     catalog_url: str = Field(min_length=1, max_length=8192)
-    max_bytes: int = Field(default=8 * 1024 * 1024, ge=1, le=256 * 1024 * 1024)
+
+    max_bytes: int = Field(
+        default=8 * 1024 * 1024,
+        ge=1,
+        le=256 * 1024 * 1024,
+    )
+
     credentials: OpdsCredentials | None = None

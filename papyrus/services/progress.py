@@ -58,12 +58,17 @@ def grouped_sessions(entries: list[Activity]) -> list[ReadingSession]:
         end = max(entry.end_time for entry in group)
         result = session_response(first)
         result.end_time = end
+
         result.duration_minutes = (
             int(union_length([(entry.start_time.timestamp(), entry.end_time.timestamp()) for entry in group])) // 60
         )
+
         projection = project_goal(
-            totals_definition(first.start_time, end + timedelta(microseconds=1)), group, end + timedelta(microseconds=1)
+            totals_definition(first.start_time, end + timedelta(microseconds=1)),
+            group,
+            end + timedelta(microseconds=1),
         )
+
         result.pages_read = int(projection["pages"])
         sessions.append(result)
 
@@ -79,6 +84,7 @@ async def list_sessions(
     end_date: date | None,
 ) -> ReadingSessionList:
     ledger = effective_activities(await activities(session, user_id))
+
     entries = sorted(
         (
             entry
@@ -91,6 +97,7 @@ async def list_sessions(
         key=lambda entry: entry.start_time,
         reverse=True,
     )
+
     sessions = grouped_sessions(entries)
     total = len(sessions)
     pages = (total + pagination.limit - 1) // pagination.limit
@@ -109,13 +116,23 @@ async def list_sessions(
 
 
 async def create_session(session: AsyncSession, user_id: UUID, request: CreateReadingSessionRequest) -> ReadingSession:
-    book = await owned_row(session, user_id, "books", request.book_id)
+    book = await owned_row(
+        session,
+        user_id,
+        "books",
+        request.book_id,
+    )
 
     if book is None:
         raise NotFoundError("Book was not found")
 
     if request.session_id is not None:
-        existing = await owned_row(session, user_id, "reading_activities", request.session_id)
+        existing = await owned_row(
+            session,
+            user_id,
+            "reading_activities",
+            request.session_id,
+        )
 
         if existing is not None:
             original = Activity.model_validate(existing.payload)
@@ -141,12 +158,14 @@ async def create_session(session: AsyncSession, user_id: UUID, request: CreateRe
             SyncBookShelf.owner_user_id == user_id, SyncBookShelf.book_id == request.book_id
         )
     )
+
     shelves = list(result.scalars())
 
     try:
         start = request.start_time.replace(tzinfo=UTC) if request.start_time.tzinfo is None else request.start_time
         end = request.end_time or datetime.now(UTC)
         end = end.replace(tzinfo=UTC) if end.tzinfo is None else end
+
         activity = Activity(
             id=request.session_id or uuid4(),
             book_id=request.book_id,
@@ -173,6 +192,7 @@ async def create_session(session: AsyncSession, user_id: UUID, request: CreateRe
             )
         ],
     )
+
     return session_response(activity)
 
 
@@ -206,9 +226,11 @@ async def statistics(
     now = datetime.now(UTC)
     total = project_goal(totals_definition(start, end), ledger, now)
     real = effective_activities(ledger)
+
     counted = [
         entry for entry in real if entry.kind == "reading" and entry.start_time < end and entry.end_time >= start
     ]
+
     daily = []
     reading_dates = []
     longest = streak = 0
@@ -217,9 +239,11 @@ async def statistics(
         day = start + timedelta(days=index)
         next_day = day + timedelta(days=1)
         values = project_goal(totals_definition(day, next_day), ledger, now)
+
         count = len(
             {entry.session_id or entry.id for entry in counted if entry.start_time < next_day and entry.end_time > day}
         )
+
         daily.append(
             DailyBreakdown(
                 date=day.date(),
@@ -248,6 +272,7 @@ async def statistics(
 
     for book_id, title in books.items():
         values = project_goal(totals_definition(start, end, book_id), ledger, now)
+
         breakdown.append(
             BookBreakdown(
                 book_id=book_id,

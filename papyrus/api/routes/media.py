@@ -19,7 +19,12 @@ router = APIRouter()
 DBSession = Annotated[AsyncSession, Depends(get_db)]
 
 
-@router.post("", response_model=MediaAssetResponse, status_code=status.HTTP_201_CREATED, summary="Upload private media")
+@router.post(
+    "",
+    response_model=MediaAssetResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload private media",
+)
 @limiter.limit(lambda: f"{get_settings().rate_limit_upload}/minute")
 async def upload_media(
     request: Request,
@@ -30,7 +35,14 @@ async def upload_media(
     file: Annotated[UploadFile, File()],
 ) -> MediaAssetResponse:
     """Upload a book file or cover image for the authenticated user."""
-    asset = await media_service.upload_media(db, user_id, book_id=book_id, kind=kind, file=file)
+    asset = await media_service.upload_media(
+        db,
+        user_id,
+        book_id=book_id,
+        kind=kind,
+        file=file,
+    )
+
     return MediaAssetResponse.model_validate(asset)
 
 
@@ -38,7 +50,12 @@ async def upload_media(
 async def get_media_usage(user_id: CurrentUserId, db: DBSession) -> MediaUsageResponse:
     """Return authenticated user's file storage usage."""
     used_bytes, quota_bytes, available_bytes = await media_service.usage(db, user_id)
-    return MediaUsageResponse(used_bytes=used_bytes, quota_bytes=quota_bytes, available_bytes=available_bytes)
+
+    return MediaUsageResponse(
+        used_bytes=used_bytes,
+        quota_bytes=quota_bytes,
+        available_bytes=available_bytes,
+    )
 
 
 @router.get("/{asset_id}", summary="Download private media")
@@ -46,8 +63,10 @@ async def download_media(user_id: CurrentUserId, db: DBSession, asset_id: UUID) 
     """Download an owned media asset."""
     asset = await media_service.get_owned_asset(db, user_id, asset_id)
     path = media_service.asset_path(asset)
+
     if not path.exists():
         raise NotFoundError("Media asset was not found")
+
     return FileResponse(path, media_type=asset.content_type, filename=asset.original_filename)
 
 

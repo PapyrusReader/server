@@ -130,6 +130,7 @@ def get_dev_page_assets(entry_module: str, settings: Settings | None = None) -> 
 
     if _should_use_vite(settings):
         vite_url = settings.dev_pages_vite_url
+
         return DevPageAssets(
             script_urls=[f"{vite_url}/@vite/client", f"{vite_url}/{entry_module}"],
             css_urls=[],
@@ -158,6 +159,7 @@ def render_dev_page(
     """Render a development page shell with either Vite or built assets."""
     settings = get_settings()
     assets = get_dev_page_assets(entry_module, settings)
+
     context = {
         "request": request,
         "page_title": page_title,
@@ -166,4 +168,9 @@ def render_dev_page(
         "page_config_json": json.dumps(page_config),
         "dev_page_assets": assets,
     }
-    return templates.TemplateResponse(request=request, name=template_name, context=context)
+
+    return templates.TemplateResponse(
+        request=request,
+        name=template_name,
+        context=context,
+    )

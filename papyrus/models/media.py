@@ -18,9 +18,13 @@ class MediaAsset(Base):
     __table_args__ = (UniqueConstraint("book_id", "kind", name="uq_media_assets_book_kind"),)
 
     asset_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+
     owner_user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("users.user_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
+
     book_id: Mapped[UUID] = mapped_column(ForeignKey("books.book_id", ondelete="CASCADE"), nullable=False, index=True)
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(512), nullable=False)

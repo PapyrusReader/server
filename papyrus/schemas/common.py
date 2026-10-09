@@ -23,7 +23,14 @@ class Pagination(BaseModel):
     """Pagination metadata."""
 
     page: int = Field(..., ge=1, examples=[1])
-    limit: int = Field(..., ge=1, le=100, examples=[20])
+
+    limit: int = Field(
+        ...,
+        ge=1,
+        le=100,
+        examples=[20],
+    )
+
     total: int = Field(..., ge=0, examples=[150])
     total_pages: int = Field(..., ge=0, examples=[8])
     has_next: bool = Field(..., examples=[True])

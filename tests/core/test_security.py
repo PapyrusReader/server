@@ -27,6 +27,7 @@ def powersync_key_files(tmp_path: Path) -> tuple[Path, Path]:
             encryption_algorithm=serialization.NoEncryption(),
         )
     )
+
     public_key_path.write_bytes(
         private_key.public_key().public_bytes(
             encoding=serialization.Encoding.PEM,
@@ -59,12 +60,14 @@ def test_create_powersync_token_supports_file_based_keys(
 
     try:
         token, expires_in = security_module.create_powersync_token("user-123")
+
         payload = jwt.decode(
             token,
             public_key_path.read_text(encoding="utf-8"),
             algorithms=["RS256"],
             audience="powersync-dev",
         )
+
         jwks = security_module.get_powersync_jwks()
     finally:
         security_module._get_powersync_private_key.cache_clear()
@@ -119,6 +122,7 @@ def test_powersync_jwks_includes_previous_public_key_for_rotation(
     private_key_path, public_key_path = powersync_key_files
     previous_private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     previous_public_key_path = tmp_path / "previous_public.pem"
+
     previous_public_key_path.write_bytes(
         previous_private_key.public_key().public_bytes(
             encoding=serialization.Encoding.PEM,

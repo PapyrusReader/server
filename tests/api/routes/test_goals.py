@@ -10,6 +10,7 @@ from httpx import AsyncClient
 @pytest.fixture
 async def goal_id(client: AsyncClient, auth_headers: dict[str, str]):
     today = datetime.now(UTC).date()
+
     response = await client.post(
         "/v1/goals",
         headers=auth_headers,
@@ -22,6 +23,7 @@ async def goal_id(client: AsyncClient, auth_headers: dict[str, str]):
             "end_date": f"{today.year}-12-31",
         },
     )
+
     assert response.status_code == 201
     return response.json()["goal_id"]
 
@@ -57,6 +59,7 @@ async def test_unknown_goal_is_not_an_example(client, auth_headers):
 
 async def test_nonrecurring_calendar_goal_retains_future_dates(client, auth_headers):
     year = datetime.now(UTC).year + 1
+
     response = await client.post(
         "/v1/goals",
         headers=auth_headers,
@@ -71,6 +74,7 @@ async def test_nonrecurring_calendar_goal_retains_future_dates(client, auth_head
             "end_date": f"{year}-12-31",
         },
     )
+
     assert response.status_code == 201, response.text
     saved = response.json()
     fetched = (await client.get(f"/v1/goals/{saved['goal_id']}", headers=auth_headers)).json()
@@ -101,6 +105,7 @@ async def test_goal_description_can_be_cleared(client, auth_headers, goal_id):
 
 async def test_create_reading_days_goal(client, auth_headers):
     today = datetime.now(UTC).date().isoformat()
+
     response = await client.post(
         "/v1/goals",
         headers=auth_headers,
@@ -115,6 +120,7 @@ async def test_create_reading_days_goal(client, auth_headers):
             "minimum_minutes": 5,
         },
     )
+
     assert response.status_code == 201
     assert response.json()["goal_type"] == "reading_days"
     assert response.json()["timezone"] == "Europe/Vilnius"
@@ -125,6 +131,7 @@ async def test_create_selected_books_goal_round_trips_and_bounds_target(client, 
 
     for title in ["First selected book", "Second selected book"]:
         book_id = str(uuid4())
+
         response = await client.post(
             "/v1/sync/powersync-upload",
             headers=auth_headers,
@@ -134,10 +141,12 @@ async def test_create_selected_books_goal_round_trips_and_bounds_target(client, 
                 ]
             },
         )
+
         assert response.status_code == 200, response.text
         books.append(book_id)
 
     today = datetime.now(UTC).date().isoformat()
+
     request = {
         "title": "Finish these books",
         "goal_type": "books_count",
@@ -148,6 +157,7 @@ async def test_create_selected_books_goal_round_trips_and_bounds_target(client, 
         "scope": "book",
         "book_ids": books,
     }
+
     response = await client.post("/v1/goals", headers=auth_headers, json=request)
     assert response.status_code == 201, response.text
     goal = response.json()
@@ -157,14 +167,22 @@ async def test_create_selected_books_goal_round_trips_and_bounds_target(client, 
     assert set(result.json()["book_ids"]) == set(books)
     invalid = await client.post("/v1/goals", headers=auth_headers, json={**request, "target_value": 12})
     assert invalid.status_code == 400
+
     single = await client.post(
-        "/v1/goals", headers=auth_headers, json={**request, "book_ids": books[:1], "target_value": 1}
+        "/v1/goals",
+        headers=auth_headers,
+        json={**request, "book_ids": books[:1], "target_value": 1},
     )
+
     assert single.status_code == 201
     assert single.json()["scope_id"] == books[0]
     assert single.json()["book_ids"] == []
+
     saved = await client.patch(
-        f"/v1/goals/{single.json()['goal_id']}", headers=auth_headers, json={"title": "One selected book"}
+        f"/v1/goals/{single.json()['goal_id']}",
+        headers=auth_headers,
+        json={"title": "One selected book"},
     )
+
     assert saved.status_code == 200
     assert saved.json()["scope_id"] == books[0]

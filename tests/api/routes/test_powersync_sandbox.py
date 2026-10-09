@@ -30,6 +30,7 @@ async def _seed_demo_item(
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
     session.add(item)
     await session.commit()
     await session.refresh(item)
@@ -49,9 +50,7 @@ async def test_powersync_sandbox_registered_in_debug_vite_mode(
     """The PowerSync sandbox page uses Vite-served assets when configured."""
     monkeypatch.setattr(app_settings, "dev_pages_use_vite", True)
     monkeypatch.setattr(app_settings, "dev_pages_vite_url", "http://vite.test:5173")
-
     response = await debug_client.get("/__dev/powersync-sandbox")
-
     assert response.status_code == 200
     assert "PowerSync Sandbox" in response.text
     assert 'data-dev-page="powersync-sandbox"' in response.text
@@ -73,6 +72,7 @@ async def test_powersync_sandbox_renders_built_assets_when_manifest_exists(
 ):
     """The PowerSync sandbox page falls back to built assets outside Vite mode."""
     manifest_path = tmp_path / "manifest.json"
+
     manifest_path.write_text(
         json.dumps(
             {
@@ -90,9 +90,7 @@ async def test_powersync_sandbox_renders_built_assets_when_manifest_exists(
     monkeypatch.setattr(app_settings, "dev_pages_use_vite", False)
     monkeypatch.setattr(app_settings, "dev_pages_manifest_path", str(manifest_path))
     dev_pages._load_manifest.cache_clear()
-
     response = await debug_client.get("/__dev/powersync-sandbox")
-
     assert response.status_code == 200
     assert 'href="/__dev/static/assets/powersync-sandbox.css"' in response.text
     assert 'src="/__dev/static/assets/powersync-sandbox.js"' in response.text
@@ -132,7 +130,6 @@ async def test_powersync_sandbox_worker_asset_is_served_from_backend_origin(
     assert response.headers["content-type"].startswith("text/javascript")
     assert response.headers["x-papyrus-vendor-path"] == "WASQLiteDB.umd.js"
     assert response.text == "// worker/WASQLiteDB.umd.js"
-
     nested_response = await debug_client.get("/__dev/powersync-sandbox/worker/node_modules_pnpm_example_chunk.umd.js")
     assert nested_response.status_code == 200
     assert nested_response.headers["x-papyrus-vendor-path"] == "node_modules_pnpm_example_chunk.umd.js"
@@ -181,12 +178,11 @@ async def test_powersync_demo_items_only_lists_owned_rows(
         primary_email_verified=True,
         last_login_at=datetime.now(UTC),
     )
+
     db_session.add(other_user)
     await db_session.flush()
-
     await _seed_demo_item(db_session, owner_user_id=owner.user_id, title="Owned Item")
     await _seed_demo_item(db_session, owner_user_id=other_user.user_id, title="Other Item")
-
     response = await debug_client.get("/__dev/powersync-demo/items", headers=auth_headers)
     assert response.status_code == 200
     body = response.json()
@@ -216,9 +212,9 @@ async def test_powersync_upload_applies_create_update_and_delete(
             ]
         },
     )
+
     assert create_response.status_code == 200
     assert create_response.json()["applied_count"] == 1
-
     created = await db_session.get(PowerSyncDemoItem, UUID(item_id))
     assert created is not None
     assert created.owner_user_id == UUID(auth_user["user_id"])
@@ -238,8 +234,8 @@ async def test_powersync_upload_applies_create_update_and_delete(
             ]
         },
     )
-    assert update_response.status_code == 200
 
+    assert update_response.status_code == 200
     await db_session.refresh(created)
     assert created.title == "Updated Item"
     assert created.notes == "Initial notes"
@@ -249,6 +245,7 @@ async def test_powersync_upload_applies_create_update_and_delete(
         headers=auth_headers,
         json={"batch": [{"type": "demo_items", "op": "DELETE", "id": item_id}]},
     )
+
     assert delete_response.status_code == 200
     db_session.expire_all()
     assert await db_session.get(PowerSyncDemoItem, UUID(item_id)) is None
@@ -267,6 +264,7 @@ async def test_powersync_upload_rejects_mutating_other_users_rows(
         primary_email_verified=True,
         last_login_at=datetime.now(UTC),
     )
+
     db_session.add(other_user)
     await db_session.flush()
     foreign_item = await _seed_demo_item(db_session, owner_user_id=other_user.user_id, title="Other Owner Item")

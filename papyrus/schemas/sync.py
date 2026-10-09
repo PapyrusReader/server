@@ -51,7 +51,9 @@ BOOK_UPLOAD_FIELDS |= frozenset(
         "last_read_at",
     }
 )
+
 ENTITY_FIELDS = frozenset({"owner_user_id", "created_at", "updated_at"})
+
 UPLOAD_FIELDS = {
     "reading_goals": ENTITY_FIELDS | {"payload"},
     "reading_activities": ENTITY_FIELDS | {"payload"},
@@ -98,6 +100,7 @@ class PowerSyncCrudMutation(BaseModel):
         "reading_activities",
         "goal_periods",
     ] = Field(alias="type")
+
     op: Literal["PUT", "PATCH", "DELETE", "put", "patch", "delete"]
     id: str
     op_id: int | None = Field(default=None, alias="op_id")

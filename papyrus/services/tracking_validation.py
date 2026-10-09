@@ -25,6 +25,7 @@ async def validate_tracking_mutation(
         "reading_activities": Activity,
         "goal_periods": PeriodRecord,
     }
+
     schema = schemas[table]
     raw = values.get("payload", row.payload if row is not None else None)
 
@@ -68,6 +69,7 @@ async def validate_tracking_mutation(
 
         if row is not None:
             old = GoalDefinition.model_validate(row.payload)
+
             fixed = (
                 "goal_type",
                 "time_period",
@@ -103,22 +105,47 @@ async def validate_tracking_mutation(
 
         if parsed.scope == "book":
             for book_id in parsed.selected_book_ids:
-                await check_reference(session, user_id, "books", book_id)
+                await check_reference(
+                    session,
+                    user_id,
+                    "books",
+                    book_id,
+                )
 
         if parsed.scope_id is not None and parsed.scope != "book":
-            await check_reference(session, user_id, "shelves", parsed.scope_id)
+            await check_reference(
+                session,
+                user_id,
+                "shelves",
+                parsed.scope_id,
+            )
 
     if isinstance(parsed, Activity):
         if parsed.created_at > datetime.now(UTC) + timedelta(minutes=5):
             raise ValidationError("Activity creation cannot be in the future")
 
-        await check_reference(session, user_id, "books", parsed.book_id)
+        await check_reference(
+            session,
+            user_id,
+            "books",
+            parsed.book_id,
+        )
 
         for shelf_id in parsed.shelf_ids:
-            await check_reference(session, user_id, "shelves", shelf_id)
+            await check_reference(
+                session,
+                user_id,
+                "shelves",
+                shelf_id,
+            )
 
         if parsed.correction_of is not None:
-            original = await owned_row(session, user_id, "reading_activities", parsed.correction_of)
+            original = await owned_row(
+                session,
+                user_id,
+                "reading_activities",
+                parsed.correction_of,
+            )
 
             if (
                 original is None
@@ -134,17 +161,38 @@ async def validate_tracking_mutation(
             if existing.goal_id != parsed.goal_id or existing.definition.start_date != parsed.definition.start_date:
                 raise ValidationError("Period identity cannot change")
 
-        await check_reference(session, user_id, "reading_goals", parsed.goal_id)
+        await check_reference(
+            session,
+            user_id,
+            "reading_goals",
+            parsed.goal_id,
+        )
 
         for book_id in parsed.definition.selected_book_ids:
-            await check_reference(session, user_id, "books", book_id)
+            await check_reference(
+                session,
+                user_id,
+                "books",
+                book_id,
+            )
 
     return {**values, "payload": payload}
 
 
 async def check_reference(session: AsyncSession, user_id: UUID, table: str, row_id: UUID) -> None:
-    parent = await owned_row(session, user_id, table, row_id)
-    deleted = await tombstoned(session, user_id, table, row_id)
+    parent = await owned_row(
+        session,
+        user_id,
+        table,
+        row_id,
+    )
+
+    deleted = await tombstoned(
+        session,
+        user_id,
+        table,
+        row_id,
+    )
 
     if parent is None and not deleted:
         raise ValidationError(f"Tracking reference {table} was not found")

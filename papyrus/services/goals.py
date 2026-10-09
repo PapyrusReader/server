@@ -60,7 +60,12 @@ async def list_goals(session: AsyncSession, user_id: UUID, active: bool | None) 
 
 
 async def get_definition(session: AsyncSession, user_id: UUID, goal_id: UUID) -> GoalDefinition:
-    row = await owned_row(session, user_id, "reading_goals", goal_id)
+    row = await owned_row(
+        session,
+        user_id,
+        "reading_goals",
+        goal_id,
+    )
 
     if row is None:
         raise NotFoundError("Goal was not found")
@@ -77,6 +82,7 @@ async def create_goal(session: AsyncSession, user_id: UUID, request: CreateGoalR
 
     try:
         zone = ZoneInfo(request.timezone)
+
         definition = GoalDefinition(
             id=uuid4(),
             title=request.title,
@@ -94,7 +100,13 @@ async def create_goal(session: AsyncSession, user_id: UUID, request: CreateGoalR
             book_ids=request.book_ids,
             minimum_minutes=request.minimum_minutes,
             is_recurring=request.is_recurring and request.time_period != "custom",
-            rules=[GoalRule(at=now, title=request.title, target=request.target_value)],
+            rules=[
+                GoalRule(
+                    at=now,
+                    title=request.title,
+                    target=request.target_value,
+                )
+            ],
         )
     except (PayloadError, ZoneInfoNotFoundError) as exc:
         raise ValidationError(str(exc)) from exc
@@ -114,6 +126,7 @@ async def create_goal(session: AsyncSession, user_id: UUID, request: CreateGoalR
             )
         ],
     )
+
     return goal_response(definition, [])
 
 
@@ -129,13 +142,22 @@ async def update_goal(session: AsyncSession, user_id: UUID, goal_id: UUID, reque
         if definition.rules
         else definition.created_at + timedelta(microseconds=1),
     )
+
     changes = request.model_dump(exclude_unset=True, exclude={"end_date"})
+
     if changes.get("is_archived"):
         changes["is_active"] = False
+
     updated = definition.model_copy(update=changes)
+
     rule = GoalRule(
-        at=now, title=updated.title, target=updated.target_value, active=updated.is_active, archived=updated.is_archived
+        at=now,
+        title=updated.title,
+        target=updated.target_value,
+        active=updated.is_active,
+        archived=updated.is_archived,
     )
+
     initial = definition.rules or [
         GoalRule(
             at=definition.created_at,
@@ -145,6 +167,7 @@ async def update_goal(session: AsyncSession, user_id: UUID, goal_id: UUID, reque
             archived=definition.is_archived,
         )
     ]
+
     updated.rules = [*initial, rule]
 
     await apply_powersync_upload_batch(
@@ -152,15 +175,28 @@ async def update_goal(session: AsyncSession, user_id: UUID, goal_id: UUID, reque
         user_id,
         [
             PowerSyncCrudMutation(
-                table="reading_goals", op="PATCH", id=str(goal_id), op_data={"payload": updated.model_dump(mode="json")}
+                table="reading_goals",
+                op="PATCH",
+                id=str(goal_id),
+                op_data={"payload": updated.model_dump(mode="json")},
             )
         ],
     )
+
     return goal_response(updated, await activities(session, user_id))
 
 
 async def delete_goal(session: AsyncSession, user_id: UUID, goal_id: UUID) -> None:
     await get_definition(session, user_id, goal_id)
+
     await apply_powersync_upload_batch(
-        session, user_id, [PowerSyncCrudMutation(table="reading_goals", op="DELETE", id=str(goal_id))]
+        session,
+        user_id,
+        [
+            PowerSyncCrudMutation(
+                table="reading_goals",
+                op="DELETE",
+                id=str(goal_id),
+            )
+        ],
     )

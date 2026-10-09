@@ -20,7 +20,14 @@ async def preserve_goal_history(session: AsyncSession, user_id: UUID, row: SyncR
         stop = min(end, boundary)
         at = stop - timedelta(microseconds=1)
         rule = rule_at(goal, at)
-        since_epoch = start - datetime(1970, 1, 1, tzinfo=UTC)
+
+        since_epoch = start - datetime(
+            1970,
+            1,
+            1,
+            tzinfo=UTC,
+        )
+
         microseconds = (since_epoch.days * 86400 + since_epoch.seconds) * 1000000 + since_epoch.microseconds
         identifier = uuid5(NAMESPACE_URL, f"papyrus:goal-period:{goal.id}:{microseconds}")
         existing = await session.get(SyncGoalPeriod, identifier)
@@ -30,7 +37,15 @@ async def preserve_goal_history(session: AsyncSession, user_id: UUID, row: SyncR
             archived = end > boundary
 
             if archived:
-                revisions.append(GoalRule(at=stop, target=rule.target, title=rule.title, active=False, archived=True))
+                revisions.append(
+                    GoalRule(
+                        at=stop,
+                        target=rule.target,
+                        title=rule.title,
+                        active=False,
+                        archived=True,
+                    )
+                )
 
             definition = goal.model_copy(
                 update={
@@ -44,9 +59,21 @@ async def preserve_goal_history(session: AsyncSession, user_id: UUID, row: SyncR
                     "rules": revisions,
                 }
             )
-            record = PeriodRecord(id=identifier, goal_id=goal.id, definition=definition)
 
-            session.add(SyncGoalPeriod(id=identifier, owner_user_id=user_id, payload=record.model_dump(mode="json")))
+            record = PeriodRecord(
+                id=identifier,
+                goal_id=goal.id,
+                definition=definition,
+            )
+
+            session.add(
+                SyncGoalPeriod(
+                    id=identifier,
+                    owner_user_id=user_id,
+                    payload=record.model_dump(mode="json"),
+                )
+            )
+
             await session.flush()
 
         if not goal.is_recurring or end >= boundary:

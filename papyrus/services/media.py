@@ -114,22 +114,23 @@ async def _persist_media(
         raise ValidationError("Unsupported media kind")
 
     await _lock_user_uploads(session, user_id)
+
     book = (
         await session.execute(select(SyncBook).where(SyncBook.book_id == book_id).with_for_update())
     ).scalar_one_or_none()
+
     if book is None:
         raise NotFoundError("Book was not found")
+
     if book.owner_user_id != user_id:
         raise ForbiddenError("Cannot access another user's book")
 
     extension = _extension(filename)
     _validate_media_type(kind, extension, content_type)
-
     existing = await _existing_asset_for_kind(session, book, kind)
     used = await _used_bytes(session, user_id)
     used_without_existing = used - (existing.size_bytes if existing is not None else 0)
     quota = get_settings().file_storage_quota_bytes
-
     asset_id = uuid4()
     storage_path = f"{user_id}/{book_id}/{asset_id}.{extension}"
     absolute_path = media_root() / storage_path
@@ -154,11 +155,13 @@ async def _persist_media(
             sha256=sha256_hex,
             storage_path=storage_path,
         )
+
         if existing is not None:
             await session.delete(existing)
             await session.flush()
 
         session.add(asset)
+
         if kind == "book_file":
             book.file_media_id = asset.asset_id
         else:
@@ -168,36 +171,46 @@ async def _persist_media(
             before_commit(asset)
 
         await session.commit()
+
         if existing is not None:
             delete_physical_file(existing)
+
         await session.refresh(asset)
         return asset
     except Exception:
         await session.rollback()
         _delete_path(temp_path)
+
         if final_file_written:
             _delete_path(absolute_path)
+
         _delete_empty_parent_dirs(absolute_path.parent, stop_at=media_root())
         raise
 
 
 async def get_owned_asset(session: AsyncSession, user_id: UUID, asset_id: UUID) -> MediaAsset:
     asset = await session.get(MediaAsset, asset_id)
+
     if asset is None:
         raise NotFoundError("Media asset was not found")
+
     if asset.owner_user_id != user_id:
         raise NotFoundError("Media asset was not found")
+
     return asset
 
 
 async def delete_media(session: AsyncSession, user_id: UUID, asset_id: UUID) -> None:
     asset = await get_owned_asset(session, user_id, asset_id)
     book = await session.get(SyncBook, asset.book_id)
+
     if book is not None:
         if book.file_media_id == asset.asset_id:
             book.file_media_id = None
+
         if book.cover_media_id == asset.asset_id:
             book.cover_media_id = None
+
     await session.delete(asset)
     await session.commit()
     delete_physical_file(asset)
@@ -207,10 +220,13 @@ async def delete_book_media(session: AsyncSession, user_id: UUID, book_id: UUID)
     result = await session.execute(
         select(MediaAsset).where(MediaAsset.owner_user_id == user_id, MediaAsset.book_id == book_id)
     )
+
     deleted_paths: list[Path] = []
+
     for asset in result.scalars():
         deleted_paths.append(asset_path(asset))
         await session.delete(asset)
+
     return deleted_paths
 
 
@@ -225,13 +241,18 @@ async def validate_media_reference(
 ) -> UUID | None:
     if asset_id is None:
         return None
+
     asset = await session.get(MediaAsset, asset_id)
+
     if asset is None:
         raise ValidationError(f"{field_name} was not found")
+
     if asset.owner_user_id != user_id or asset.book_id != book_id:
         raise ForbiddenError(f"{field_name} does not belong to this book")
+
     if asset.kind != expected_kind:
         raise ValidationError(f"{field_name} has the wrong media kind")
+
     return asset.asset_id
 
 
@@ -243,6 +264,7 @@ async def _used_bytes(session: AsyncSession, user_id: UUID) -> int:
     result = await session.execute(
         select(func.coalesce(func.sum(MediaAsset.size_bytes), 0)).where(MediaAsset.owner_user_id == user_id)
     )
+
     return int(result.scalar_one())
 
 
@@ -263,8 +285,10 @@ async def _write_upload_to_temp_file(
     with temp_path.open("wb") as output:
         while chunk := await file.read(UPLOAD_CHUNK_SIZE):
             size_bytes += len(chunk)
+
             if size_bytes > quota_remaining:
                 raise ConflictError("Storage quota exceeded")
+
             hasher.update(chunk)
             output.write(chunk)
 
@@ -307,14 +331,17 @@ async def _existing_asset_for_kind(session: AsyncSession, book: SyncBook, kind: 
 
 def _extension(filename: str) -> str:
     extension = Path(filename).suffix.lower().lstrip(".")
+
     if not extension:
         raise ValidationError("Uploaded file must include a file extension")
+
     return extension
 
 
 def _validate_media_type(kind: str, extension: str, content_type: str) -> None:
     if kind == "book_file" and extension not in BOOK_EXTENSIONS:
         raise ValidationError("Unsupported book file type")
+
     if kind == "cover_image" and (extension not in COVER_EXTENSIONS or not content_type.startswith("image/")):
         raise ValidationError("Unsupported cover image type")
 
@@ -336,9 +363,11 @@ def _delete_path(path: Path) -> None:
 def _delete_empty_parent_dirs(path: Path, *, stop_at: Path) -> None:
     current = path
     stop = stop_at.resolve()
+
     while current.resolve() != stop:
         try:
             current.rmdir()
         except OSError:
             return
+
         current = current.parent

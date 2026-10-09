@@ -13,7 +13,14 @@ def calendar_period(goal: GoalDefinition, at: datetime) -> tuple[datetime, datet
         at = min(at, goal.rules[-1].at)
 
     local = at.astimezone(ZoneInfo(goal.timezone))
-    day = local.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    day = local.replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
     period = goal.time_period
 
     if period == "daily":
@@ -35,7 +42,11 @@ def calendar_period(goal: GoalDefinition, at: datetime) -> tuple[datetime, datet
 
 def rule_at(goal: GoalDefinition, at: datetime) -> GoalRule:
     rule = GoalRule(
-        at=goal.created_at, target=goal.target_value, title=goal.title, active=goal.is_active, archived=goal.is_archived
+        at=goal.created_at,
+        target=goal.target_value,
+        title=goal.title,
+        active=goal.is_active,
+        archived=goal.is_archived,
     )
 
     for revision in goal.rules:
@@ -75,6 +86,7 @@ def project_goal(goal: GoalDefinition, ledger: list[Activity], now: datetime) ->
     start, end = (
         calendar_period(goal, now) if goal.is_recurring and now >= goal.start_date else (goal.start_date, goal.end_date)
     )
+
     cutoff, limit = max(start, goal.created_at), min(end, now)
     rules = [revision.at for revision in goal.rules if cutoff < revision.at < limit]
     zone = ZoneInfo(goal.timezone)
@@ -94,11 +106,13 @@ def project_goal(goal: GoalDefinition, ledger: list[Activity], now: datetime) ->
             continue
 
         contributed = False
+
         point = (
             activity.end_time - timedelta(microseconds=1)
             if activity.kind == "reading" and activity.end_time > activity.start_time
             else activity.end_time
         )
+
         point_rule = rule_at(goal, point)
 
         if cutoff <= point < end and point <= now and point_rule.active and not point_rule.archived:
@@ -122,7 +136,14 @@ def project_goal(goal: GoalDefinition, ledger: list[Activity], now: datetime) ->
 
             while cursor < stop_at:
                 local = cursor.astimezone(zone)
-                midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+
+                midnight = local.replace(
+                    hour=0,
+                    minute=0,
+                    second=0,
+                    microsecond=0,
+                )
+
                 stop = min((midnight + timedelta(days=1)).astimezone(UTC), stop_at)
                 stop = min([stop, *(boundary for boundary in rules if cursor < boundary < stop)])
                 active = rule_at(goal, cursor)
@@ -141,15 +162,20 @@ def project_goal(goal: GoalDefinition, ledger: list[Activity], now: datetime) ->
     pages = manual_pages + sum(union_length(intervals) * scales[key] for key, intervals in coverage.items())
     seconds = int(sum(daily_seconds.values()))
     rule = rule_at(goal, end - timedelta(microseconds=1) if end <= now else now)
+
     value = {
         "books_count": len(finished),
         "pages_count": int(pages),
         "reading_time": seconds // 60,
         "reading_days": len(qualified),
     }[goal.goal_type]
-    fractional = (
-        seconds / 60 if goal.goal_type == "reading_time" else pages if goal.goal_type == "pages_count" else value
-    )
+
+    if goal.goal_type == "reading_time":
+        fractional = seconds / 60
+    elif goal.goal_type == "pages_count":
+        fractional = pages
+    else:
+        fractional = value
 
     return {
         "current_value": value,
