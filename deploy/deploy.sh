@@ -10,5 +10,5 @@ compose up -d --wait database powersync-storage
 compose stop api powersync web
 compose run --rm migrate
 # shellcheck disable=SC2016
-compose exec -T database sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /bootstrap-powersync.sql'
+compose exec -T database sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < bootstrap-powersync.sql
 compose up -d --wait api powersync web
