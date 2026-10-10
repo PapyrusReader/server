@@ -148,8 +148,8 @@ intact. Copy the new Caddyfile into the existing bind-mounted file (preserve its
 inode), then validate and reload only the web process:
 
 ```sh
-docker compose --env-file production.env exec -T web caddy validate --config /etc/caddy/Caddyfile
-docker compose --env-file production.env exec -T web caddy reload --config /etc/caddy/Caddyfile
+docker compose --env-file production.env -f compose.yml exec -T web caddy validate --config /etc/caddy/Caddyfile
+docker compose --env-file production.env -f compose.yml exec -T web caddy reload --config /etc/caddy/Caddyfile
 ```
 
 Keep the parent `web` directory mounted at `/srv/web`. Check `/` and `/login` after
