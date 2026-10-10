@@ -232,32 +232,51 @@ def overlaps_period(activity: Activity, start: datetime, end: datetime) -> bool:
 
 
 def current_reading_streak(ledger: list[Activity], now: datetime) -> int:
-    """Count qualified UTC days across the full effective ledger, independent of report bounds."""
-    daily_intervals: dict[date, list[tuple[float, float]]] = defaultdict(list)
+    """Union complete day ranges and partial boundary days without walking long activities."""
+    boundaries: dict[date, list[tuple[float, float]]] = defaultdict(list)
+    qualified_ranges: list[tuple[int, int]] = []
 
     for activity in ledger:
         if activity.kind != "reading":
             continue
 
-        cursor = activity.start_time.astimezone(UTC)
-        end = min(activity.end_time, now)
+        start = activity.start_time.astimezone(UTC)
+        end = min(activity.end_time, now).astimezone(UTC)
 
-        while cursor < end:
-            next_day = datetime.combine(cursor.date() + timedelta(days=1), time.min, UTC)
-            stop = min(next_day, end)
-            daily_intervals[cursor.date()].append((cursor.timestamp(), stop.timestamp()))
-            cursor = stop
+        if start >= end:
+            continue
 
-    qualified = {day for day, intervals in daily_intervals.items() if union_length(intervals) >= 300}
-    today = now.date()
-    cursor_date = today if today in qualified else today - timedelta(days=1)
-    streak = 0
+        if start.date() == end.date():
+            boundaries[start.date()].append((start.timestamp(), end.timestamp()))
+            continue
 
-    while cursor_date in qualified:
-        streak += 1
-        cursor_date -= timedelta(days=1)
+        next_day = datetime.combine(start.date() + timedelta(days=1), time.min, UTC)
+        last_day = datetime.combine(end.date(), time.min, UTC)
+        boundaries[start.date()].append((start.timestamp(), next_day.timestamp()))
+        boundaries[end.date()].append((last_day.timestamp(), end.timestamp()))
+        first_complete, last_complete = start.date().toordinal() + 1, end.date().toordinal() - 1
 
-    return streak
+        if first_complete <= last_complete:
+            qualified_ranges.append((first_complete, last_complete))
+
+    for day, intervals in boundaries.items():
+        if union_length(intervals) >= 300:
+            qualified_ranges.append((day.toordinal(), day.toordinal()))
+
+    merged: list[tuple[int, int]] = []
+
+    for first, last in sorted(qualified_ranges):
+        if merged and first <= merged[-1][1] + 1:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], last))
+        else:
+            merged.append((first, last))
+
+    today = now.astimezone(UTC).date().toordinal()
+
+    if merged and merged[-1][1] in {today, today - 1}:
+        return merged[-1][1] - merged[-1][0] + 1
+
+    return 0
 
 
 async def statistics(
