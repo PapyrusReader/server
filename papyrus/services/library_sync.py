@@ -25,7 +25,7 @@ from papyrus.models import (
 )
 from papyrus.schemas.sync import PowerSyncCrudMutation
 from papyrus.services import media as media_service
-from papyrus.services.library_validation import convert_value, normalize_book_payload, uuid_value
+from papyrus.services.library_validation import convert_value, uuid_value
 
 MODELS: dict[str, Any] = {
     "reading_goals": SyncReadingGoal,
@@ -232,9 +232,6 @@ async def apply_library_mutation(
     row_id = mutation.id if is_membership else uuid_value(mutation.id, "id")
     payload = dict(mutation.op_data or {})
     payload = {key: value for key, value in payload.items() if key not in {"owner_user_id", "updated_at"}}
-
-    if table == "books":
-        payload = normalize_book_payload(payload)
 
     if is_membership:
         payload = membership_values(table, mutation.id, payload)
