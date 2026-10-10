@@ -155,24 +155,21 @@ async def test_membership_remove_readd_and_pair_validation(client, auth_headers)
     ).status_code == 400
 
 
-async def test_legacy_envelope_normalizes_and_preserves_metadata(client, auth_headers, db_session):
-    envelope = {
-        "publication_date": "2020-01-01T00:00:00Z",
-        "series_id": "old-id",
-        "file_size": 42,
-        "is_physical": True,
-        "custom_metadata": {"key": "value"},
-    }
-
+async def test_custom_metadata_does_not_override_book_fields(client, auth_headers, db_session):
+    metadata = {"file_size": 42, "is_physical": True, "reader_locator": {"version": 1}, "key": "value"}
     response = await upload(
         client,
         auth_headers,
-        mutation("books", uuid4(), {"title": "Book", "custom_metadata": envelope, "series_id": "explicit"}),
+        mutation(
+            "books",
+            uuid4(),
+            {"title": "Book", "custom_metadata": metadata, "series_id": "series", "file_size": 100},
+        ),
     )
 
     assert response.status_code == 200, response.text
     row = (await db_session.execute(text("SELECT series_id, file_size, is_physical, custom_metadata FROM books"))).one()
-    assert row == ("explicit", 42, True, envelope)
+    assert row == ("series", 100, False, metadata)
 
 
 async def test_foreign_reference_rolls_back_mixed_batch(client, auth_headers, db_session):
@@ -286,7 +283,7 @@ async def test_concurrent_patches_preserve_unrelated_values(client, auth_headers
             mutation(
                 "books",
                 book,
-                {"title": "Book", "author": "Author", "custom_metadata": {"custom_metadata": {"keep": True}}},
+                {"title": "Book", "author": "Author", "custom_metadata": {"keep": True}},
             ),
         )
     ).status_code == 200
@@ -316,7 +313,7 @@ async def test_concurrent_patches_preserve_unrelated_values(client, auth_headers
 
     assert [result.status_code for result in results] == [200, 200]
     row = (await db_session.execute(text("SELECT title, author, custom_metadata FROM books"))).one()
-    assert row == ("New title", "New author", {"custom_metadata": {"keep": True}})
+    assert row == ("New title", "New author", {"keep": True})
 
 
 async def test_library_field_validation_is_atomic(client, auth_headers, db_session):
