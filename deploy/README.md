@@ -75,7 +75,9 @@ are assembled from them. Do not rotate the JWT private key on ordinary deploys.
 Configure a real SMTP provider with TLS, verified sender, and its credentials;
 Mailpit is for local development. Add Google OAuth credentials if testing Google
 sign-in. Extract the matching client's `web-release` artifact into `web/`, so
-`web/index.html` exists. The mobile app does not require visiting the web app for
+`web/index.html` exists, then run `python3 migrate_web_layout.py` to initialize
+`web/current/index.html`. This preserves the flat files and snapshots the initial
+release. Subsequent client releases activate versioned directories atomically. The mobile app does not require visiting the web app for
 ordinary reading, but registration verification/reset emails use its routes.
 
 If the GHCR package is private, authenticate Docker on the VM with a restricted
@@ -137,3 +139,20 @@ References:
 - [Hetzner Cloud firewalls](https://docs.hetzner.com/cloud/firewalls/overview/)
 - [Docker Compose deployment](https://docs.docker.com/compose/how-tos/production/)
 - [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https)
+
+## Updating the web delivery layout
+
+For an existing deployment, run `python3 migrate_web_layout.py` from `deploy/`
+before installing the updated Caddyfile. It leaves the running flat directory
+intact. Copy the new Caddyfile into the existing bind-mounted file (preserve its
+inode), then validate and reload only the web process:
+
+```sh
+docker compose --env-file production.env exec -T web caddy validate --config /etc/caddy/Caddyfile
+docker compose --env-file production.env exec -T web caddy reload --config /etc/caddy/Caddyfile
+```
+
+Keep the parent `web` directory mounted at `/srv/web`. Check `/` and `/login` after
+migration. Client delivery credentials and the restricted receiver are documented
+in the client's `docs/RELEASING.md`. This migration needs no database changes and
+must not run the full server deployment script or restart API/PowerSync services.

@@ -48,8 +48,10 @@ def main() -> None:
     for name in ("powersync-private.pem", "powersync-public.pem"):
         if not (directory / "secrets" / name).is_file():
             raise ValueError(f"Missing secrets/{name}; see the deployment runbook")
-    if not (directory / "web/index.html").is_file():
-        raise ValueError("Missing web/index.html; extract the client web-release artifact into deploy/web")
+    if not (directory / "web/current/index.html").is_file():
+        raise ValueError(
+            "Missing web/current/index.html; initialize the versioned web layout in the deployment runbook"
+        )
     print("Deployment configuration validated")
 
 
