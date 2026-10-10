@@ -115,6 +115,11 @@ artifact before running `./deploy.sh`. Check Alembic current/head before/after a
 release and investigate `alembic check` differences. Do not downgrade migrations
 or assume rolling back an image reverses a data migration.
 
+The publication bootstrap reads the release SQL through standard input. A running
+database container can retain an older inode for its individual file bind mount
+after configuration replacement; do not execute the mounted file during upgrades.
+Verify that `pg_publication_tables` includes every configured sync table.
+
 Before each release, take a PostgreSQL dump of the application database and a
 consistent media backup. Keep encrypted, off-host backups of the database, media,
 production environment and JWT keys; perform an actual restore drill. The named
