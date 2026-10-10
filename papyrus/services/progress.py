@@ -1,5 +1,6 @@
 """Real activity-backed sessions and cross-device statistics."""
 
+from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 from uuid import UUID, uuid4
 
@@ -27,7 +28,7 @@ from papyrus.schemas.tracking import Activity, GoalDefinition
 from papyrus.services.goal_progress import effective_activities, project_goal, union_length
 from papyrus.services.goals import activities
 from papyrus.services.library_sync import owned_row
-from papyrus.services.sync import apply_powersync_upload_batch
+from papyrus.services.sync import apply_powersync_upload_batch, lock_owner_mutations
 
 
 def session_response(activity: Activity) -> ReadingSession:
@@ -39,7 +40,9 @@ def session_response(activity: Activity) -> ReadingSession:
         end_time=activity.end_time,
         pages_read=activity.pages,
         duration_minutes=int((activity.end_time - activity.start_time).total_seconds()) // 60,
-        device_type=activity.source,
+        start_position=activity.start_position,
+        end_position=activity.end_position,
+        device_type=activity.device_type if activity.device_type is not None else activity.source,
         device_name=activity.device_id,
         created_at=activity.created_at,
     )
@@ -55,9 +58,11 @@ def grouped_sessions(entries: list[Activity]) -> list[ReadingSession]:
 
     for group in groups.values():
         first = min(group, key=lambda entry: entry.start_time)
-        end = max(entry.end_time for entry in group)
+        last = max(group, key=lambda entry: entry.end_time)
+        end = last.end_time
         result = session_response(first)
         result.end_time = end
+        result.end_position = last.end_position
 
         result.duration_minutes = (
             int(union_length([(entry.start_time.timestamp(), entry.end_time.timestamp()) for entry in group])) // 60
@@ -116,6 +121,8 @@ async def list_sessions(
 
 
 async def create_session(session: AsyncSession, user_id: UUID, request: CreateReadingSessionRequest) -> ReadingSession:
+    await lock_owner_mutations(session, user_id)
+
     book = await owned_row(
         session,
         user_id,
@@ -146,6 +153,9 @@ async def create_session(session: AsyncSession, user_id: UUID, request: CreateRe
                 original.book_id != request.book_id
                 or original.start_time != start
                 or (requested_end is not None and original.end_time != requested_end)
+                or original.start_position != request.start_position
+                or original.end_position != request.end_position
+                or original.device_type != request.device_type
                 or original.pages != (request.pages_read or 0)
                 or original.device_id != (request.device_name or "manual")
             ):
@@ -173,6 +183,9 @@ async def create_session(session: AsyncSession, user_id: UUID, request: CreateRe
             start_time=start,
             end_time=end,
             created_at=datetime.now(UTC),
+            start_position=request.start_position,
+            end_position=request.end_position,
+            device_type=request.device_type,
             pages=request.pages_read or 0,
             device_id=request.device_name or "manual",
             shelf_ids=shelves,
@@ -211,6 +224,61 @@ def totals_definition(start: datetime, end: datetime, book_id: UUID | None = Non
     )
 
 
+def overlaps_period(activity: Activity, start: datetime, end: datetime) -> bool:
+    if activity.start_time == activity.end_time:
+        return start <= activity.start_time < end
+
+    return activity.start_time < end and activity.end_time > start
+
+
+def current_reading_streak(ledger: list[Activity], now: datetime) -> int:
+    """Union complete day ranges and partial boundary days without walking long activities."""
+    boundaries: dict[date, list[tuple[float, float]]] = defaultdict(list)
+    qualified_ranges: list[tuple[int, int]] = []
+
+    for activity in ledger:
+        if activity.kind != "reading":
+            continue
+
+        start = activity.start_time.astimezone(UTC)
+        end = min(activity.end_time, now).astimezone(UTC)
+
+        if start >= end:
+            continue
+
+        if start.date() == end.date():
+            boundaries[start.date()].append((start.timestamp(), end.timestamp()))
+            continue
+
+        next_day = datetime.combine(start.date() + timedelta(days=1), time.min, UTC)
+        last_day = datetime.combine(end.date(), time.min, UTC)
+        boundaries[start.date()].append((start.timestamp(), next_day.timestamp()))
+        boundaries[end.date()].append((last_day.timestamp(), end.timestamp()))
+        first_complete, last_complete = start.date().toordinal() + 1, end.date().toordinal() - 1
+
+        if first_complete <= last_complete:
+            qualified_ranges.append((first_complete, last_complete))
+
+    for day, intervals in boundaries.items():
+        if union_length(intervals) >= 300:
+            qualified_ranges.append((day.toordinal(), day.toordinal()))
+
+    merged: list[tuple[int, int]] = []
+
+    for first, last in sorted(qualified_ranges):
+        if merged and first <= merged[-1][1] + 1:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], last))
+        else:
+            merged.append((first, last))
+
+    today = now.astimezone(UTC).date().toordinal()
+
+    if merged and merged[-1][1] in {today, today - 1}:
+        return merged[-1][1] - merged[-1][0] + 1
+
+    return 0
+
+
 async def statistics(
     session: AsyncSession, user_id: UUID, start_date: date | None, end_date: date | None
 ) -> ReadingStatistics:
@@ -227,12 +295,9 @@ async def statistics(
     total = project_goal(totals_definition(start, end), ledger, now)
     real = effective_activities(ledger)
 
-    counted = [
-        entry for entry in real if entry.kind == "reading" and entry.start_time < end and entry.end_time >= start
-    ]
+    counted = [entry for entry in real if entry.kind == "reading" and overlaps_period(entry, start, end)]
 
     daily = []
-    reading_dates = []
     longest = streak = 0
 
     for index in range((last - first).days + 1):
@@ -240,9 +305,7 @@ async def statistics(
         next_day = day + timedelta(days=1)
         values = project_goal(totals_definition(day, next_day), ledger, now)
 
-        count = len(
-            {entry.session_id or entry.id for entry in counted if entry.start_time < next_day and entry.end_time > day}
-        )
+        count = len({entry.session_id or entry.id for entry in counted if overlaps_period(entry, day, next_day)})
 
         daily.append(
             DailyBreakdown(
@@ -254,18 +317,10 @@ async def statistics(
         )
 
         if values["seconds"] >= 300:
-            reading_dates.append(day.date())
             streak += 1
             longest = max(longest, streak)
         else:
             streak = 0
-
-    current = 0
-    cursor = today if today in reading_dates else today - timedelta(days=1)
-
-    while cursor in reading_dates:
-        current += 1
-        cursor -= timedelta(days=1)
 
     books = {entry.book_id: entry.book_title for entry in counted}
     breakdown = []
@@ -294,7 +349,7 @@ async def statistics(
             sessions_count=sessions_count,
             average_session_minutes=total["seconds"] / 60 / sessions_count if sessions_count else 0,
             reading_days=total["days"],
-            current_streak=current,
+            current_streak=current_reading_streak(real, now),
             longest_streak=longest,
         ),
         daily_breakdown=daily,

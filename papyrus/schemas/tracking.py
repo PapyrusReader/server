@@ -127,6 +127,9 @@ class PageCoverage(BaseModel):
 
 class Activity(TrackingPayload):
     session_id: UUID | None = None
+    start_position: float | None = Field(default=None, ge=0, le=1)
+    end_position: float | None = Field(default=None, ge=0, le=1)
+    device_type: str | None = None
     book_id: UUID
     book_title: str = Field(min_length=1, max_length=500)
     start_time: AwareDatetime
