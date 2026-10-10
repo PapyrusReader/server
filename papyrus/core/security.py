@@ -39,6 +39,7 @@ def _load_pem_configured_value(value: str | None, file_path: Path | None) -> str
 @lru_cache
 def _get_powersync_private_key() -> Any:
     settings = get_settings()
+
     private_key_pem = _load_pem_configured_value(
         settings.powersync_jwt_private_key,
         settings.powersync_jwt_private_key_path,
@@ -56,6 +57,7 @@ def _get_powersync_private_key() -> Any:
 @lru_cache
 def _get_powersync_public_key() -> Any:
     settings = get_settings()
+
     public_key_pem = _load_pem_configured_value(
         settings.powersync_jwt_public_key,
         settings.powersync_jwt_public_key_path,
@@ -70,6 +72,7 @@ def _get_powersync_public_key() -> Any:
 @lru_cache
 def _get_powersync_previous_public_key() -> Any | None:
     settings = get_settings()
+
     public_key_pem = _load_pem_configured_value(
         settings.powersync_jwt_previous_public_key,
         settings.powersync_jwt_previous_public_key_path,
@@ -91,6 +94,7 @@ def _public_key_to_jwk(public_key: Any, key_id: str) -> dict[str, Any]:
             "use": "sig",
         }
     )
+
     return jwk
 
 
@@ -103,6 +107,7 @@ def _create_signed_token(
 ) -> str:
     issued_at = datetime.now(UTC)
     payload = data.copy()
+
     payload.update(
         {
             "iat": issued_at,
@@ -110,6 +115,7 @@ def _create_signed_token(
             "type": token_type,
         }
     )
+
     return jwt.encode(payload, secret, algorithm=algorithm)
 
 
@@ -144,31 +150,53 @@ def decrypt_secret_payload(token: str) -> dict[str, str]:
         decoded = _get_credentials_cipher().decrypt(token.encode("utf-8")).decode("utf-8")
     except InvalidToken as exc:
         raise ValueError("Encrypted credential payload is invalid") from exc
+
     payload = json_loads(decoded)
+
     if not isinstance(payload, dict) or not all(
         isinstance(key, str) and isinstance(value, str) for key, value in payload.items()
     ):
         raise ValueError("Encrypted credential payload has an invalid shape")
+
     return payload
 
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
     settings = get_settings()
     ttl = expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
-    return _create_signed_token(data, "access", ttl, settings.secret_key, settings.algorithm)
+
+    return _create_signed_token(
+        data,
+        "access",
+        ttl,
+        settings.secret_key,
+        settings.algorithm,
+    )
 
 
 def create_state_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
     settings = get_settings()
     ttl = expires_delta or timedelta(minutes=settings.oauth_state_expire_minutes)
-    return _create_signed_token(data, "oauth_state", ttl, settings.secret_key, settings.algorithm)
+
+    return _create_signed_token(
+        data,
+        "oauth_state",
+        ttl,
+        settings.secret_key,
+        settings.algorithm,
+    )
 
 
 def decode_token(token: str) -> dict[str, Any] | None:
     settings = get_settings()
 
     try:
-        return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm], options={"verify_aud": False})
+        return jwt.decode(
+            token,
+            settings.secret_key,
+            algorithms=[settings.algorithm],
+            options={"verify_aud": False},
+        )
     except jwt.PyJWTError:
         return None
 
@@ -192,6 +220,7 @@ def create_powersync_token(user_id: str, expires_delta: timedelta | None = None)
     issued_at = datetime.now(UTC)
     expires_at = issued_at + ttl
     headers = {"kid": settings.powersync_jwt_key_id}
+
     payload = {
         "sub": user_id,
         "aud": settings.powersync_jwt_audience,
@@ -200,7 +229,13 @@ def create_powersync_token(user_id: str, expires_delta: timedelta | None = None)
         "type": "powersync",
     }
 
-    token = jwt.encode(payload, _get_powersync_private_key(), algorithm="RS256", headers=headers)
+    token = jwt.encode(
+        payload,
+        _get_powersync_private_key(),
+        algorithm="RS256",
+        headers=headers,
+    )
+
     return token, int(ttl.total_seconds())
 
 

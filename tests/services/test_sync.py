@@ -22,6 +22,7 @@ async def _create_user(session: AsyncSession, email: str) -> User:
         primary_email_verified=True,
         last_login_at=datetime.now(UTC),
     )
+
     session.add(user)
     await session.flush()
     return user
@@ -36,6 +37,7 @@ async def _create_book(session: AsyncSession, user: User, title: str = "Existing
         added_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
     session.add(book)
     await session.flush()
     return book
@@ -48,6 +50,7 @@ async def test_apply_powersync_upload_batch_handles_book_mutations(
     async with test_session_maker() as session:
         user = await _create_user(session, "sync@example.com")
         book_id = str(uuid4())
+
         applied_count = await sync_service.apply_powersync_upload_batch(
             session,
             user.user_id,

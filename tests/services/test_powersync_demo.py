@@ -21,6 +21,7 @@ async def _create_user(session: AsyncSession, email: str) -> User:
         primary_email_verified=True,
         last_login_at=datetime.now(UTC),
     )
+
     session.add(user)
     await session.flush()
     return user
@@ -63,7 +64,6 @@ async def test_apply_upload_batch_creates_updates_and_deletes_demo_items(
         )
 
         assert updated == 1
-
         items = await powersync_demo_service.list_demo_items(session, user.user_id)
         assert len(items) == 1
         assert items[0].title == "Updated"
@@ -72,7 +72,13 @@ async def test_apply_upload_batch_creates_updates_and_deletes_demo_items(
         deleted = await powersync_demo_service.apply_upload_batch(
             session,
             user.user_id,
-            [PowerSyncUploadMutation(type="demo_items", op="DELETE", id=item_id)],
+            [
+                PowerSyncUploadMutation(
+                    type="demo_items",
+                    op="DELETE",
+                    id=item_id,
+                )
+            ],
         )
 
         assert deleted == 1
@@ -86,6 +92,7 @@ async def test_apply_upload_batch_rejects_other_users_demo_items(
     async with test_session_maker() as session:
         owner = await _create_user(session, "owner@example.com")
         intruder = await _create_user(session, "intruder@example.com")
+
         item = PowerSyncDemoItem(
             item_id=uuid4(),
             owner_user_id=owner.user_id,
@@ -94,6 +101,7 @@ async def test_apply_upload_batch_rejects_other_users_demo_items(
             created_at=datetime.now(UTC),
             updated_at=datetime.now(UTC),
         )
+
         session.add(item)
         await session.commit()
 

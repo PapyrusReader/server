@@ -26,6 +26,7 @@ async def _seed_user_with_session(
         primary_email_verified=True,
         last_login_at=datetime.now(UTC),
     )
+
     session.add(user)
     await session.flush()
     session.add(PasswordCredential(user_id=user.user_id, password_hash=hash_password(password)))
@@ -38,6 +39,7 @@ async def _seed_user_with_session(
         expires_at=datetime.now(UTC) + timedelta(days=30),
         last_seen_at=datetime.now(UTC),
     )
+
     session.add(auth_session)
     await session.commit()
     await session.refresh(user)
@@ -51,7 +53,14 @@ async def test_change_user_password_revokes_sessions(
     """Test password changes revoke active sessions."""
     async with test_session_maker() as session:
         user, _ = await _seed_user_with_session(session)
-        await user_service.change_user_password(session, user.user_id, "SecureP@ss123", "NewSecureP@ss123")
+
+        await user_service.change_user_password(
+            session,
+            user.user_id,
+            "SecureP@ss123",
+            "NewSecureP@ss123",
+        )
+
         session_result = await session.execute(select(AuthSession).where(AuthSession.user_id == user.user_id))
         assert all(auth_session.revoked_at is not None for auth_session in session_result.scalars())
 
@@ -64,7 +73,12 @@ async def test_change_user_password_rejects_invalid_current_password(
         user, _ = await _seed_user_with_session(session)
 
         with pytest.raises(UnauthorizedError):
-            await user_service.change_user_password(session, user.user_id, "WrongPassword123", "NewSecureP@ss123")
+            await user_service.change_user_password(
+                session,
+                user.user_id,
+                "WrongPassword123",
+                "NewSecureP@ss123",
+            )
 
 
 async def test_delete_user_account_disables_user_and_revokes_sessions(

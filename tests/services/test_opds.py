@@ -37,6 +37,7 @@ def transport(monkeypatch: pytest.MonkeyPatch) -> tuple[list[http.client.HTTPRes
         item.address = address
         item._aborted = False
         result = responses.pop(0)
+
         if isinstance(result, Exception):
             item.getresponse.side_effect = result
         else:
@@ -65,13 +66,20 @@ def request(**kwargs: object) -> OpdsRelayRequest:
 
 def test_streams_redirected_bytes_with_final_url_and_origin_scoped_credentials(transport) -> None:
     responses, connections = transport
+
     responses.extend(
         [
             upstream(status=302, Location="/edition"),
             upstream(status=307, Location="https://cdn.example/book.epub"),
-            upstream(b"epub bytes", Content_Type="application/epub+zip", Content_Length="10", Set_Cookie="secret=1"),
+            upstream(
+                b"epub bytes",
+                Content_Type="application/epub+zip",
+                Content_Length="10",
+                Set_Cookie="secret=1",
+            ),
         ]
     )
+
     resource = opds.open_resource(request(credentials={"username": "reader", "password": "secret"}))
     assert resource.url == "https://cdn.example/book.epub"
     assert resource.length == 10
@@ -100,6 +108,7 @@ def test_streams_redirected_bytes_with_final_url_and_origin_scoped_credentials(t
 def test_rejects_nonpublic_dns_answers_before_connecting(transport, monkeypatch, address: str) -> None:
     _, connections = transport
     monkeypatch.setattr(socket, "getaddrinfo", lambda *args, **kwargs: [(2, 1, 6, "", (address, 80))])
+
     with pytest.raises(opds.OpdsRelayError, match="public"):
         opds.open_resource(request())
 
@@ -109,6 +118,7 @@ def test_rejects_nonpublic_dns_answers_before_connecting(transport, monkeypatch,
 def test_rechecks_redirect_hosts_and_releases_connection(transport, monkeypatch) -> None:
     responses, connections = transport
     responses.append(upstream(status=302, Location="http://internal.example/private"))
+
     monkeypatch.setattr(
         socket,
         "getaddrinfo",
@@ -125,6 +135,7 @@ def test_rechecks_redirect_hosts_and_releases_connection(transport, monkeypatch)
             )
         ],
     )
+
     with pytest.raises(opds.OpdsRelayError, match="public"):
         opds.open_resource(request(url="http://books.example/feed"))
 
@@ -141,6 +152,7 @@ def test_rejects_mixed_public_and_private_dns_answers(transport, monkeypatch) ->
             (2, 1, 6, "", ("127.0.0.1", 80)),
         ],
     )
+
     with pytest.raises(opds.OpdsRelayError, match="public"):
         opds.open_resource(request())
 
@@ -165,6 +177,7 @@ def test_rejects_unsafe_url_syntax(transport, url: str) -> None:
 def test_maps_upstream_errors_without_exposing_response_content(transport, status: int, expected: int) -> None:
     responses, connections = transport
     responses.append(upstream(b"upstream private error details", status=status))
+
     with pytest.raises(opds.OpdsRelayError) as error:
         opds.open_resource(request())
 
@@ -177,6 +190,7 @@ def test_maps_upstream_errors_without_exposing_response_content(transport, statu
 def test_limits_known_and_unknown_length_streams_and_closes(transport, headers: dict[str, str]) -> None:
     responses, connections = transport
     responses.append(upstream(b"12345", **headers))
+
     with pytest.raises(opds.OpdsRelayError, match="too large"):
         resource = opds.open_resource(request(max_bytes=4))
         list(resource.chunks())
@@ -188,6 +202,7 @@ def test_truncated_stream_fails_and_closes(transport) -> None:
     responses, connections = transport
     responses.append(upstream(b"123", Content_Length="5"))
     resource = opds.open_resource(request())
+
     with pytest.raises(opds.OpdsRelayError, match="incomplete"):
         list(resource.chunks())
 
@@ -197,6 +212,7 @@ def test_truncated_stream_fails_and_closes(transport) -> None:
 def test_enforces_concurrency_and_releases_unstarted_streams(transport) -> None:
     responses, _ = transport
     resources = []
+
     for _ in range(8):
         responses.append(upstream())
         resources.append(opds.open_resource(request()))
@@ -214,8 +230,10 @@ def test_enforces_concurrency_and_releases_unstarted_streams(transport) -> None:
 
 def test_failed_requests_release_slots_and_sanitize_errors(transport) -> None:
     responses, _ = transport
+
     for _ in range(10):
         responses.append(OSError("secret network details"))
+
         with pytest.raises(opds.OpdsRelayError, match="could not connect") as error:
             opds.open_resource(request())
 
@@ -225,17 +243,20 @@ def test_failed_requests_release_slots_and_sanitize_errors(transport) -> None:
 def test_redirect_limit_and_https_downgrade(transport) -> None:
     responses, connections = transport
     responses.extend(upstream(status=302, Location="/loop") for _ in range(6))
+
     with pytest.raises(opds.OpdsRelayError, match="too many"):
         opds.open_resource(request())
 
     assert all(connection.close.called for connection in connections)
     responses.append(upstream(status=302, Location="http://books.example/file"))
+
     with pytest.raises(opds.OpdsRelayError, match="insecure"):
         opds.open_resource(request())
 
 
 def test_configured_host_allowlist_is_enforced(transport, monkeypatch) -> None:
     monkeypatch.setattr(get_settings(), "opds_relay_allowed_hosts", ["other.example"])
+
     with pytest.raises(opds.OpdsRelayError, match="not enabled"):
         opds.open_resource(request())
 
@@ -248,9 +269,13 @@ def test_connects_to_checked_ip_with_original_tls_hostname(monkeypatch) -> None:
     connection = opds._PinnedConnection(urlsplit("https://books.example/feed"), "93.184.216.34")
     connection.connect()
     create_connection.assert_called_once_with(("93.184.216.34", 443), timeout=30)
+
     context.wrap_socket.assert_called_once_with(
-        create_connection.return_value, server_hostname="books.example", do_handshake_on_connect=False
+        create_connection.return_value,
+        server_hostname="books.example",
+        do_handshake_on_connect=False,
     )
+
     context.wrap_socket.return_value.do_handshake.assert_called_once()
 
 
@@ -269,19 +294,24 @@ def test_slow_headers_are_interrupted_by_open_timeout(monkeypatch, status_first:
     def trickle() -> None:
         with upstream_socket, suppress(OSError):
             status = b"HTTP/1.1 200 OK\r\n"
+
             if status_first:
                 upstream_socket.sendall(status)
 
             data = (b"" if status_first else status) + b"Content-Type: application/epub+zip\r\n\r\nbook"
+
             for char in data:
                 upstream_socket.send(bytes([char]))
+
                 if stop.wait(0.02):
                     break
 
     worker = threading.Thread(target=trickle, daemon=True)
     worker.start()
+
     try:
         started = time.monotonic()
+
         with pytest.raises(opds.OpdsRelayError) as error:
             opds.open_resource(request(url="http://books.example/feed"))
 
@@ -302,8 +332,10 @@ def test_slow_dns_is_bounded(monkeypatch) -> None:
 
     monkeypatch.setattr(socket, "getaddrinfo", resolve)
     monkeypatch.setattr(opds, "_TIMEOUT", 0.05)
+
     try:
         started = time.monotonic()
+
         with pytest.raises(opds.OpdsRelayError) as error:
             opds.open_resource(request())
 
@@ -336,16 +368,20 @@ def test_chunk_framing_trickle_is_interrupted_by_total_deadline(monkeypatch) -> 
     def trickle() -> None:
         with upstream_socket, suppress(OSError):
             upstream_socket.sendall(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+
             for char in b"000000000000000000000004\r\nbook\r\n0\r\n\r\n":
                 upstream_socket.send(bytes([char]))
+
                 if stop.wait(0.02):
                     break
 
     worker = threading.Thread(target=trickle, daemon=True)
     worker.start()
+
     try:
         started = time.monotonic()
         resource = opds.open_resource(request(url="http://books.example/feed"))
+
         with pytest.raises((http.client.HTTPException, OSError, opds.OpdsRelayError)):
             list(resource.chunks())
 

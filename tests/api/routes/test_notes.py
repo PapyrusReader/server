@@ -28,6 +28,7 @@ async def test_create_note(client: AsyncClient, auth_headers: dict[str, str], bo
             "is_pinned": False,
         },
     )
+
     assert response.status_code == 201
     data = response.json()
     assert data["title"] == "My Note"
@@ -46,6 +47,7 @@ async def test_update_note(client: AsyncClient, auth_headers: dict[str, str], no
         headers=auth_headers,
         json={"title": "Updated Note Title"},
     )
+
     assert response.status_code == 200
 
 

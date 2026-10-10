@@ -96,5 +96,11 @@ async def change_password(
     db: DBSession,
 ) -> MessageResponse:
     """Change the user's password and revoke existing sessions."""
-    await user_service.change_user_password(db, user_id, request.current_password, request.new_password)
+    await user_service.change_user_password(
+        db,
+        user_id,
+        request.current_password,
+        request.new_password,
+    )
+
     return MessageResponse(message="Password changed successfully")

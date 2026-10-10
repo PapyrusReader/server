@@ -21,7 +21,6 @@ from papyrus.models import (
 def test_managed_acquisition_models_expose_download_lifecycle() -> None:
     endpoint_table = AcquisitionEndpoint.__table__
     job_table = AcquisitionJob.__table__
-
     assert "download_root" in endpoint_table.columns
     assert endpoint_table.c.download_root.nullable is True
 
@@ -45,19 +44,23 @@ def test_managed_acquisition_models_expose_download_lifecycle() -> None:
         "completed_at",
         "cancelled_at",
     }.issubset(job_table.columns.keys())
+
     assert job_table.c.download_url.nullable is True
+
     assert {index.name for index in job_table.indexes}.issuperset(
         {
             "ix_acquisition_jobs_owner_status",
             "ix_acquisition_jobs_next_poll_at",
         }
     )
+
     assert any(foreign_key.target_fullname == "books.book_id" for foreign_key in job_table.c.book_id.foreign_keys)
 
 
 def test_media_asset_kind_is_unique_per_book() -> None:
     """Ensure concurrent replacements cannot leave duplicate book media."""
     table = MediaAsset.__table__
+
     unique_columns = {
         tuple(constraint.columns.keys()) for constraint in table.constraints if isinstance(constraint, UniqueConstraint)
     }
@@ -94,6 +97,7 @@ def test_auth_models_are_registered_with_metadata() -> None:
         "last_login_at",
         "disabled_at",
     }
+
     assert set(powersync_demo_items_table.columns.keys()) == {
         "item_id",
         "owner_user_id",
@@ -102,7 +106,10 @@ def test_auth_models_are_registered_with_metadata() -> None:
         "created_at",
         "updated_at",
     }
+
     assert {"book_id", "owner_user_id", "title", "updated_at"}.issubset(books_table.columns.keys())
+
     for table_name in ("shelves", "tags", "notes", "annotations", "book_shelves", "book_tags"):
         assert "owner_user_id" in Base.metadata.tables[table_name].columns
+
     assert "reading_sessions" not in Base.metadata.tables

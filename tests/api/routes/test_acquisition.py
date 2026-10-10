@@ -23,15 +23,19 @@ from papyrus.services.acquisition import jobs as acquisition_jobs
 
 @pytest.fixture(autouse=True)
 def enable_acquisition(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(app_settings, "acquisition_enabled", True, raising=False)
+    monkeypatch.setattr(
+        app_settings,
+        "acquisition_enabled",
+        True,
+        raising=False,
+    )
 
 
 async def test_disabled_capabilities_hide_acquisition_scope(client: AsyncClient) -> None:
     app_settings.acquisition_enabled = False
-
     response = await client.get("/v1/acquisition/capabilities")
-
     assert response.status_code == 200
+
     assert response.json() == {
         "enabled": False,
         "managed_downloads_ready": False,
@@ -48,9 +52,7 @@ async def test_disabled_acquisition_routes_are_not_found(
     auth_headers: dict[str, str],
 ) -> None:
     app_settings.acquisition_enabled = False
-
     response = await client.get("/v1/acquisition/endpoints", headers=auth_headers)
-
     assert response.status_code == 404
 
 
@@ -59,9 +61,14 @@ async def test_capabilities_advertise_torrent_only_scope(
     auth_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(app_settings, "acquisition_import_root", "/imports", raising=False)
-    response = await client.get("/v1/acquisition/capabilities", headers=auth_headers)
+    monkeypatch.setattr(
+        app_settings,
+        "acquisition_import_root",
+        "/imports",
+        raising=False,
+    )
 
+    response = await client.get("/v1/acquisition/capabilities", headers=auth_headers)
     assert response.status_code == 200
     body = response.json()
     assert body["indexer_kinds"] == ["prowlarr", "torznab"]
@@ -76,7 +83,12 @@ async def test_capabilities_report_managed_downloads_not_ready_without_import_ro
     auth_headers: dict[str, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(app_settings, "acquisition_import_root", None, raising=False)
+    monkeypatch.setattr(
+        app_settings,
+        "acquisition_import_root",
+        None,
+        raising=False,
+    )
 
     response = await client.get(
         "/v1/acquisition/capabilities",
@@ -110,14 +122,13 @@ async def test_create_and_list_endpoint_hides_and_encrypts_credentials(
     assert "password" not in response.text
     assert "username" not in response.text
     endpoint = response.json()
-
     response = await client.get("/v1/acquisition/endpoints", headers=auth_headers)
     assert response.status_code == 200
     assert response.json() == [endpoint]
-
     stored = (await db_session.execute(select(AcquisitionEndpoint))).scalar_one()
     assert stored.credentials is not None
     assert "password" not in stored.credentials
+
     assert decrypt_secret_payload(stored.credentials["encrypted"]) == {
         "username": "admin",
         "password": "secret",
@@ -239,6 +250,7 @@ async def test_search_returns_owner_bound_release_tokens_without_download_urls(
         release["release_token"],
         UUID(auth_user["user_id"]),
     )
+
     assert payload.download_url == "https://prowlarr.local/download?apikey=private-key"
 
 
@@ -251,7 +263,13 @@ async def test_batch_submission_creates_a_linked_placeholder_without_persisting_
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(app_settings, "acquisition_import_root", str(tmp_path), raising=False)
+    monkeypatch.setattr(
+        app_settings,
+        "acquisition_import_root",
+        str(tmp_path),
+        raising=False,
+    )
+
     endpoint_response = await client.post(
         "/v1/acquisition/endpoints",
         headers=auth_headers,
@@ -264,18 +282,21 @@ async def test_batch_submission_creates_a_linked_placeholder_without_persisting_
             "download_root": "/downloads",
         },
     )
+
     endpoint_id = UUID(endpoint_response.json()["endpoint_id"])
     owner_user_id = UUID(auth_user["user_id"])
+
     indexer = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="Prowlarr",
         kind="prowlarr",
         base_url="http://prowlarr.local:9696",
     )
+
     db_session.add(indexer)
     await db_session.commit()
-
     release_url = "https://prowlarr.local/download?apikey=private-key"
+
     token = acquisition_service.create_release_token(
         acquisition_service.ReleaseCandidate(
             title="A Test Book",
@@ -289,6 +310,7 @@ async def test_batch_submission_creates_a_linked_placeholder_without_persisting_
         ),
         indexer,
     )
+
     submissions: list[tuple[str, str | None, str | None, list[str] | None]] = []
 
     async def submit_to_client(
@@ -328,12 +350,12 @@ async def test_batch_submission_creates_a_linked_placeholder_without_persisting_
     assert "download_url" not in item["job"]
     assert item["job"]["status"] == "submitted"
     assert item["job"]["book_id"] is not None
-
     job = (await db_session.execute(select(AcquisitionJob))).scalar_one()
     book = (await db_session.execute(select(SyncBook))).scalar_one()
     assert job.book_id == book.book_id == UUID(item["job"]["book_id"])
     assert job.download_url is None
     assert book.title == "A Test Book"
+
     assert submissions == [
         (
             release_url,
@@ -352,12 +374,14 @@ async def test_single_submission_wraps_the_token_only_batch_service(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     endpoint_id = uuid4()
+
     job = AcquisitionJob(
         owner_user_id=UUID(auth_user["user_id"]),
         endpoint_id=None,
         title="A Test Book",
         status="submitted",
     )
+
     db_session.add(job)
     await db_session.flush()
 
@@ -404,8 +428,15 @@ async def test_batch_submission_isolates_invalid_release_tokens(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(app_settings, "acquisition_import_root", str(tmp_path), raising=False)
+    monkeypatch.setattr(
+        app_settings,
+        "acquisition_import_root",
+        str(tmp_path),
+        raising=False,
+    )
+
     owner_user_id = UUID(auth_user["user_id"])
+
     download_client = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -413,14 +444,17 @@ async def test_batch_submission_isolates_invalid_release_tokens(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     indexer = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="Prowlarr",
         kind="prowlarr",
         base_url="http://prowlarr.local:9696",
     )
+
     db_session.add_all([download_client, indexer])
     await db_session.commit()
+
     valid_token = acquisition_service.create_release_token(
         acquisition_service.ReleaseCandidate(
             title="Valid Book",
@@ -453,11 +487,13 @@ async def test_batch_submission_isolates_invalid_release_tokens(
     items = response.json()["items"]
     assert items[0]["job"]["title"] == "Valid Book"
     assert items[0]["error"] is None
+
     assert items[1] == {
         "index": 1,
         "job": None,
         "error": "Release token is invalid or expired",
     }
+
     assert await db_session.scalar(select(func.count()).select_from(AcquisitionJob)) == 1
     assert await db_session.scalar(select(func.count()).select_from(SyncBook)) == 1
 
@@ -472,21 +508,25 @@ async def test_job_list_is_paginated_and_job_detail_is_owner_scoped(
     other_user = User(display_name="Other User")
     db_session.add(other_user)
     await db_session.flush()
+
     first_job = AcquisitionJob(
         owner_user_id=owner_user_id,
         title="First",
         status="submitted",
     )
+
     second_job = AcquisitionJob(
         owner_user_id=owner_user_id,
         title="Second",
         status="failed",
     )
+
     other_job = AcquisitionJob(
         owner_user_id=other_user.user_id,
         title="Private",
         status="submitted",
     )
+
     db_session.add_all([first_job, second_job, other_job])
     await db_session.commit()
 
@@ -528,6 +568,7 @@ async def test_job_files_marks_supported_book_candidates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -535,8 +576,10 @@ async def test_job_files_marks_supported_book_candidates(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     db_session.add(endpoint)
     await db_session.flush()
+
     job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -544,16 +587,36 @@ async def test_job_files_marks_supported_book_candidates(
         status="needs_file_selection",
         client_hash="abc123",
     )
+
     db_session.add(job)
     await db_session.commit()
 
     class FakeQbittorrentClient:
         async def files(self, torrent_hash: str) -> list[acquisition_service.QbittorrentFile]:
             assert torrent_hash == "abc123"
+
             return [
-                acquisition_service.QbittorrentFile(0, "cover.jpg", 100, 10_000, 1),
-                acquisition_service.QbittorrentFile(1, "Book.EPUB", 1024, 10_000, 1),
-                acquisition_service.QbittorrentFile(2, "extras/book.pdf", 2048, 5000, 1),
+                acquisition_service.QbittorrentFile(
+                    0,
+                    "cover.jpg",
+                    100,
+                    10_000,
+                    1,
+                ),
+                acquisition_service.QbittorrentFile(
+                    1,
+                    "Book.EPUB",
+                    1024,
+                    10_000,
+                    1,
+                ),
+                acquisition_service.QbittorrentFile(
+                    2,
+                    "extras/book.pdf",
+                    2048,
+                    5000,
+                    1,
+                ),
             ]
 
     async def connect(endpoint: AcquisitionEndpoint) -> FakeQbittorrentClient:
@@ -571,6 +634,7 @@ async def test_job_files_marks_supported_book_candidates(
     )
 
     assert response.status_code == 200
+
     assert response.json() == [
         {
             "index": 0,
@@ -607,6 +671,7 @@ async def test_file_selection_prioritizes_candidate_and_resumes_job(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -614,8 +679,10 @@ async def test_file_selection_prioritizes_candidate_and_resumes_job(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     db_session.add(endpoint)
     await db_session.flush()
+
     job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -623,6 +690,7 @@ async def test_file_selection_prioritizes_candidate_and_resumes_job(
         status="needs_file_selection",
         client_hash="abc123",
     )
+
     db_session.add(job)
     await db_session.commit()
     selections: list[tuple[str, int, list[int]]] = []
@@ -630,9 +698,27 @@ async def test_file_selection_prioritizes_candidate_and_resumes_job(
     class FakeQbittorrentClient:
         async def files(self, torrent_hash: str) -> list[acquisition_service.QbittorrentFile]:
             return [
-                acquisition_service.QbittorrentFile(0, "cover.jpg", 100, 10_000, 1),
-                acquisition_service.QbittorrentFile(1, "book.epub", 1024, 10_000, 1),
-                acquisition_service.QbittorrentFile(2, "extras/book.pdf", 2048, 5000, 1),
+                acquisition_service.QbittorrentFile(
+                    0,
+                    "cover.jpg",
+                    100,
+                    10_000,
+                    1,
+                ),
+                acquisition_service.QbittorrentFile(
+                    1,
+                    "book.epub",
+                    1024,
+                    10_000,
+                    1,
+                ),
+                acquisition_service.QbittorrentFile(
+                    2,
+                    "extras/book.pdf",
+                    2048,
+                    5000,
+                    1,
+                ),
             ]
 
         async def select_file(
@@ -663,7 +749,6 @@ async def test_file_selection_prioritizes_candidate_and_resumes_job(
     assert response.json()["status"] == "downloading"
     assert response.json()["selected_file_path"] == "extras/book.pdf"
     assert selections == [("abc123", 2, [0, 1, 2])]
-
     await db_session.refresh(job)
     assert job.status == "downloading"
     assert job.selected_file_path == "extras/book.pdf"
@@ -679,6 +764,7 @@ async def test_cancel_job_deletes_partial_data_and_retains_cancelled_placeholder
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -686,9 +772,11 @@ async def test_cancel_job_deletes_partial_data_and_retains_cancelled_placeholder
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     book = SyncBook(owner_user_id=owner_user_id, title="Downloading Book")
     db_session.add_all([endpoint, book])
     await db_session.flush()
+
     job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -697,6 +785,7 @@ async def test_cancel_job_deletes_partial_data_and_retains_cancelled_placeholder
         status="downloading",
         client_hash="abc123",
     )
+
     db_session.add(job)
     await db_session.commit()
     deleted_hashes: list[str] = []
@@ -750,6 +839,7 @@ async def test_cancel_job_waits_for_monitor_transition_before_deleting_torrent(
             base_url="http://qbittorrent.local:8080",
             download_root="/downloads",
         )
+
         setup_session.add(endpoint)
         await setup_session.flush()
 
@@ -760,6 +850,7 @@ async def test_cancel_job_waits_for_monitor_transition_before_deleting_torrent(
             status="downloading",
             client_hash="abc123",
         )
+
         setup_session.add(job)
         await setup_session.commit()
         job_id = job.job_id
@@ -782,6 +873,7 @@ async def test_cancel_job_waits_for_monitor_transition_before_deleting_torrent(
                 select(AcquisitionJob).where(AcquisitionJob.job_id == job_id).with_for_update()
             )
         ).scalar_one()
+
         locked_job.status = "completed"
 
         cancel_task = asyncio.create_task(
@@ -791,10 +883,9 @@ async def test_cancel_job_waits_for_monitor_transition_before_deleting_torrent(
                 job_id,
             )
         )
+
         await asyncio.sleep(0.05)
-
         assert not cancel_task.done()
-
         await monitor_session.commit()
 
         with pytest.raises(HTTPException) as exc_info:
@@ -813,6 +904,7 @@ async def test_delete_failed_job_removes_its_unimported_placeholder(
     book = SyncBook(owner_user_id=owner_user_id, title="Failed Book")
     db_session.add(book)
     await db_session.flush()
+
     job = AcquisitionJob(
         owner_user_id=owner_user_id,
         book_id=book.book_id,
@@ -820,6 +912,7 @@ async def test_delete_failed_job_removes_its_unimported_placeholder(
         status="failed",
         error="Import failed",
     )
+
     db_session.add(job)
     await db_session.commit()
     job_id = job.job_id
@@ -843,6 +936,7 @@ async def test_retry_import_requeues_failed_job_without_resubmitting_download(
     db_session: AsyncSession,
 ) -> None:
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -850,8 +944,10 @@ async def test_retry_import_requeues_failed_job_without_resubmitting_download(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     db_session.add(endpoint)
     await db_session.flush()
+
     job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -861,6 +957,7 @@ async def test_retry_import_requeues_failed_job_without_resubmitting_download(
         submitted_at=datetime.now(UTC),
         error="Import quota exceeded",
     )
+
     db_session.add(job)
     await db_session.commit()
 
@@ -883,6 +980,7 @@ async def test_retry_import_rejects_job_that_never_reached_qbittorrent(
     db_session: AsyncSession,
 ) -> None:
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -890,6 +988,7 @@ async def test_retry_import_rejects_job_that_never_reached_qbittorrent(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     db_session.add(endpoint)
     await db_session.flush()
 
@@ -900,6 +999,7 @@ async def test_retry_import_rejects_job_that_never_reached_qbittorrent(
         status="failed",
         error="qBittorrent rejected the release",
     )
+
     db_session.add(job)
     await db_session.commit()
 
@@ -944,8 +1044,10 @@ async def test_delete_endpoint_is_blocked_while_jobs_are_active(
             "base_url": "http://qbittorrent.local:8080",
         },
     )
+
     endpoint_id = UUID(endpoint_response.json()["endpoint_id"])
     owner_user_id = UUID(auth_user["user_id"])
+
     rule = AcquisitionRule(
         owner_user_id=owner_user_id,
         name="Affected rule",
@@ -954,6 +1056,7 @@ async def test_delete_endpoint_is_blocked_while_jobs_are_active(
         download_client_id=endpoint_id,
         enabled=True,
     )
+
     job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint_id,
@@ -964,9 +1067,7 @@ async def test_delete_endpoint_is_blocked_while_jobs_are_active(
 
     db_session.add_all([rule, job])
     await db_session.commit()
-
     response = await client.delete(f"/v1/acquisition/endpoints/{endpoint_id}", headers=auth_headers)
-
     assert response.status_code == 409
     await db_session.refresh(job)
     await db_session.refresh(rule)
@@ -987,7 +1088,13 @@ async def test_connection_checks_unsaved_endpoint_without_persisting(
     async def test_connection(endpoint: AcquisitionEndpoint) -> None:
         captured.append(endpoint)
 
-    monkeypatch.setattr(acquisition_routes, "test_endpoint_connection", test_connection, raising=False)
+    monkeypatch.setattr(
+        acquisition_routes,
+        "test_endpoint_connection",
+        test_connection,
+        raising=False,
+    )
+
     before_count = await db_session.scalar(select(func.count()).select_from(AcquisitionEndpoint))
 
     response = await client.post(
@@ -1024,12 +1131,19 @@ async def test_connection_merges_owned_endpoint_overrides_without_persisting(
             "api_key": "saved-key",
         },
     )
+
     captured: list[AcquisitionEndpoint] = []
 
     async def test_connection(endpoint: AcquisitionEndpoint) -> None:
         captured.append(endpoint)
 
-    monkeypatch.setattr(acquisition_routes, "test_endpoint_connection", test_connection, raising=False)
+    monkeypatch.setattr(
+        acquisition_routes,
+        "test_endpoint_connection",
+        test_connection,
+        raising=False,
+    )
+
     before_count = await db_session.scalar(select(func.count()).select_from(AcquisitionEndpoint))
 
     response = await client.post(
@@ -1065,6 +1179,7 @@ async def test_connection_rejects_another_users_endpoint(
         kind="prowlarr",
         base_url="http://other-prowlarr.local:9696",
     )
+
     db_session.add(endpoint)
     await db_session.commit()
 

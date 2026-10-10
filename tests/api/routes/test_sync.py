@@ -21,17 +21,18 @@ async def test_sync_settings_are_public_and_hide_implementation_details(client: 
 
     monkeypatch.setattr(app_settings, "powersync_service_url", "https://sync.papyrus.test")
     monkeypatch.setattr(app_settings, "file_storage_quota_bytes", 1_073_741_824)
-
     response = await client.get("/v1/sync/settings")
-
     assert response.status_code == 200
+
     assert response.json() == {
+        "tracking_schema_version": 2,
         "data_sync_url": "https://sync.papyrus.test",
         "file_storage": {
             "supported": True,
             "quota_bytes": 1_073_741_824,
         },
     }
+
     assert "powersync" not in response.text.lower()
 
 
@@ -53,6 +54,7 @@ async def test_powersync_upload_applies_book_mutation(
 ):
     """Test production PowerSync upload endpoint applies owned book mutations."""
     book_id = str(uuid4())
+
     response = await client.post(
         "/v1/sync/powersync-upload",
         headers=auth_headers,
@@ -70,9 +72,9 @@ async def test_powersync_upload_applies_book_mutation(
             ]
         },
     )
+
     assert response.status_code == 200
     assert response.json()["applied_count"] == 1
-
     book = await db_session.get(SyncBook, UUID(book_id))
     assert book is not None
     assert book.owner_user_id == UUID(auth_user["user_id"])
@@ -94,6 +96,7 @@ async def test_powersync_upload_applies_book_patch(
         added_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
     db_session.add(book)
     await db_session.commit()
     book_id = book.book_id
@@ -112,9 +115,9 @@ async def test_powersync_upload_applies_book_patch(
             ]
         },
     )
+
     assert response.status_code == 200
     assert response.json()["applied_count"] == 1
-
     db_session.expire_all()
     patched_book = await db_session.get(SyncBook, book_id)
     assert patched_book is not None
@@ -136,6 +139,7 @@ async def test_powersync_upload_applies_book_delete(
         added_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
     db_session.add(book)
     await db_session.commit()
     book_id = book.book_id
@@ -145,9 +149,9 @@ async def test_powersync_upload_applies_book_delete(
         headers=auth_headers,
         json={"batch": [{"type": "books", "op": "DELETE", "id": str(book.book_id)}]},
     )
+
     assert response.status_code == 200
     assert response.json()["applied_count"] == 1
-
     db_session.expire_all()
     deleted_book = await db_session.get(SyncBook, book_id)
     assert deleted_book is None
@@ -163,6 +167,7 @@ async def test_powersync_upload_rejects_unsupported_table(
         headers=auth_headers,
         json={"batch": [{"type": "reading_sessions", "op": "PUT", "id": str(uuid4()), "data": {"name": "Shelf"}}]},
     )
+
     assert response.status_code == 422
 
 
@@ -177,6 +182,7 @@ async def test_powersync_upload_rejects_partial_future_tables(
             headers=auth_headers,
             json={"batch": [{"type": table, "op": "PUT", "id": str(uuid4()), "data": {}}]},
         )
+
         assert response.status_code == 422
 
 
@@ -198,6 +204,7 @@ async def test_powersync_upload_rejects_unknown_book_fields(
             ]
         },
     )
+
     assert response.status_code == 422
 
 
@@ -208,7 +215,14 @@ async def test_powersync_upload_controls_owner_and_updated_at(
     db_session: AsyncSession,
 ):
     book_id = uuid4()
-    client_timestamp = datetime(2000, 1, 1, tzinfo=UTC)
+
+    client_timestamp = datetime(
+        2000,
+        1,
+        1,
+        tzinfo=UTC,
+    )
+
     response = await client.post(
         "/v1/sync/powersync-upload",
         headers=auth_headers,
@@ -248,8 +262,10 @@ async def test_powersync_upload_rejects_cross_user_book_mutation(
         primary_email_verified=True,
         last_login_at=datetime.now(UTC),
     )
+
     db_session.add(other_user)
     await db_session.flush()
+
     foreign_book = SyncBook(
         book_id=uuid4(),
         owner_user_id=other_user.user_id,
@@ -257,6 +273,7 @@ async def test_powersync_upload_rejects_cross_user_book_mutation(
         added_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
     db_session.add(foreign_book)
     await db_session.commit()
 
@@ -274,6 +291,7 @@ async def test_powersync_upload_rejects_cross_user_book_mutation(
             ]
         },
     )
+
     assert response.status_code == 403
 
 
@@ -287,6 +305,7 @@ async def test_powersync_upload_accepts_owned_media_references(
 ):
     monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
     book_id = uuid4()
+
     book = SyncBook(
         book_id=book_id,
         owner_user_id=UUID(auth_user["user_id"]),
@@ -294,14 +313,17 @@ async def test_powersync_upload_accepts_owned_media_references(
         added_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
     db_session.add(book)
     await db_session.commit()
+
     upload = await client.post(
         "/v1/media",
         headers=auth_headers,
         data={"book_id": str(book_id), "kind": "cover_image"},
         files={"file": ("cover.png", b"png bytes", "image/png")},
     )
+
     assert upload.status_code == 201
     asset_id = upload.json()["asset_id"]
 
@@ -360,6 +382,7 @@ async def test_powersync_book_delete_removes_media_files_after_commit(
 ):
     monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
     book_id = uuid4()
+
     book = SyncBook(
         book_id=book_id,
         owner_user_id=UUID(auth_user["user_id"]),
@@ -367,14 +390,17 @@ async def test_powersync_book_delete_removes_media_files_after_commit(
         added_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
     db_session.add(book)
     await db_session.commit()
+
     upload = await client.post(
         "/v1/media",
         headers=auth_headers,
         data={"book_id": str(book_id), "kind": "book_file"},
         files={"file": ("book.epub", b"epub bytes", "application/epub+zip")},
     )
+
     assert upload.status_code == 201
     media_path = tmp_path / upload.json()["storage_path"]
     assert media_path.exists()
@@ -399,6 +425,7 @@ async def test_powersync_book_delete_keeps_media_file_when_commit_fails(
     monkeypatch.setattr("papyrus.main.settings.file_storage_quota_bytes", 1_073_741_824)
     user_id = UUID(auth_user["user_id"])
     book_id = uuid4()
+
     book = SyncBook(
         book_id=book_id,
         owner_user_id=user_id,
@@ -406,8 +433,10 @@ async def test_powersync_book_delete_keeps_media_file_when_commit_fails(
         added_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
     db_session.add(book)
     await db_session.commit()
+
     asset = await media_service.upload_media(
         db_session,
         user_id,
@@ -415,6 +444,7 @@ async def test_powersync_book_delete_keeps_media_file_when_commit_fails(
         kind="book_file",
         file=UploadFile(filename="book.epub", file=BytesIO(b"epub bytes")),
     )
+
     media_path = tmp_path / asset.storage_path
     assert media_path.exists()
 
@@ -427,7 +457,13 @@ async def test_powersync_book_delete_keeps_media_file_when_commit_fails(
         await sync_service.apply_powersync_upload_batch(
             db_session,
             user_id,
-            [PowerSyncCrudMutation(type="books", op="DELETE", id=str(book_id))],
+            [
+                PowerSyncCrudMutation(
+                    type="books",
+                    op="DELETE",
+                    id=str(book_id),
+                )
+            ],
         )
 
     assert media_path.exists()

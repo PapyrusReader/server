@@ -21,9 +21,7 @@ async def test_auth_sandbox_registered_in_debug_vite_mode(
     """Test the auth sandbox page points at the Vite dev server when enabled."""
     monkeypatch.setattr(app_settings, "dev_pages_use_vite", True)
     monkeypatch.setattr(app_settings, "dev_pages_vite_url", "http://vite.test:5173")
-
     response = await debug_client.get("/__dev/auth-sandbox")
-
     assert response.status_code == 200
     assert "Authentication sandbox" in response.text
     assert "window.__PAPYRUS_DEV_PAGE_CONFIG__ =" in response.text
@@ -46,6 +44,7 @@ async def test_auth_sandbox_renders_built_assets_when_manifest_exists(
 ):
     """Test the auth sandbox uses built assets when Vite mode is disabled."""
     manifest_path = tmp_path / "manifest.json"
+
     manifest_path.write_text(
         json.dumps(
             {
@@ -63,9 +62,7 @@ async def test_auth_sandbox_renders_built_assets_when_manifest_exists(
     monkeypatch.setattr(app_settings, "dev_pages_use_vite", False)
     monkeypatch.setattr(app_settings, "dev_pages_manifest_path", str(manifest_path))
     dev_pages._load_manifest.cache_clear()
-
     response = await debug_client.get("/__dev/auth-sandbox")
-
     assert response.status_code == 200
     assert 'href="/__dev/static/assets/auth-sandbox.css"' in response.text
     assert 'src="/__dev/static/assets/auth-sandbox.js"' in response.text

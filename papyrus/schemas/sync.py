@@ -51,8 +51,13 @@ BOOK_UPLOAD_FIELDS |= frozenset(
         "last_read_at",
     }
 )
+
 ENTITY_FIELDS = frozenset({"owner_user_id", "created_at", "updated_at"})
+
 UPLOAD_FIELDS = {
+    "reading_goals": ENTITY_FIELDS | {"payload"},
+    "reading_activities": ENTITY_FIELDS | {"payload"},
+    "goal_periods": ENTITY_FIELDS | {"payload"},
     "books": BOOK_UPLOAD_FIELDS,
     "shelves": ENTITY_FIELDS
     | {
@@ -82,9 +87,20 @@ class PowerSyncCrudMutation(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    table: Literal["books", "shelves", "tags", "notes", "annotations", "bookmarks", "book_shelves", "book_tags"] = (
-        Field(alias="type")
-    )
+    table: Literal[
+        "books",
+        "shelves",
+        "tags",
+        "notes",
+        "annotations",
+        "bookmarks",
+        "book_shelves",
+        "book_tags",
+        "reading_goals",
+        "reading_activities",
+        "goal_periods",
+    ] = Field(alias="type")
+
     op: Literal["PUT", "PATCH", "DELETE", "put", "patch", "delete"]
     id: str
     op_id: int | None = Field(default=None, alias="op_id")
@@ -123,5 +139,6 @@ class FileStorageSettings(BaseModel):
 class DataSyncSettingsResponse(BaseModel):
     """Public sync settings used by clients for custom server discovery."""
 
+    tracking_schema_version: int = 2
     data_sync_url: str
     file_storage: FileStorageSettings

@@ -24,13 +24,16 @@ async def test_library_revision_backfill_and_metadata(db_session, auth_user):
 
     await db_session.run_sync(lambda session: migrate(session, revision.downgrade))
     envelope = '{"publication_date":"2020-01-02T03:04:05Z","file_size":42,"is_physical":true,"series_id":"descriptor","custom_metadata":{"keep":"value"}}'
+
     await db_session.execute(
         text(
             'INSERT INTO books (book_id, owner_user_id, title, custom_metadata) VALUES (:id, :owner, \'Legacy\', CAST(:metadata AS jsonb)), (:bad_id, :owner, \'Invalid\', \'{"publication_date":"invalid","file_size":"nope"}\'::jsonb)'
         ),
         {"id": uuid4(), "bad_id": uuid4(), "owner": auth_user["user_id"], "metadata": envelope},
     )
+
     await db_session.run_sync(lambda session: migrate(session, revision.upgrade))
+
     row = (
         await db_session.execute(
             text(
@@ -38,13 +41,18 @@ async def test_library_revision_backfill_and_metadata(db_session, auth_user):
             )
         )
     ).one()
+
     assert row == (42, True, "descriptor", {"keep": "value"})
+
     invalid = (
         await db_session.execute(text("SELECT publication_date, file_size FROM books WHERE title = 'Invalid'"))
     ).one()
+
     assert invalid == (None, None)
+
     differences = await db_session.run_sync(
         lambda session: compare_metadata(MigrationContext.configure(session.connection()), Base.metadata)
     )
+
     assert differences == []
     await db_session.commit()

@@ -24,7 +24,13 @@ async def _request(
     """Perform a bounded blocking HTTP request off the event loop."""
 
     def send() -> tuple[int, dict[str, str], bytes]:
-        request = Request(url, data=body, headers=headers or {}, method=method)
+        request = Request(
+            url,
+            data=body,
+            headers=headers or {},
+            method=method,
+        )
+
         try:
             with urlopen(request, timeout=15) as response:  # noqa: S310 - user-owned self-hosted integrations
                 return response.status, dict(response.headers.items()), response.read(5_000_000)
@@ -39,8 +45,10 @@ async def _request(
 def _credentials(endpoint: AcquisitionEndpoint) -> dict[str, str]:
     credentials = endpoint.credentials or {}
     encrypted = credentials.get("encrypted")
+
     if encrypted is None:
         return credentials
+
     try:
         return decrypt_secret_payload(encrypted)
     except ValueError as exc:
@@ -56,23 +64,29 @@ def _json_value(payload: bytes, integration: str) -> object:
 
 def _json_object(payload: bytes, integration: str) -> dict[str, object]:
     value = _json_value(payload, integration)
+
     if not isinstance(value, dict):
         raise HTTPException(status_code=502, detail=f"{integration} returned an invalid response")
+
     return value
 
 
 def _json_array(payload: bytes, integration: str) -> list[dict[str, object]]:
     value = _json_value(payload, integration)
+
     if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
         raise HTTPException(status_code=502, detail=f"{integration} returned an invalid response")
+
     return value
 
 
 def _require_deluge_result(payload: bytes) -> object:
     response = _json_object(payload, "Deluge")
     result = response.get("result")
+
     if response.get("error") is not None or result is None or result is False:
         raise HTTPException(status_code=502, detail="Deluge rejected the request")
+
     return result
 
 

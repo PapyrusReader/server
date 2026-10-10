@@ -17,9 +17,13 @@ class PowerSyncDemoItem(Base):
     __tablename__ = "powersync_demo_items"
 
     item_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+
     owner_user_id: Mapped[UUID] = mapped_column(
-        ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True
+        ForeignKey("users.user_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
+
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

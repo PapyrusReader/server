@@ -39,11 +39,17 @@ def _release_candidate() -> object:
 
 def test_release_token_round_trip_preserves_private_release_data() -> None:
     endpoint = _endpoint("prowlarr")
-    now = datetime(2026, 7, 25, 12, tzinfo=UTC)
+
+    now = datetime(
+        2026,
+        7,
+        25,
+        12,
+        tzinfo=UTC,
+    )
 
     token = acquisition.create_release_token(_release_candidate(), endpoint, now=now)
     payload = acquisition.decode_release_token(token, endpoint.owner_user_id, now=now)
-
     assert payload.endpoint_id == endpoint.endpoint_id
     assert payload.owner_user_id == endpoint.owner_user_id
     assert payload.title == "A Test Book"
@@ -64,7 +70,15 @@ def test_release_token_rejects_another_owner() -> None:
 
 def test_release_token_rejects_expired_or_tampered_values() -> None:
     endpoint = _endpoint("prowlarr")
-    issued_at = datetime(2026, 7, 25, 12, tzinfo=UTC)
+
+    issued_at = datetime(
+        2026,
+        7,
+        25,
+        12,
+        tzinfo=UTC,
+    )
+
     token = acquisition.create_release_token(_release_candidate(), endpoint, now=issued_at)
 
     with pytest.raises(HTTPException) as expired:
@@ -161,7 +175,6 @@ async def test_qbittorrent_connection_test_accepts_empty_204_login(monkeypatch: 
         return 204, {"Set-Cookie": "QBT_SID_8082=test; path=/"}, b""
 
     monkeypatch.setattr(providers, "_request", request)
-
     await acquisition.test_endpoint_connection(_endpoint("qbittorrent"))
 
 
@@ -195,6 +208,7 @@ async def test_qbittorrent_submission_sends_managed_tag_and_save_path(
             (200, {}, b""),
         ]
     )
+
     bodies: list[bytes] = []
 
     async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
@@ -236,6 +250,7 @@ async def test_qbittorrent_client_reuses_login_for_torrent_and_file_queries(
             ),
         ]
     )
+
     requests: list[tuple[str, dict[str, str]]] = []
 
     async def request(url: str, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
@@ -243,17 +258,16 @@ async def test_qbittorrent_client_reuses_login_for_torrent_and_file_queries(
         return next(responses)
 
     monkeypatch.setattr(providers, "_request", request)
-
     client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
     torrent = await client.find_torrent(tag="papyrus:job")
     files = await client.files("abc123")
-
     assert torrent.hash == "abc123"
     assert torrent.progress_basis_points == 5000
     assert torrent.downloaded_bytes == 512
     assert torrent.total_bytes == 1024
     assert torrent.download_speed_bytes_per_second == 128
     assert torrent.eta_seconds == 4
+
     assert files == [
         acquisition.QbittorrentFile(
             index=0,
@@ -263,6 +277,7 @@ async def test_qbittorrent_client_reuses_login_for_torrent_and_file_queries(
             priority=1,
         )
     ]
+
     assert requests[1][0].endswith("api/v2/torrents/info?tag=papyrus%3Ajob")
     assert requests[2][0].endswith("api/v2/torrents/files?hash=abc123")
     assert requests[1][1]["Cookie"] == "QBT_SID_8082=test"
@@ -289,10 +304,8 @@ async def test_qbittorrent_client_reports_completed_content_bytes_and_zero_eta(
         return next(responses)
 
     monkeypatch.setattr(providers, "_request", request)
-
     client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
     torrent = await client.find_torrent(tag="papyrus:job")
-
     assert torrent.downloaded_bytes == 1024
     assert torrent.total_bytes == 1024
     assert torrent.eta_seconds == 0
@@ -313,6 +326,7 @@ async def test_qbittorrent_client_falls_back_to_job_tag_when_saved_hash_is_missi
             ),
         ]
     )
+
     request_urls: list[str] = []
 
     async def request(url: str, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
@@ -320,8 +334,8 @@ async def test_qbittorrent_client_falls_back_to_job_tag_when_saved_hash_is_missi
         return next(responses)
 
     monkeypatch.setattr(providers, "_request", request)
-
     client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
+
     torrent = await client.find_torrent(
         tag="papyrus:job",
         torrent_hash="stale-hash",
@@ -344,15 +358,16 @@ async def test_qbittorrent_client_pauses_and_prioritizes_one_file(
             (200, {}, b""),
         ]
     )
+
     requests: list[tuple[str, dict[str, list[str]]]] = []
 
     async def request(url: str, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
         if body := kwargs.get("body"):
             requests.append((url, parse_qs(cast(bytes, body).decode())))
+
         return next(responses)
 
     monkeypatch.setattr(providers, "_request", request)
-
     client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
     await client.select_file("abc123", selected_index=1, file_indices=[0, 1, 2])
 
@@ -362,17 +377,21 @@ async def test_qbittorrent_client_pauses_and_prioritizes_one_file(
         "filePrio",
         "resume",
     ]
+
     assert requests[1][1] == {"hashes": ["abc123"]}
+
     assert requests[2][1] == {
         "hash": ["abc123"],
         "id": ["0|2"],
         "priority": ["0"],
     }
+
     assert requests[3][1] == {
         "hash": ["abc123"],
         "id": ["1"],
         "priority": ["1"],
     }
+
     assert requests[4][1] == {"hashes": ["abc123"]}
 
 
@@ -390,6 +409,7 @@ async def test_qbittorrent_client_uses_v5_stop_and_start_when_legacy_actions_are
             (200, {}, b""),
         ]
     )
+
     request_urls: list[str] = []
 
     async def request(url: str, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
@@ -397,7 +417,6 @@ async def test_qbittorrent_client_uses_v5_stop_and_start_when_legacy_actions_are
         return next(responses)
 
     monkeypatch.setattr(providers, "_request", request)
-
     client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
     await client.select_file("abc123", selected_index=1, file_indices=[0, 1, 2])
 
@@ -420,19 +439,20 @@ async def test_qbittorrent_client_deletes_torrent_and_downloaded_data(
             (200, {}, b""),
         ]
     )
+
     requests: list[tuple[str, dict[str, list[str]]]] = []
 
     async def request(url: str, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
         if body := kwargs.get("body"):
             requests.append((url, parse_qs(cast(bytes, body).decode())))
+
         return next(responses)
 
     monkeypatch.setattr(providers, "_request", request)
-
     client = await acquisition.QbittorrentClient.connect(_endpoint("qbittorrent"))
     await client.delete_torrent("abc123")
-
     assert requests[1][0].endswith("api/v2/torrents/delete")
+
     assert requests[1][1] == {
         "hashes": ["abc123"],
         "deleteFiles": ["true"],
@@ -448,6 +468,7 @@ async def test_qbittorrent_submission_accepts_lowercase_session_cookie_header(
             (200, {}, b""),
         ]
     )
+
     request_headers: list[dict[str, str]] = []
 
     async def request(*args: object, **kwargs: object) -> tuple[int, dict[str, str], bytes]:
@@ -492,7 +513,5 @@ async def test_arr_commands_use_v3_api(monkeypatch: pytest.MonkeyPatch) -> None:
         return 201, {}, b'{"id":1}'
 
     monkeypatch.setattr(providers, "_request", request)
-
     await acquisition.dispatch_arr_command(_endpoint("readarr"), "BookSearch", [1])
-
     assert urls == ["http://integration.test/api/v3/command"]

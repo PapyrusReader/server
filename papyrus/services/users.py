@@ -34,6 +34,7 @@ async def _revoke_user_sessions(session: AsyncSession, user_id: UUID) -> None:
     result = await session.execute(
         select(AuthSession).where(AuthSession.user_id == user_id, AuthSession.revoked_at.is_(None))
     )
+
     for auth_session in result.scalars():
         auth_session.revoked_at = _now()
 

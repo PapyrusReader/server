@@ -12,6 +12,11 @@ from papyrus.services import media as media_service
 from papyrus.services.library_sync import apply_library_mutation
 
 
+async def lock_owner_mutations(session: AsyncSession, user_id: UUID) -> None:
+    """Hold the owner's mutation lock until the surrounding transaction ends."""
+    await session.execute(select(User.user_id).where(User.user_id == user_id).with_for_update())
+
+
 async def apply_powersync_upload_batch(
     session: AsyncSession,
     user_id: UUID,
@@ -22,7 +27,7 @@ async def apply_powersync_upload_batch(
     media_paths_to_delete: list[Path] = []
 
     try:
-        await session.execute(select(User.user_id).where(User.user_id == user_id).with_for_update())
+        await lock_owner_mutations(session, user_id)
 
         for mutation in batch:
             applied, deleted_media_paths = await apply_library_mutation(session, user_id, mutation)

@@ -124,6 +124,7 @@ def _configured_base_hosts() -> set[str]:
             continue
 
         hostname = urlsplit(base_url).hostname
+
         if hostname is not None:
             hosts.add(hostname.lower())
 

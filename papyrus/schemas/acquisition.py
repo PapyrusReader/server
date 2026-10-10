@@ -62,6 +62,7 @@ class AcquisitionEndpointUpdate(BaseModel):
     def validate_endpoint_url(cls, value: HttpUrl | None) -> HttpUrl | None:
         if value is None:
             return None
+
         return validate_endpoint_url(value)
 
 
@@ -78,12 +79,14 @@ class AcquisitionEndpointTest(BaseModel):
     def validate_endpoint_url(cls, value: HttpUrl | None) -> HttpUrl | None:
         if value is None:
             return None
+
         return validate_endpoint_url(value)
 
     @model_validator(mode="after")
     def validate_endpoint_target(self) -> Self:
         if self.endpoint_id is None and (self.kind is None or self.base_url is None):
             raise ValueError("kind and base_url are required for an unsaved endpoint")
+
         return self
 
 
@@ -218,6 +221,8 @@ class AcquisitionFileSelectionRequest(BaseModel):
 def validate_endpoint_url(value: HttpUrl) -> HttpUrl:
     if value.username or value.password:
         raise ValueError("Endpoint URL must not include credentials")
+
     if value.scheme not in {"http", "https"}:
         raise ValueError("Endpoint URL must use HTTP or HTTPS")
+
     return value

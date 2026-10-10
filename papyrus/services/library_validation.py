@@ -1,4 +1,4 @@
-"""Type conversion and backwards compatibility for library queue payloads."""
+"""Type conversion and validation for library queue payloads."""
 
 from datetime import UTC, datetime
 from math import isfinite
@@ -9,26 +9,6 @@ from sqlalchemy import BigInteger, Boolean, DateTime, Float, Integer, String, Uu
 from sqlalchemy.dialects.postgresql import JSONB
 
 from papyrus.core.exceptions import ValidationError
-from papyrus.models.sync import SyncBook
-
-PROMOTED_BOOK_FIELDS = frozenset(
-    {
-        "publication_date",
-        "file_format",
-        "file_size",
-        "file_hash",
-        "is_physical",
-        "physical_location",
-        "lent_to",
-        "lent_at",
-        "series_id",
-        "series_name",
-        "series_number",
-        "started_at",
-        "completed_at",
-        "last_read_at",
-    }
-)
 
 
 def uuid_value(value: object, name: str) -> UUID:
@@ -36,29 +16,6 @@ def uuid_value(value: object, name: str) -> UUID:
         return UUID(str(value))
     except ValueError as exc:
         raise ValidationError(f"{name} must be a valid UUID") from exc
-
-
-def normalize_book_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Keep the legacy envelope intact while promoting queued legacy values."""
-    envelope = payload.get("custom_metadata")
-
-    if isinstance(envelope, dict):
-        promoted = {}
-
-        for key, value in envelope.items():
-            if key not in PROMOTED_BOOK_FIELDS or key in payload:
-                continue
-
-            try:
-                convert_value(SyncBook.__table__.columns[key], value)
-            except ValidationError:
-                continue
-
-            promoted[key] = value
-
-        return {**promoted, **payload}
-
-    return payload
 
 
 def finite_number(value: Any) -> bool:

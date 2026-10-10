@@ -32,9 +32,12 @@ async def owned_endpoint(session: AsyncSession, owner_user_id: Any, endpoint_id:
             AcquisitionEndpoint.endpoint_id == endpoint_id, AcquisitionEndpoint.owner_user_id == owner_user_id
         )
     )
+
     endpoint = result.scalar_one_or_none()
+
     if endpoint is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Acquisition endpoint not found")
+
     return endpoint
 
 
@@ -72,6 +75,7 @@ async def paginated_jobs(
     total = await session.scalar(
         select(func.count()).select_from(AcquisitionJob).where(AcquisitionJob.owner_user_id == owner_user_id)
     )
+
     result = await session.execute(
         select(AcquisitionJob)
         .where(AcquisitionJob.owner_user_id == owner_user_id)
@@ -160,7 +164,6 @@ async def select_job_file(
     job.error = None
     job.next_poll_at = datetime.now(UTC)
     job.updated_at = datetime.now(UTC)
-
     await session.commit()
     await session.refresh(job)
     return job
@@ -207,7 +210,6 @@ async def cancel_job(
     job.updated_at = now
     job.next_poll_at = None
     job.error = None
-
     await session.commit()
     await session.refresh(job)
     return job
@@ -234,6 +236,7 @@ async def delete_terminal_job(
             )
             .with_for_update()
         )
+
         book = result.scalar_one_or_none()
 
         if book is not None and book.file_media_id is not None:
@@ -275,7 +278,6 @@ async def retry_job_import(
     job.error = None
     job.next_poll_at = now
     job.updated_at = now
-
     await session.commit()
     await session.refresh(job)
     return job
@@ -307,15 +309,30 @@ async def submit_release_batch(
         try:
             release = decode_release_token(token, owner_user_id)
         except HTTPException as exc:
-            results.append(BatchSubmissionResult(index=index, job=None, error=str(exc.detail)))
+            results.append(
+                BatchSubmissionResult(
+                    index=index,
+                    job=None,
+                    error=str(exc.detail),
+                )
+            )
+
             continue
 
         if release.protocol != "torrent" or not release.download_url.startswith(("magnet:", "http://", "https://")):
-            results.append(BatchSubmissionResult(index=index, job=None, error="Release token is invalid or expired"))
+            results.append(
+                BatchSubmissionResult(
+                    index=index,
+                    job=None,
+                    error="Release token is invalid or expired",
+                )
+            )
+
             continue
 
         book_id = uuid4()
         job_id = uuid4()
+
         book = SyncBook(
             book_id=book_id,
             owner_user_id=owner_user_id,
@@ -327,6 +344,7 @@ async def submit_release_batch(
                 }
             },
         )
+
         job = AcquisitionJob(
             job_id=job_id,
             owner_user_id=owner_user_id,
@@ -342,10 +360,8 @@ async def submit_release_batch(
 
         session.add(book)
         await session.flush()
-
         session.add(job)
         await session.flush()
-
         await session.commit()
         await session.refresh(job)
 
@@ -357,6 +373,7 @@ async def submit_release_batch(
                 _managed_download_path(endpoint.download_root, owner_user_id, job_id),
                 tags=[f"papyrus:{job_id}"],
             )
+
             job.status = "submitted"
             job.submitted_at = datetime.now(UTC)
             job.next_poll_at = datetime.now(UTC)
@@ -367,10 +384,16 @@ async def submit_release_batch(
 
         job.lease_owner = None
         job.lease_until = None
-
         await session.commit()
         await session.refresh(job)
-        results.append(BatchSubmissionResult(index=index, job=job, error=None))
+
+        results.append(
+            BatchSubmissionResult(
+                index=index,
+                job=job,
+                error=None,
+            )
+        )
 
     return results
 
@@ -383,6 +406,7 @@ def _managed_download_path(download_root: str, owner_user_id: UUID, job_id: UUID
 
 async def delete_acquisition_endpoint(session: AsyncSession, owner_user_id: Any, endpoint_id: Any) -> None:
     endpoint = await owned_endpoint(session, owner_user_id, endpoint_id)
+
     active_job_id = await session.scalar(
         select(AcquisitionJob.job_id)
         .where(
@@ -416,7 +440,6 @@ async def delete_acquisition_endpoint(session: AsyncSession, owner_user_id: Any,
             rule.enabled = False
 
     await session.flush()
-
     await session.delete(endpoint)
     await session.commit()
 
@@ -434,8 +457,10 @@ async def build_test_endpoint(
         stored_credentials = _credentials(stored_endpoint)
 
     credentials = dict(stored_credentials)
+
     for field in ("api_key", "username", "password"):
         value = getattr(request, field)
+
         if value is not None:
             credentials[field] = value.get_secret_value()
 
@@ -468,10 +493,12 @@ async def build_test_endpoint(
 async def run_rule(session: AsyncSession, rule: AcquisitionRule) -> list[AcquisitionJob]:
     """Run one rule once; callers may schedule this from their worker/cron service."""
     client = await owned_endpoint(session, rule.owner_user_id, rule.download_client_id)
+
     if client.kind in {"readarr", "sonarr", "radarr", "lidarr", "whisparr"}:
         filters = rule.filters or {}
         command = filters.get("arr_command")
         ids = filters.get("arr_ids", [])
+
         if (
             not isinstance(command, str)
             or not isinstance(ids, list)
@@ -481,6 +508,7 @@ async def run_rule(session: AsyncSession, rule: AcquisitionRule) -> list[Acquisi
                 status_code=422,
                 detail="Arr rules require filters.arr_command and filters.arr_ids",
             )
+
         job = AcquisitionJob(
             owner_user_id=rule.owner_user_id,
             endpoint_id=client.endpoint_id,
@@ -488,18 +516,22 @@ async def run_rule(session: AsyncSession, rule: AcquisitionRule) -> list[Acquisi
             title=command,
             download_url=f"arr-command:{command}",
         )
+
         session.add(job)
+
         try:
             job.client_reference = await dispatch_arr_command(client, command, ids)
             job.status = "submitted"
         except HTTPException as exc:
             job.status = "failed"
             job.error = str(exc.detail)
+
         rule.last_run_at = datetime.now(UTC)
         await session.commit()
         return [job]
 
     endpoint_ids = rule.endpoint_ids or []
+
     result = await session.execute(
         select(AcquisitionEndpoint).where(
             AcquisitionEndpoint.owner_user_id == rule.owner_user_id,
@@ -507,12 +539,16 @@ async def run_rule(session: AsyncSession, rule: AcquisitionRule) -> list[Acquisi
             AcquisitionEndpoint.enabled.is_(True),
         )
     )
+
     releases = [release for endpoint in result.scalars() for release in await search_endpoint(endpoint, rule.query)]
+
     if not releases:
         rule.last_run_at = datetime.now(UTC)
         await session.commit()
         return []
+
     selected = sorted(releases, key=lambda release: (release.seeders or 0, release.size_bytes or 0), reverse=True)[0]
+
     job = AcquisitionJob(
         owner_user_id=rule.owner_user_id,
         endpoint_id=client.endpoint_id,
@@ -520,13 +556,22 @@ async def run_rule(session: AsyncSession, rule: AcquisitionRule) -> list[Acquisi
         title=selected.title,
         download_url=selected.download_url,
     )
+
     session.add(job)
+
     try:
-        job.client_reference = await submit_to_client(client, selected.download_url, None, None)
+        job.client_reference = await submit_to_client(
+            client,
+            selected.download_url,
+            None,
+            None,
+        )
+
         job.status = "submitted"
     except HTTPException as exc:
         job.status = "failed"
         job.error = str(exc.detail)
+
     rule.last_run_at = datetime.now(UTC)
     await session.commit()
     return [job]
@@ -535,6 +580,7 @@ async def run_rule(session: AsyncSession, rule: AcquisitionRule) -> list[Acquisi
 async def run_enabled_rules(session: AsyncSession) -> None:
     """Run enabled rules, isolating a failed remote integration from the others."""
     result = await session.execute(select(AcquisitionRule).where(AcquisitionRule.enabled.is_(True)))
+
     for rule in result.scalars():
         try:
             await run_rule(session, rule)

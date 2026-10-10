@@ -29,6 +29,7 @@ DBSession = Annotated[AsyncSession, Depends(get_db)]
 async def get_data_sync_settings() -> DataSyncSettingsResponse:
     """Return public sync capabilities for client custom-server setup."""
     settings = get_settings()
+
     return DataSyncSettingsResponse(
         data_sync_url=settings.powersync_service_url,
         file_storage=FileStorageSettings(

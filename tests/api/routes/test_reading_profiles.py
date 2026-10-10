@@ -25,6 +25,7 @@ async def test_create_reading_profile(client: AsyncClient, auth_headers: dict[st
             "font_size": 18,
         },
     )
+
     assert response.status_code == 201
     data = response.json()
     assert data["name"] == "Dark Mode Profile"
@@ -40,11 +41,13 @@ async def test_get_reading_profile(client: AsyncClient, auth_headers: dict[str, 
 async def test_update_reading_profile(client: AsyncClient, auth_headers: dict[str, str]):
     """Test updating a reading profile."""
     profile_id = str(uuid4())
+
     response = await client.patch(
         f"/v1/reading-profiles/{profile_id}",
         headers=auth_headers,
         json={"font_size": 20},
     )
+
     assert response.status_code == 200
 
 

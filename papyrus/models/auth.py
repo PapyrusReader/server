@@ -38,9 +38,13 @@ class PasswordCredential(Base):
         ForeignKey("users.user_id", ondelete="CASCADE"),
         primary_key=True,
     )
+
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+
     password_changed_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
     )
 
     user: Mapped[User] = relationship(back_populates="password_credential")
@@ -54,12 +58,14 @@ class AuthSession(Base):
     session_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True)
     refresh_token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+
     client_type: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
         default="unknown",
         server_default=text("'unknown'"),
     )
+
     device_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -77,9 +83,13 @@ class AuthExchangeCode(Base):
     code_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     code_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     purpose: Mapped[str] = mapped_column(String(32), nullable=False)
+
     user_id: Mapped[UUID | None] = mapped_column(
-        ForeignKey("users.user_id", ondelete="CASCADE"), nullable=True, index=True
+        ForeignKey("users.user_id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
     )
+
     provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     provider_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     email_at_provider: Mapped[str | None] = mapped_column(String(255), nullable=True)

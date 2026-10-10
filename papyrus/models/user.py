@@ -20,12 +20,14 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     primary_email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+
     primary_email_verified: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=False,
         server_default=text("false"),
     )
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -34,11 +36,13 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+
     password_credential: Mapped[PasswordCredential | None] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
         uselist=False,
     )
+
     sessions: Mapped[list[AuthSession]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",

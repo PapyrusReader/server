@@ -26,6 +26,7 @@ async def test_update_current_user(client: AsyncClient, auth_headers: dict[str, 
         headers=auth_headers,
         json={"display_name": "Updated Name"},
     )
+
     assert response.status_code == 200
     data = response.json()
     assert data["display_name"] == "Updated Name"
@@ -39,6 +40,7 @@ async def test_delete_current_user(client: AsyncClient, auth_headers: dict[str, 
         headers=auth_headers,
         json={"password": auth_user["password"]},
     )
+
     assert response.status_code == 204
     protected_response = await client.get("/v1/users/me", headers=auth_headers)
     assert protected_response.status_code == 401
@@ -59,6 +61,7 @@ async def test_update_user_preferences(client: AsyncClient, auth_headers: dict[s
         headers=auth_headers,
         json={"theme": "light", "notifications_enabled": False},
     )
+
     assert response.status_code == 200
     data = response.json()
     assert data["theme"] == "light"
@@ -75,6 +78,7 @@ async def test_change_password(client: AsyncClient, auth_headers: dict[str, str]
             "new_password": "NewSecureP@ss123",
         },
     )
+
     assert response.status_code == 200
     data = response.json()
     assert "message" in data
@@ -101,6 +105,7 @@ async def test_expired_access_token_is_rejected(client: AsyncClient, auth_user: 
         {"sub": auth_user["user_id"], "sid": auth_user["session_id"]},
         expires_delta=timedelta(seconds=-1),
     )
+
     response = await client.get("/v1/users/me", headers={"Authorization": f"Bearer {expired_token}"})
     assert response.status_code == 401
 

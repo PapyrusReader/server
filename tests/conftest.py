@@ -153,6 +153,7 @@ async def test_session_maker(setup_test_db: None) -> AsyncGenerator[async_sessio
     finally:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
+
         await engine.dispose()
 
 
@@ -171,6 +172,7 @@ async def prod_client(
             yield session
 
     prod_app.dependency_overrides[get_db] = override_get_db
+
     try:
         async with AsyncClient(transport=ASGITransport(app=prod_app), base_url="http://test") as c:
             yield c
@@ -193,6 +195,7 @@ async def debug_client(
             yield session
 
     debug_app.dependency_overrides[get_db] = override_get_db
+
     try:
         async with AsyncClient(transport=ASGITransport(app=debug_app), base_url="http://test") as c:
             yield c
@@ -241,6 +244,7 @@ async def auth_user(
             expires_at=datetime.now(UTC) + timedelta(days=30),
             last_seen_at=datetime.now(UTC),
         )
+
         session.add(auth_session)
         await session.commit()
         access_token = create_access_token({"sub": str(user_uuid), "sid": str(auth_session.session_id)})

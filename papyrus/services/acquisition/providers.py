@@ -38,12 +38,14 @@ class QbittorrentClient:
             raise HTTPException(status_code=422, detail="Endpoint is not qBittorrent")
 
         credentials = _credentials(endpoint)
+
         login = urlencode(
             {
                 "username": credentials.get("username", ""),
                 "password": credentials.get("password", ""),
             }
         ).encode()
+
         response_status, headers, response_payload = await _request(
             _url(endpoint, "api/v2/auth/login"),
             method="POST",
@@ -100,6 +102,7 @@ class QbittorrentClient:
 
     async def files(self, torrent_hash: str) -> list[QbittorrentFile]:
         payload = await self._get_json_array("api/v2/torrents/files", {"hash": torrent_hash})
+
         return [
             QbittorrentFile(
                 index=_required_int(item, "index", "qBittorrent file"),
@@ -141,6 +144,7 @@ class QbittorrentClient:
                 "priority": "1",
             },
         )
+
         await self._post_form(
             "api/v2/torrents/resume",
             {"hashes": torrent_hash},
@@ -234,11 +238,14 @@ def _progress_basis_points(value: object) -> int:
 async def search_endpoint(endpoint: AcquisitionEndpoint, query: str) -> list[ReleaseCandidate]:
     """Search Prowlarr or a Torznab-compatible torrent indexer."""
     credentials = _credentials(endpoint)
+
     if endpoint.kind == "prowlarr":
         request_url = _url(endpoint, f"api/v1/search?{urlencode({'query': query})}")
         response_status, _, payload = await _request(request_url, headers={"X-Api-Key": credentials.get("api_key", "")})
+
         if response_status >= 400:
             raise HTTPException(status_code=502, detail="Prowlarr search failed")
+
         data = _json_array(payload, "Prowlarr")
         releases: list[ReleaseCandidate] = []
 
@@ -271,8 +278,10 @@ async def search_endpoint(endpoint: AcquisitionEndpoint, query: str) -> list[Rel
 
     params = urlencode({"t": "search", "q": query, "apikey": credentials.get("api_key", "")})
     response_status, _, payload = await _request(_url(endpoint, f"api?{params}"))
+
     if response_status >= 400:
         raise HTTPException(status_code=502, detail=f"{endpoint.kind.title()} search failed")
+
     return _parse_torznab(payload, endpoint.name)
 
 
@@ -281,15 +290,20 @@ def _parse_torznab(payload: bytes, indexer: str) -> list[ReleaseCandidate]:
         root = ElementTree.fromstring(payload)
     except ElementTree.ParseError as exc:
         raise HTTPException(status_code=502, detail="Indexer returned invalid XML") from exc
+
     releases: list[ReleaseCandidate] = []
+
     for item in root.findall(".//item"):
         enclosure = item.find("enclosure")
         link = (enclosure.get("url") if enclosure is not None else None) or item.findtext("link")
+
         if not link:
             continue
+
         attrs = {child.attrib.get("name"): child.attrib.get("value") for child in item if child.tag.endswith("attr")}
         size = attrs.get("size")
         seeders = attrs.get("seeders")
+
         releases.append(
             ReleaseCandidate(
                 title=item.findtext("title") or "Untitled",
@@ -302,11 +316,13 @@ def _parse_torznab(payload: bytes, indexer: str) -> list[ReleaseCandidate]:
                 format_hints=_format_hints(item.findtext("title") or "", link),
             )
         )
+
     return releases
 
 
 def _format_hints(title: str, download_url: str) -> list[str]:
     searchable = f"{title} {download_url}".lower()
+
     return [
         extension
         for extension in ("epub", "pdf", "mobi", "azw3", "txt", "cbr", "cbz")
@@ -328,11 +344,20 @@ async def submit_to_client(
 ) -> str | None:
     """Submit a magnet or torrent URL to a supported BitTorrent client."""
     if endpoint.kind == "qbittorrent":
-        return await _submit_qbittorrent(endpoint, download_url, category, save_path, tags=tags)
+        return await _submit_qbittorrent(
+            endpoint,
+            download_url,
+            category,
+            save_path,
+            tags=tags,
+        )
+
     if endpoint.kind == "transmission":
         return await _submit_transmission(endpoint, download_url, save_path)
+
     if endpoint.kind == "deluge":
         return await _submit_deluge(endpoint, download_url, save_path)
+
     raise HTTPException(status_code=422, detail="Endpoint is not a download client")
 
 
@@ -352,6 +377,7 @@ async def dispatch_arr_command(endpoint: AcquisitionEndpoint, command: str, ids:
         "lidarr": {"ArtistSearch", "AlbumSearch", "MissingAlbumSearch"},
         "whisparr": {"SeriesSearch", "EpisodeSearch", "MissingEpisodeSearch"},
     }
+
     if command not in allowed_commands[endpoint.kind]:
         raise HTTPException(status_code=422, detail="Command is not supported by this Servarr application")
 
@@ -367,7 +393,9 @@ async def dispatch_arr_command(endpoint: AcquisitionEndpoint, command: str, ids:
         "AlbumSearch": "albumIds",
         "MissingAlbumSearch": "artistIds",
     }[command]
+
     payload: dict[str, object] = {"name": command}
+
     if ids:
         payload[id_field] = ids[0] if id_field in {"seriesId"} else ids
 
@@ -377,8 +405,10 @@ async def dispatch_arr_command(endpoint: AcquisitionEndpoint, command: str, ids:
         headers={"Content-Type": "application/json", "X-Api-Key": _credentials(endpoint).get("api_key", "")},
         body=json.dumps(payload).encode(),
     )
+
     if response_status >= 400:
         raise HTTPException(status_code=502, detail=f"{endpoint.kind.title()} command failed")
+
     response = _json_object(response_payload, endpoint.kind.title())
     return str(response.get("id")) if response.get("id") is not None else None
 
@@ -392,24 +422,32 @@ async def _submit_qbittorrent(
     tags: list[str] | None = None,
 ) -> str | None:
     credentials = _credentials(endpoint)
+
     login = urlencode(
         {"username": credentials.get("username", ""), "password": credentials.get("password", "")}
     ).encode()
+
     response_status, headers, response_payload = await _request(
         _url(endpoint, "api/v2/auth/login"),
         method="POST",
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         body=login,
     )
+
     if not _qbittorrent_login_succeeded(response_status, response_payload):
         raise HTTPException(status_code=502, detail="qBittorrent authentication failed")
+
     payload = {"urls": download_url}
+
     if category:
         payload["category"] = category
+
     if save_path:
         payload["savepath"] = save_path
+
     if tags:
         payload["tags"] = ",".join(tags)
+
     response_status, _, _ = await _request(
         _url(endpoint, "api/v2/torrents/add"),
         method="POST",
@@ -419,41 +457,59 @@ async def _submit_qbittorrent(
         },
         body=urlencode(payload).encode(),
     )
+
     if response_status >= 400:
         raise HTTPException(status_code=502, detail="qBittorrent rejected the release")
+
     return None
 
 
 async def _submit_transmission(endpoint: AcquisitionEndpoint, download_url: str, save_path: str | None) -> str | None:
     credentials = _credentials(endpoint)
     arguments: dict[str, str] = {"filename": download_url}
+
     if save_path:
         arguments["download-dir"] = save_path
+
     body = json.dumps({"method": "torrent-add", "arguments": arguments}).encode()
     headers = {"Content-Type": "application/json"}
+
     if credentials.get("username"):
         token = base64.b64encode(f"{credentials['username']}:{credentials.get('password', '')}".encode()).decode()
         headers["Authorization"] = f"Basic {token}"
+
     response_status, response_headers, payload = await _request(
-        _url(endpoint, "transmission/rpc"), method="POST", headers=headers, body=body
+        _url(endpoint, "transmission/rpc"),
+        method="POST",
+        headers=headers,
+        body=body,
     )
+
     if response_status == 409:
         headers["X-Transmission-Session-Id"] = response_headers.get("X-Transmission-Session-Id", "")
+
         response_status, _, payload = await _request(
-            _url(endpoint, "transmission/rpc"), method="POST", headers=headers, body=body
+            _url(endpoint, "transmission/rpc"),
+            method="POST",
+            headers=headers,
+            body=body,
         )
+
     if response_status >= 400:
         raise HTTPException(status_code=502, detail="Transmission rejected the release")
 
     response = _json_object(payload, "Transmission")
+
     if response.get("result") != "success":
         raise HTTPException(status_code=502, detail="Transmission rejected the release")
 
     response_arguments = response.get("arguments")
+
     if not isinstance(response_arguments, dict):
         raise HTTPException(status_code=502, detail="Transmission returned an invalid response")
 
     torrent = response_arguments.get("torrent-added") or response_arguments.get("torrent-duplicate")
+
     if not isinstance(torrent, dict):
         return None
 
@@ -465,9 +521,14 @@ async def _submit_deluge(endpoint: AcquisitionEndpoint, download_url: str, save_
     credentials = _credentials(endpoint)
     headers = {"Content-Type": "application/json"}
     login = json.dumps({"method": "auth.login", "params": [credentials.get("password", "")], "id": 1}).encode()
+
     response_status, response_headers, login_payload = await _request(
-        _url(endpoint, "json"), method="POST", headers=headers, body=login
+        _url(endpoint, "json"),
+        method="POST",
+        headers=headers,
+        body=login,
     )
+
     if response_status >= 400:
         raise HTTPException(status_code=502, detail="Deluge authentication failed")
 
@@ -480,7 +541,14 @@ async def _submit_deluge(endpoint: AcquisitionEndpoint, download_url: str, save_
     method = "core.add_torrent_magnet" if download_url.startswith("magnet:") else "core.add_torrent_url"
     body = json.dumps({"method": method, "params": [download_url, options], "id": 2}).encode()
     headers["Cookie"] = response_headers.get("Set-Cookie", "").split(";", 1)[0]
-    response_status, _, payload = await _request(_url(endpoint, "json"), method="POST", headers=headers, body=body)
+
+    response_status, _, payload = await _request(
+        _url(endpoint, "json"),
+        method="POST",
+        headers=headers,
+        body=body,
+    )
+
     if response_status >= 400:
         raise HTTPException(status_code=502, detail="Deluge rejected the release")
 
@@ -500,6 +568,7 @@ async def test_endpoint_connection(endpoint: AcquisitionEndpoint) -> None:
             _url(endpoint, "api/v1/system/status"),
             headers={"X-Api-Key": credentials.get("api_key", "")},
         )
+
         if response_status >= 400:
             raise HTTPException(status_code=502, detail="Prowlarr connection test failed")
 
@@ -509,6 +578,7 @@ async def test_endpoint_connection(endpoint: AcquisitionEndpoint) -> None:
     if endpoint.kind == "torznab":
         params = urlencode({"t": "caps", "apikey": credentials.get("api_key", "")})
         response_status, _, payload = await _request(_url(endpoint, f"api?{params}"))
+
         if response_status >= 400:
             raise HTTPException(status_code=502, detail="Torznab connection test failed")
 
@@ -516,6 +586,7 @@ async def test_endpoint_connection(endpoint: AcquisitionEndpoint) -> None:
             ElementTree.fromstring(payload)
         except ElementTree.ParseError as exc:
             raise HTTPException(status_code=502, detail="Torznab returned invalid XML") from exc
+
         return
 
     if endpoint.kind in {"readarr", "sonarr", "radarr", "lidarr", "whisparr"}:
@@ -523,6 +594,7 @@ async def test_endpoint_connection(endpoint: AcquisitionEndpoint) -> None:
             _url(endpoint, "api/v3/system/status"),
             headers={"X-Api-Key": credentials.get("api_key", "")},
         )
+
         if response_status >= 400:
             raise HTTPException(status_code=502, detail=f"{endpoint.kind.title()} connection test failed")
 
@@ -533,19 +605,23 @@ async def test_endpoint_connection(endpoint: AcquisitionEndpoint) -> None:
         login = urlencode(
             {"username": credentials.get("username", ""), "password": credentials.get("password", "")}
         ).encode()
+
         response_status, _, payload = await _request(
             _url(endpoint, "api/v2/auth/login"),
             method="POST",
             headers={"Content-Type": "application/x-www-form-urlencoded"},
             body=login,
         )
+
         if not _qbittorrent_login_succeeded(response_status, payload):
             raise HTTPException(status_code=502, detail="qBittorrent authentication failed")
+
         return
 
     if endpoint.kind == "transmission":
         body = json.dumps({"method": "session-get", "arguments": {}}).encode()
         headers = {"Content-Type": "application/json"}
+
         if credentials.get("username"):
             token = base64.b64encode(f"{credentials['username']}:{credentials.get('password', '')}".encode()).decode()
             headers["Authorization"] = f"Basic {token}"
@@ -556,26 +632,32 @@ async def test_endpoint_connection(endpoint: AcquisitionEndpoint) -> None:
             headers=headers,
             body=body,
         )
+
         if response_status == 409:
             headers["X-Transmission-Session-Id"] = response_headers.get("X-Transmission-Session-Id", "")
+
             response_status, _, payload = await _request(
                 _url(endpoint, "transmission/rpc"),
                 method="POST",
                 headers=headers,
                 body=body,
             )
+
         if response_status >= 400 or _json_object(payload, "Transmission").get("result") != "success":
             raise HTTPException(status_code=502, detail="Transmission connection test failed")
+
         return
 
     if endpoint.kind == "deluge":
         login = json.dumps({"method": "auth.login", "params": [credentials.get("password", "")], "id": 1}).encode()
+
         response_status, _, payload = await _request(
             _url(endpoint, "json"),
             method="POST",
             headers={"Content-Type": "application/json"},
             body=login,
         )
+
         if response_status >= 400:
             raise HTTPException(status_code=502, detail="Deluge authentication failed")
 
@@ -583,6 +665,7 @@ async def test_endpoint_connection(endpoint: AcquisitionEndpoint) -> None:
             _require_deluge_result(payload)
         except HTTPException as exc:
             raise HTTPException(status_code=502, detail="Deluge authentication failed") from exc
+
         return
 
     raise HTTPException(status_code=422, detail="Endpoint kind is not supported")

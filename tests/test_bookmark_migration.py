@@ -24,12 +24,16 @@ async def test_bookmark_revision_upgrade_downgrade_and_metadata(db_session):
     await db_session.run_sync(lambda session: migrate(session, revision.downgrade))
     assert not await db_session.run_sync(lambda session: inspect(session.connection()).has_table("bookmarks"))
     await db_session.run_sync(lambda session: migrate(session, revision.upgrade))
+
     differences = await db_session.run_sync(
         lambda session: compare_metadata(MigrationContext.configure(session.connection()), Base.metadata)
     )
+
     assert differences == []
+
     constraints = await db_session.run_sync(
         lambda session: inspect(session.connection()).get_check_constraints("bookmarks")
     )
+
     assert {constraint["name"] for constraint in constraints} == {"ck_bookmarks_position_range"}
     await db_session.commit()

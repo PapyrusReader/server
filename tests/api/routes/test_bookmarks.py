@@ -29,6 +29,7 @@ async def test_create_bookmark(client: AsyncClient, auth_headers: dict[str, str]
             "note": "Interesting part",
         },
     )
+
     assert response.status_code == 201
     data = response.json()
     assert data["page_number"] == 42
@@ -47,6 +48,7 @@ async def test_update_bookmark(client: AsyncClient, auth_headers: dict[str, str]
         headers=auth_headers,
         json={"note": "Updated note"},
     )
+
     assert response.status_code == 200
 
 
