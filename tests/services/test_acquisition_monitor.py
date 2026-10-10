@@ -23,8 +23,15 @@ async def test_process_job_persists_active_qbittorrent_progress(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(app_settings, "acquisition_monitor_active_interval_seconds", 2, raising=False)
+    monkeypatch.setattr(
+        app_settings,
+        "acquisition_monitor_active_interval_seconds",
+        2,
+        raising=False,
+    )
+
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -32,8 +39,10 @@ async def test_process_job_persists_active_qbittorrent_progress(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     db_session.add(endpoint)
     await db_session.flush()
+
     job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -41,9 +50,17 @@ async def test_process_job_persists_active_qbittorrent_progress(
         status="submitted",
         client_hash="saved-hash",
     )
+
     db_session.add(job)
     await db_session.commit()
-    now = datetime(2026, 7, 25, 12, tzinfo=UTC)
+
+    now = datetime(
+        2026,
+        7,
+        25,
+        12,
+        tzinfo=UTC,
+    )
 
     class FakeQbittorrentClient:
         async def find_torrent(
@@ -95,9 +112,23 @@ async def test_process_job_imports_one_completed_book_file_and_keeps_source(
 ) -> None:
     media_root = tmp_path / "media"
     import_root = tmp_path / "downloads"
-    monkeypatch.setattr(app_settings, "media_storage_root", str(media_root), raising=False)
-    monkeypatch.setattr(app_settings, "file_storage_quota_bytes", 1_073_741_824, raising=False)
+
+    monkeypatch.setattr(
+        app_settings,
+        "media_storage_root",
+        str(media_root),
+        raising=False,
+    )
+
+    monkeypatch.setattr(
+        app_settings,
+        "file_storage_quota_bytes",
+        1_073_741_824,
+        raising=False,
+    )
+
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -105,9 +136,11 @@ async def test_process_job_imports_one_completed_book_file_and_keeps_source(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     book = SyncBook(owner_user_id=owner_user_id, title="Completed Book")
     db_session.add_all([endpoint, book])
     await db_session.flush()
+
     job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -115,12 +148,20 @@ async def test_process_job_imports_one_completed_book_file_and_keeps_source(
         title=book.title,
         status="downloading",
     )
+
     db_session.add(job)
     await db_session.commit()
     source_path = import_root / str(owner_user_id) / str(job.job_id) / "book.epub"
     source_path.parent.mkdir(parents=True)
     source_path.write_bytes(b"completed epub")
-    now = datetime(2026, 7, 25, 12, tzinfo=UTC)
+
+    now = datetime(
+        2026,
+        7,
+        25,
+        12,
+        tzinfo=UTC,
+    )
 
     class FakeQbittorrentClient:
         async def find_torrent(
@@ -141,6 +182,7 @@ async def test_process_job_imports_one_completed_book_file_and_keeps_source(
 
         async def files(self, torrent_hash: str) -> list[acquisition_service.QbittorrentFile]:
             assert torrent_hash == "abc123"
+
             return [
                 acquisition_service.QbittorrentFile(
                     index=0,
@@ -176,6 +218,7 @@ async def test_process_job_pauses_completed_torrent_with_multiple_book_files(
     tmp_path: Path,
 ) -> None:
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -183,9 +226,11 @@ async def test_process_job_pauses_completed_torrent_with_multiple_book_files(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     book = SyncBook(owner_user_id=owner_user_id, title="Multiple Books")
     db_session.add_all([endpoint, book])
     await db_session.flush()
+
     job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -193,6 +238,7 @@ async def test_process_job_pauses_completed_torrent_with_multiple_book_files(
         title=book.title,
         status="downloading",
     )
+
     db_session.add(job)
     await db_session.commit()
     paused_hashes: list[str] = []
@@ -216,8 +262,20 @@ async def test_process_job_pauses_completed_torrent_with_multiple_book_files(
 
         async def files(self, torrent_hash: str) -> list[acquisition_service.QbittorrentFile]:
             return [
-                acquisition_service.QbittorrentFile(0, "first.epub", 1024, 10_000, 1),
-                acquisition_service.QbittorrentFile(1, "second.pdf", 2048, 10_000, 1),
+                acquisition_service.QbittorrentFile(
+                    0,
+                    "first.epub",
+                    1024,
+                    10_000,
+                    1,
+                ),
+                acquisition_service.QbittorrentFile(
+                    1,
+                    "second.pdf",
+                    2048,
+                    10_000,
+                    1,
+                ),
             ]
 
         async def pause(self, torrent_hash: str) -> None:
@@ -234,6 +292,7 @@ async def test_process_job_pauses_completed_torrent_with_multiple_book_files(
     assert job.status == "needs_file_selection"
     assert job.next_poll_at is None
     assert paused_hashes == ["abc123"]
+
     assert (
         await db_session.scalar(select(func.count()).select_from(MediaAsset).where(MediaAsset.book_id == book.book_id))
         == 0
@@ -296,9 +355,23 @@ async def test_claim_due_jobs_assigns_distinct_database_leases(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(app_settings, "acquisition_monitor_lease_seconds", 30, raising=False)
+    monkeypatch.setattr(
+        app_settings,
+        "acquisition_monitor_lease_seconds",
+        30,
+        raising=False,
+    )
+
     owner_user_id = UUID(auth_user["user_id"])
-    now = datetime(2026, 7, 25, 12, tzinfo=UTC)
+
+    now = datetime(
+        2026,
+        7,
+        25,
+        12,
+        tzinfo=UTC,
+    )
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -306,11 +379,13 @@ async def test_claim_due_jobs_assigns_distinct_database_leases(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     db_session.add(endpoint)
     await db_session.flush()
     books = [SyncBook(owner_user_id=owner_user_id, title=f"Book {index}") for index in range(4)]
     db_session.add_all(books)
     await db_session.flush()
+
     due_jobs = [
         AcquisitionJob(
             owner_user_id=owner_user_id,
@@ -322,6 +397,7 @@ async def test_claim_due_jobs_assigns_distinct_database_leases(
         )
         for index in (1, 2)
     ]
+
     future_job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -330,6 +406,7 @@ async def test_claim_due_jobs_assigns_distinct_database_leases(
         status="downloading",
         next_poll_at=now + timedelta(minutes=1),
     )
+
     leased_job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -340,6 +417,7 @@ async def test_claim_due_jobs_assigns_distinct_database_leases(
         lease_owner="other-worker",
         lease_until=now + timedelta(minutes=1),
     )
+
     db_session.add_all([*due_jobs, future_job, leased_job])
     await db_session.commit()
 
@@ -349,6 +427,7 @@ async def test_claim_due_jobs_assigns_distinct_database_leases(
         now=now,
         limit=1,
     )
+
     second = await acquisition_monitor.claim_due_jobs(
         db_session,
         "worker-b",
@@ -376,6 +455,7 @@ async def test_claim_due_jobs_ignores_automatic_rule_jobs(
     db_session: AsyncSession,
 ) -> None:
     owner_user_id = UUID(auth_user["user_id"])
+
     download_client = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -383,23 +463,27 @@ async def test_claim_due_jobs_ignores_automatic_rule_jobs(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     arr_endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="Readarr",
         kind="readarr",
         base_url="http://readarr.local:8787",
     )
+
     rule = AcquisitionRule(
         owner_user_id=owner_user_id,
         name="Automatic",
         query="automatic book",
     )
+
     db_session.add_all([download_client, arr_endpoint, rule])
     await db_session.flush()
     manual_book = SyncBook(owner_user_id=owner_user_id, title="Manual")
     rule_book = SyncBook(owner_user_id=owner_user_id, title="Automatic")
     db_session.add_all([manual_book, rule_book])
     await db_session.flush()
+
     manual_job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=download_client.endpoint_id,
@@ -407,6 +491,7 @@ async def test_claim_due_jobs_ignores_automatic_rule_jobs(
         title="Manual",
         status="submitted",
     )
+
     rule_job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=download_client.endpoint_id,
@@ -415,12 +500,14 @@ async def test_claim_due_jobs_ignores_automatic_rule_jobs(
         title="Automatic",
         status="submitted",
     )
+
     arr_job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=arr_endpoint.endpoint_id,
         title="Readarr search",
         status="submitted",
     )
+
     legacy_job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=download_client.endpoint_id,
@@ -428,13 +515,20 @@ async def test_claim_due_jobs_ignores_automatic_rule_jobs(
         download_url="magnet:?xt=urn:btih:legacy",
         status="submitted",
     )
+
     db_session.add_all([manual_job, rule_job, arr_job, legacy_job])
     await db_session.commit()
 
     claimed = await acquisition_monitor.claim_due_jobs(
         db_session,
         "worker",
-        now=datetime(2026, 7, 25, 12, tzinfo=UTC),
+        now=datetime(
+            2026,
+            7,
+            25,
+            12,
+            tzinfo=UTC,
+        ),
     )
 
     assert claimed == [manual_job.job_id]
@@ -446,6 +540,7 @@ async def test_transient_endpoint_failure_reschedules_managed_job(
     tmp_path: Path,
 ) -> None:
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -453,9 +548,11 @@ async def test_transient_endpoint_failure_reschedules_managed_job(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     book = SyncBook(owner_user_id=owner_user_id, title="Transient")
     db_session.add_all([endpoint, book])
     await db_session.flush()
+
     job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -464,9 +561,17 @@ async def test_transient_endpoint_failure_reschedules_managed_job(
         status="submitted",
         lease_owner="worker",
     )
+
     db_session.add(job)
     await db_session.commit()
-    now = datetime(2026, 7, 25, 12, tzinfo=UTC)
+
+    now = datetime(
+        2026,
+        7,
+        25,
+        12,
+        tzinfo=UTC,
+    )
 
     async def connect(endpoint: AcquisitionEndpoint) -> acquisition_monitor.QbittorrentMonitorClient:
         raise HTTPException(status_code=502, detail="qBittorrent is temporarily unavailable")
@@ -494,6 +599,7 @@ async def test_missing_qbittorrent_torrent_becomes_terminal_after_bounded_retrie
     tmp_path: Path,
 ) -> None:
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -501,9 +607,11 @@ async def test_missing_qbittorrent_torrent_becomes_terminal_after_bounded_retrie
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     book = SyncBook(owner_user_id=owner_user_id, title="Missing")
     db_session.add_all([endpoint, book])
     await db_session.flush()
+
     job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -513,6 +621,7 @@ async def test_missing_qbittorrent_torrent_becomes_terminal_after_bounded_retrie
         retry_count=acquisition_monitor.MAX_MISSING_TORRENT_RETRIES - 1,
         lease_owner="worker",
     )
+
     db_session.add(job)
     await db_session.commit()
 
@@ -550,6 +659,7 @@ async def test_failed_recovered_torrent_remains_eligible_for_import_retry(
     tmp_path: Path,
 ) -> None:
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -557,9 +667,11 @@ async def test_failed_recovered_torrent_remains_eligible_for_import_retry(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     book = SyncBook(owner_user_id=owner_user_id, title="Recovered")
     db_session.add_all([endpoint, book])
     await db_session.flush()
+
     job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -568,9 +680,17 @@ async def test_failed_recovered_torrent_remains_eligible_for_import_retry(
         status="queued",
         lease_owner="worker",
     )
+
     db_session.add(job)
     await db_session.commit()
-    now = datetime(2026, 7, 25, 12, tzinfo=UTC)
+
+    now = datetime(
+        2026,
+        7,
+        25,
+        12,
+        tzinfo=UTC,
+    )
 
     class FakeQbittorrentClient:
         async def find_torrent(
@@ -629,6 +749,7 @@ async def test_failure_finalization_does_not_overwrite_cancelled_job(
         status="cancelled",
         lease_owner="worker",
     )
+
     db_session.add(job)
     await db_session.commit()
 
@@ -636,7 +757,13 @@ async def test_failure_finalization_does_not_overwrite_cancelled_job(
         db_session,
         job.job_id,
         "Late monitor failure",
-        datetime(2026, 7, 25, 12, tzinfo=UTC),
+        datetime(
+            2026,
+            7,
+            25,
+            12,
+            tzinfo=UTC,
+        ),
         worker_id="worker",
     )
 
@@ -651,6 +778,7 @@ async def test_process_claimed_jobs_connects_once_per_endpoint(
     tmp_path: Path,
 ) -> None:
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -658,8 +786,10 @@ async def test_process_claimed_jobs_connects_once_per_endpoint(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     db_session.add(endpoint)
     await db_session.flush()
+
     jobs = [
         AcquisitionJob(
             owner_user_id=owner_user_id,
@@ -670,6 +800,7 @@ async def test_process_claimed_jobs_connects_once_per_endpoint(
         )
         for index in (1, 2)
     ]
+
     db_session.add_all(jobs)
     await db_session.commit()
     connected_endpoints: list[UUID] = []
@@ -698,7 +829,6 @@ async def test_process_claimed_jobs_connects_once_per_endpoint(
         connected_endpoint: AcquisitionEndpoint,
     ) -> FakeQbittorrentClient:
         connected_endpoints.append(connected_endpoint.endpoint_id)
-
         return FakeQbittorrentClient()
 
     await acquisition_monitor.process_claimed_jobs(
@@ -718,6 +848,7 @@ async def test_process_claimed_jobs_isolates_job_failures(
     tmp_path: Path,
 ) -> None:
     owner_user_id = UUID(auth_user["user_id"])
+
     endpoint = AcquisitionEndpoint(
         owner_user_id=owner_user_id,
         name="qBittorrent",
@@ -725,8 +856,10 @@ async def test_process_claimed_jobs_isolates_job_failures(
         base_url="http://qbittorrent.local:8080",
         download_root="/downloads",
     )
+
     db_session.add(endpoint)
     await db_session.flush()
+
     failed_job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -734,6 +867,7 @@ async def test_process_claimed_jobs_isolates_job_failures(
         status="submitted",
         lease_owner="worker",
     )
+
     healthy_job = AcquisitionJob(
         owner_user_id=owner_user_id,
         endpoint_id=endpoint.endpoint_id,
@@ -741,6 +875,7 @@ async def test_process_claimed_jobs_isolates_job_failures(
         status="submitted",
         lease_owner="worker",
     )
+
     db_session.add_all([failed_job, healthy_job])
     await db_session.commit()
 
@@ -799,8 +934,20 @@ async def test_run_monitor_uses_idle_or_active_poll_interval(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(app_settings, "acquisition_monitor_active_interval_seconds", 2, raising=False)
-    monkeypatch.setattr(app_settings, "acquisition_monitor_idle_interval_seconds", 10, raising=False)
+    monkeypatch.setattr(
+        app_settings,
+        "acquisition_monitor_active_interval_seconds",
+        2,
+        raising=False,
+    )
+
+    monkeypatch.setattr(
+        app_settings,
+        "acquisition_monitor_idle_interval_seconds",
+        10,
+        raising=False,
+    )
+
     processed_job_ids: list[UUID] = []
     delays: list[float] = []
 
@@ -852,7 +999,13 @@ async def test_run_monitor_continues_after_cycle_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(app_settings, "acquisition_monitor_idle_interval_seconds", 10, raising=False)
+    monkeypatch.setattr(
+        app_settings,
+        "acquisition_monitor_idle_interval_seconds",
+        10,
+        raising=False,
+    )
+
     claim_attempts = 0
     delays: list[float] = []
 

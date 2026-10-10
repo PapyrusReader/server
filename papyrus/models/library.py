@@ -94,6 +94,7 @@ class SyncBookmark(LibraryEntity, Base):
 
 class SyncBookShelf(OwnedLibraryRow, Base):
     __tablename__ = "book_shelves"
+
     __table_args__ = (
         UniqueConstraint("book_id", "shelf_id"),
         CheckConstraint("id = book_id::text || ':' || shelf_id::text", name="ck_book_shelves_pair_id"),
@@ -108,6 +109,7 @@ class SyncBookShelf(OwnedLibraryRow, Base):
 
 class SyncBookTag(OwnedLibraryRow, Base):
     __tablename__ = "book_tags"
+
     __table_args__ = (
         UniqueConstraint("book_id", "tag_id"),
         CheckConstraint("id = book_id::text || ':' || tag_id::text", name="ck_book_tags_pair_id"),

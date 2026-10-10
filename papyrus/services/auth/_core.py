@@ -151,6 +151,7 @@ async def _consume_exchange_code(session: AsyncSession, code: str, purpose: str)
             AuthExchangeCode.used_at.is_(None),
         )
     )
+
     exchange_code = result.scalar_one_or_none()
 
     if exchange_code is None or exchange_code.expires_at <= _now():
@@ -190,6 +191,7 @@ async def _consume_email_action_token(session: AsyncSession, token: str, action_
             EmailActionToken.used_at.is_(None),
         )
     )
+
     email_token = result.scalar_one_or_none()
 
     if email_token is None or email_token.expires_at <= _now():
@@ -239,6 +241,7 @@ def _build_app_url(path: str, query: dict[str, str] | None = None) -> str | None
 
 def _verification_email_body(token: str) -> str:
     verify_url = _build_api_url("/auth/verify-email")
+
     lines = [
         "Verify your Papyrus email address.",
         "",
@@ -259,6 +262,7 @@ def _verification_email_body(token: str) -> str:
 def _password_reset_email_body(token: str) -> str:
     settings = get_settings()
     reset_url = _build_app_url("/reset-password", {"token": token})
+
     lines = [
         "Reset your Papyrus password.",
         "",

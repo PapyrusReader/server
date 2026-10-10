@@ -26,6 +26,7 @@ async def _create_owned_book(db_session: AsyncSession, user_id: str) -> SyncBook
         added_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
     db_session.add(book)
     await db_session.commit()
     return book
@@ -59,9 +60,9 @@ async def test_upload_media_persists_file_and_updates_usage(
     assert body["size_bytes"] == len(b"epub bytes")
     assert body["sha256"] == "227dae38658f29c3a8494e65302e70b406162c2f581845339dfa19cbfad839d4"
     assert (tmp_path / body["storage_path"]).read_bytes() == b"epub bytes"
-
     usage = await client.get("/v1/media/usage", headers=auth_headers)
     assert usage.status_code == 200
+
     assert usage.json() == {
         "used_bytes": len(b"epub bytes"),
         "quota_bytes": 1_073_741_824,
@@ -96,7 +97,6 @@ async def test_import_media_path_copies_download_and_keeps_source_for_seeding(
     assert asset.sha256 == "b7783cce10abf92f10284f7089ffd31daf92e0b532284a6e14488b20834b5e16"
     assert (media_root / asset.storage_path).read_bytes() == b"downloaded epub"
     assert source_path.read_bytes() == b"downloaded epub"
-
     await db_session.refresh(book)
     assert book.file_media_id == asset.asset_id
 
@@ -111,20 +111,20 @@ async def test_download_and_delete_owned_media(
 ):
     monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
     book = await _create_owned_book(db_session, auth_user["user_id"])
+
     upload = await client.post(
         "/v1/media",
         headers=auth_headers,
         data={"book_id": str(book.book_id), "kind": "cover_image"},
         files={"file": ("cover.jpg", b"jpeg bytes", "image/jpeg")},
     )
+
     assert upload.status_code == 201
     asset_id = upload.json()["asset_id"]
-
     download = await client.get(f"/v1/media/{asset_id}", headers=auth_headers)
     assert download.status_code == 200
     assert download.content == b"jpeg bytes"
     assert download.headers["content-type"] == "image/jpeg"
-
     delete = await client.delete(f"/v1/media/{asset_id}", headers=auth_headers)
     assert delete.status_code == 204
     assert not (tmp_path / upload.json()["storage_path"]).exists()
@@ -163,14 +163,17 @@ async def test_upload_rejects_cross_user_book(
     tmp_path: Path,
 ):
     monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
+
     other_user = User(
         display_name="Other User",
         primary_email="other-media@example.com",
         primary_email_verified=True,
         last_login_at=datetime.now(UTC),
     )
+
     db_session.add(other_user)
     await db_session.flush()
+
     foreign_book = SyncBook(
         book_id=uuid4(),
         owner_user_id=other_user.user_id,
@@ -178,6 +181,7 @@ async def test_upload_rejects_cross_user_book(
         added_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
+
     db_session.add(foreign_book)
     await db_session.commit()
 
@@ -227,6 +231,7 @@ async def test_replacing_media_keeps_existing_file_when_commit_fails(
     monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
     monkeypatch.setattr("papyrus.main.settings.file_storage_quota_bytes", 1_073_741_824)
     book = await _create_owned_book(db_session, auth_user["user_id"])
+
     first = await media_service.upload_media(
         db_session,
         UUID(auth_user["user_id"]),
@@ -234,6 +239,7 @@ async def test_replacing_media_keeps_existing_file_when_commit_fails(
         kind="book_file",
         file=UploadFile(filename="book.epub", file=BytesIO(b"first book")),
     )
+
     first_path = tmp_path / first.storage_path
     assert first_path.read_bytes() == b"first book"
 
@@ -264,6 +270,7 @@ async def test_concurrent_same_kind_uploads_leave_one_asset(
     monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
     monkeypatch.setattr("papyrus.main.settings.file_storage_quota_bytes", 1_073_741_824)
     user_id = UUID(auth_user["user_id"])
+
     async with test_session_maker() as setup_session:
         book = await _create_owned_book(setup_session, auth_user["user_id"])
         book_id = book.book_id
@@ -296,6 +303,7 @@ async def test_user_upload_lock_blocks_a_second_session(
     test_session_maker: async_sessionmaker[AsyncSession],
 ):
     user_id = UUID(auth_user["user_id"])
+
     async with test_session_maker() as first_session, test_session_maker() as second_session:
         await media_service._lock_user_uploads(first_session, user_id)
         second_lock = asyncio.create_task(media_service._lock_user_uploads(second_session, user_id))
@@ -314,6 +322,7 @@ async def test_concurrent_uploads_enforce_aggregate_user_quota(
     monkeypatch.setattr("papyrus.main.settings.media_storage_root", str(tmp_path), raising=False)
     monkeypatch.setattr("papyrus.main.settings.file_storage_quota_bytes", 5)
     user_id = UUID(auth_user["user_id"])
+
     async with test_session_maker() as setup_session:
         first_book = await _create_owned_book(setup_session, auth_user["user_id"])
         second_book = await _create_owned_book(setup_session, auth_user["user_id"])
@@ -335,6 +344,7 @@ async def test_concurrent_uploads_enforce_aggregate_user_quota(
         asset_count = await session.scalar(
             select(func.count()).select_from(MediaAsset).where(MediaAsset.owner_user_id == user_id)
         )
+
         used_bytes = await session.scalar(
             select(func.coalesce(func.sum(MediaAsset.size_bytes), 0)).where(MediaAsset.owner_user_id == user_id)
         )

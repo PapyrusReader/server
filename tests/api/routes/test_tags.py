@@ -22,6 +22,7 @@ async def test_create_tag(client: AsyncClient, auth_headers: dict[str, str]):
             "description": "Fiction books",
         },
     )
+
     assert response.status_code == 201
     data = response.json()
     assert data["name"] == "Fiction"
@@ -41,6 +42,7 @@ async def test_update_tag(client: AsyncClient, auth_headers: dict[str, str], tag
         headers=auth_headers,
         json={"name": "Updated Tag"},
     )
+
     assert response.status_code == 200
 
 

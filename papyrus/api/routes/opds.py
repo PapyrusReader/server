@@ -19,6 +19,7 @@ class RelayResponse(StreamingResponse):
 
     def __init__(self, resource: RelayResource) -> None:
         self.resource = resource
+
         headers = {
             "X-OPDS-URL": resource.url,
             "Content-Type": resource.content_type,
@@ -27,6 +28,7 @@ class RelayResponse(StreamingResponse):
             "X-Content-Type-Options": "nosniff",
             "Content-Security-Policy": "sandbox; default-src 'none'",
         }
+
         if resource.length is not None:
             headers["Content-Length"] = str(resource.length)
 

@@ -60,6 +60,7 @@ async def _create_user_with_password(
         primary_email_verified=True,
         disabled_at=datetime.now(UTC) if disabled else None,
     )
+
     session.add(user)
     await session.flush()
     session.add(PasswordCredential(user_id=user.user_id, password_hash=hash_password(password)))
@@ -170,6 +171,7 @@ async def test_refresh_tokens_rotates_and_invalidates_previous_token(
             ),
             None,
         )
+
         first_refresh_token = register_result.refresh_token
         rotated = await auth_service.refresh_tokens(session, RefreshTokenRequest(refresh_token=first_refresh_token))
         assert rotated.refresh_token != first_refresh_token
@@ -192,6 +194,7 @@ async def test_logout_current_session_revokes_session(
             ),
             None,
         )
+
         session_result = await session.execute(select(AuthSession).where(AuthSession.user_id == result.user.user_id))
         auth_session = session_result.scalar_one()
         await auth_service.logout_current_session(session, result.user.user_id, auth_session.session_id)
@@ -213,6 +216,7 @@ async def test_logout_all_sessions_revokes_every_session(
             ),
             None,
         )
+
         second_login = await auth_service.login_user(
             session,
             LoginRequest(email="all-sessions@example.com", password="SecureP@ss123"),
@@ -239,7 +243,9 @@ async def test_reset_password_revokes_all_sessions(
             ),
             None,
         )
+
         plain_token = generate_opaque_token()
+
         session.add(
             EmailActionToken(
                 user_id=register_result.user.user_id,
@@ -248,11 +254,14 @@ async def test_reset_password_revokes_all_sessions(
                 expires_at=datetime.now(UTC) + timedelta(minutes=30),
             )
         )
+
         await session.commit()
         await auth_service.reset_password(session, plain_token, "NewSecureP@ss123")
+
         session_result = await session.execute(
             select(AuthSession).where(AuthSession.user_id == register_result.user.user_id)
         )
+
         assert all(auth_session.revoked_at is not None for auth_session in session_result.scalars())
 
 
@@ -263,9 +272,15 @@ async def test_google_login_reuses_existing_identity(
 ):
     """Test Google login matches an existing linked identity by provider subject."""
     async with test_session_maker() as session:
-        user = User(display_name="Google User", primary_email="google@example.com", primary_email_verified=True)
+        user = User(
+            display_name="Google User",
+            primary_email="google@example.com",
+            primary_email_verified=True,
+        )
+
         session.add(user)
         await session.flush()
+
         session.add(
             UserIdentity(
                 user_id=user.user_id,
@@ -274,6 +289,7 @@ async def test_google_login_reuses_existing_identity(
                 email_at_provider="old@example.com",
             )
         )
+
         await session.commit()
 
         monkeypatch.setattr(
@@ -299,6 +315,7 @@ async def test_google_login_reuses_existing_identity(
             state_token=state,
             error=None,
         )
+
         exchange_code = parse_qs(urlparse(redirect_url).query)["code"][0]
 
         result = await auth_service.exchange_login_code(
@@ -306,9 +323,11 @@ async def test_google_login_reuses_existing_identity(
             OAuthExchangeRequest(code=exchange_code, client_type="web"),
             None,
         )
+
         identity_result = await session.execute(
             select(UserIdentity).where(UserIdentity.provider_subject == "google-subject")
         )
+
         identity = identity_result.scalar_one()
         assert result.user.user_id == user.user_id
         assert identity.email_at_provider == "updated@example.com"
@@ -357,6 +376,7 @@ async def test_exchange_login_code_rejects_expired_code(
     async with test_session_maker() as session:
         user = await _create_user_with_password(session, email="exchange-expired@example.com")
         plain_code = generate_opaque_token()
+
         session.add(
             AuthExchangeCode(
                 code_hash=hash_opaque_token(plain_code),
@@ -367,6 +387,7 @@ async def test_exchange_login_code_rejects_expired_code(
                 expires_at=datetime.now(UTC) - timedelta(minutes=1),
             )
         )
+
         await session.commit()
 
         with pytest.raises(UnauthorizedError):
@@ -384,6 +405,7 @@ async def test_exchange_login_code_cannot_be_reused(
     async with test_session_maker() as session:
         user = await _create_user_with_password(session, email="exchange-reuse@example.com")
         plain_code = generate_opaque_token()
+
         session.add(
             AuthExchangeCode(
                 code_hash=hash_opaque_token(plain_code),
@@ -394,6 +416,7 @@ async def test_exchange_login_code_cannot_be_reused(
                 expires_at=datetime.now(UTC) + timedelta(minutes=5),
             )
         )
+
         await session.commit()
 
         result = await auth_service.exchange_login_code(
@@ -401,6 +424,7 @@ async def test_exchange_login_code_cannot_be_reused(
             OAuthExchangeRequest(code=plain_code, client_type="web"),
             None,
         )
+
         assert result.user.user_id == user.user_id
 
         with pytest.raises(UnauthorizedError):
@@ -419,6 +443,7 @@ async def test_verify_email_token_rejects_expired_and_reused_tokens(
         user = await _create_user_with_password(session, email="verify@example.com")
         expired_token = generate_opaque_token()
         valid_token = generate_opaque_token()
+
         session.add_all(
             [
                 EmailActionToken(
@@ -435,6 +460,7 @@ async def test_verify_email_token_rejects_expired_and_reused_tokens(
                 ),
             ]
         )
+
         await session.commit()
 
         with pytest.raises(ValidationError):

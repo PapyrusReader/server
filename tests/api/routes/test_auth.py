@@ -39,11 +39,13 @@ def unconfigured_google(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def configured_powersync(monkeypatch: pytest.MonkeyPatch) -> bytes:
     private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
     private_pem = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     ).decode("utf-8")
+
     public_pem = private_key.public_key().public_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PublicFormat.SubjectPublicKeyInfo,
@@ -112,6 +114,7 @@ async def test_register_user_returns_tokens(client: AsyncClient):
             "client_type": "mobile",
         },
     )
+
     assert response.status_code == 201
     data = response.json()
     assert "access_token" in data
@@ -127,6 +130,7 @@ async def test_register_duplicate_email_returns_conflict(client: AsyncClient):
         "password": "SecureP@ss123",
         "display_name": "Test User",
     }
+
     first_response = await client.post("/v1/auth/register", json=payload)
     assert first_response.status_code == 201
     second_response = await client.post("/v1/auth/register", json=payload)
@@ -143,6 +147,7 @@ async def test_login_user(client: AsyncClient):
             "display_name": "Test User",
         },
     )
+
     assert register_response.status_code == 201
 
     response = await client.post(
@@ -153,6 +158,7 @@ async def test_login_user(client: AsyncClient):
             "client_type": "desktop",
         },
     )
+
     assert response.status_code == 200
     data = response.json()
     assert "access_token" in data
@@ -171,6 +177,7 @@ async def test_login_user_rejects_invalid_password(client: AsyncClient):
             "display_name": "Test User",
         },
     )
+
     assert register_response.status_code == 201
 
     response = await client.post(
@@ -180,6 +187,7 @@ async def test_login_user_rejects_invalid_password(client: AsyncClient):
             "password": "WrongPassword123",
         },
     )
+
     assert response.status_code == 401
 
 
@@ -193,6 +201,7 @@ async def test_refresh_token_rotates_and_invalidates_previous_token(client: Asyn
             "display_name": "Test User",
         },
     )
+
     assert register_response.status_code == 201
     refresh_token = register_response.json()["refresh_token"]
     refresh_response = await client.post("/v1/auth/refresh", json={"refresh_token": refresh_token})
@@ -213,6 +222,7 @@ async def test_logout_current_session_revokes_refresh_token(client: AsyncClient)
             "display_name": "Test User",
         },
     )
+
     assert register_response.status_code == 201
     auth_payload = register_response.json()
 
@@ -221,6 +231,7 @@ async def test_logout_current_session_revokes_refresh_token(client: AsyncClient)
         headers={"Authorization": f"Bearer {auth_payload['access_token']}"},
         json={"all_devices": False},
     )
+
     assert logout_response.status_code == 204
     refresh_response = await client.post("/v1/auth/refresh", json={"refresh_token": auth_payload["refresh_token"]})
     assert refresh_response.status_code == 401
@@ -229,12 +240,14 @@ async def test_logout_current_session_revokes_refresh_token(client: AsyncClient)
         "/v1/users/me",
         headers={"Authorization": f"Bearer {auth_payload['access_token']}"},
     )
+
     assert protected_response.status_code == 401
 
 
 async def test_login_is_rate_limited(client: AsyncClient):
     """Credential endpoints enforce the configured per-IP auth limit."""
     limiter._storage.reset()
+
     register_response = await client.post(
         "/v1/auth/register",
         json={
@@ -243,6 +256,7 @@ async def test_login_is_rate_limited(client: AsyncClient):
             "display_name": "Rate Limited",
         },
     )
+
     assert register_response.status_code == 201
 
     responses = [
@@ -267,6 +281,7 @@ async def test_logout_all_revokes_other_sessions(client: AsyncClient):
             "display_name": "Test User",
         },
     )
+
     assert register_response.status_code == 201
     first_auth = register_response.json()
 
@@ -274,6 +289,7 @@ async def test_logout_all_revokes_other_sessions(client: AsyncClient):
         "/v1/auth/login",
         json={"email": "test@example.com", "password": "SecureP@ss123"},
     )
+
     assert login_response.status_code == 200
     second_auth = login_response.json()
 
@@ -281,11 +297,14 @@ async def test_logout_all_revokes_other_sessions(client: AsyncClient):
         "/v1/auth/logout-all",
         headers={"Authorization": f"Bearer {first_auth['access_token']}"},
     )
+
     assert logout_all_response.status_code == 204
     first_refresh_response = await client.post("/v1/auth/refresh", json={"refresh_token": first_auth["refresh_token"]})
+
     second_refresh_response = await client.post(
         "/v1/auth/refresh", json={"refresh_token": second_auth["refresh_token"]}
     )
+
     assert first_refresh_response.status_code == 401
     assert second_refresh_response.status_code == 401
 
@@ -293,10 +312,12 @@ async def test_logout_all_revokes_other_sessions(client: AsyncClient):
         "/v1/users/me",
         headers={"Authorization": f"Bearer {first_auth['access_token']}"},
     )
+
     second_protected_response = await client.get(
         "/v1/users/me",
         headers={"Authorization": f"Bearer {second_auth['access_token']}"},
     )
+
     assert first_protected_response.status_code == 401
     assert second_protected_response.status_code == 401
 
@@ -324,6 +345,7 @@ async def test_google_oauth_flow_creates_user_and_exchanges_code(
         params={"redirect_uri": "papyrus://auth/callback"},
         follow_redirects=False,
     )
+
     assert start_response.status_code == 302
     start_location = start_response.headers["location"]
     state = parse_qs(urlparse(start_location).query)["state"][0]
@@ -333,6 +355,7 @@ async def test_google_oauth_flow_creates_user_and_exchanges_code(
         params={"code": "google-auth-code", "state": state},
         follow_redirects=False,
     )
+
     assert callback_response.status_code == 302
     redirect_location = callback_response.headers["location"]
     exchange_code = parse_qs(urlparse(redirect_location).query)["code"][0]
@@ -341,6 +364,7 @@ async def test_google_oauth_flow_creates_user_and_exchanges_code(
         "/v1/auth/exchange-code",
         json={"code": exchange_code, "client_type": "web"},
     )
+
     assert exchange_response.status_code == 200
     data = exchange_response.json()
     assert data["user"]["email"] == "google_user@example.com"
@@ -361,6 +385,7 @@ async def test_google_oauth_does_not_auto_link_existing_email(
             "display_name": "Test User",
         },
     )
+
     assert register_response.status_code == 201
 
     monkeypatch.setattr(
@@ -380,6 +405,7 @@ async def test_google_oauth_does_not_auto_link_existing_email(
         params={"redirect_uri": "papyrus://auth/callback"},
         follow_redirects=False,
     )
+
     state = parse_qs(urlparse(start_response.headers["location"]).query)["state"][0]
 
     callback_response = await client.get(
@@ -387,6 +413,7 @@ async def test_google_oauth_does_not_auto_link_existing_email(
         params={"code": "google-auth-code", "state": state},
         follow_redirects=False,
     )
+
     assert callback_response.status_code == 302
     redirect_location = callback_response.headers["location"]
     assert parse_qs(urlparse(redirect_location).query)["error"][0] == "account_exists"
@@ -402,6 +429,7 @@ async def test_google_oauth_start_requires_configuration(
         params={"redirect_uri": "papyrus://auth/callback"},
         follow_redirects=False,
     )
+
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
@@ -416,6 +444,7 @@ async def test_google_oauth_start_rejects_unallowed_redirect_uri(
         params={"redirect_uri": "https://evil.example.test/auth/callback"},
         follow_redirects=False,
     )
+
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
@@ -434,6 +463,7 @@ async def test_google_oauth_start_allows_configured_web_redirect_host(
         params={"redirect_uri": "https://app.example.test/auth/callback"},
         follow_redirects=False,
     )
+
     assert response.status_code == 302
 
 
@@ -463,6 +493,7 @@ async def test_google_link_flow_links_identity_to_existing_user(
         headers=auth_headers,
         json={"redirect_uri": "papyrus://auth/callback"},
     )
+
     assert start_response.status_code == 200
     authorization_url = start_response.json()["authorization_url"]
     state = parse_qs(urlparse(authorization_url).query)["state"][0]
@@ -472,6 +503,7 @@ async def test_google_link_flow_links_identity_to_existing_user(
         params={"code": "google-link-code", "state": state},
         follow_redirects=False,
     )
+
     assert callback_response.status_code == 302
     exchange_code = parse_qs(urlparse(callback_response.headers["location"]).query)["code"][0]
 
@@ -480,11 +512,13 @@ async def test_google_link_flow_links_identity_to_existing_user(
         headers=auth_headers,
         json={"code": exchange_code},
     )
+
     assert complete_response.status_code == 200
 
     identity_result = await db_session.execute(
         select(UserIdentity).where(UserIdentity.provider_subject == "google-sub-link")
     )
+
     identity = identity_result.scalar_one()
     assert str(identity.user_id) == auth_user["user_id"]
 
@@ -499,12 +533,14 @@ async def test_powersync_token_contains_expected_claims(
     response = await client.post("/v1/auth/powersync-token", headers=auth_headers)
     assert response.status_code == 200
     token = response.json()["token"]
+
     payload = jwt.decode(
         token,
         configured_powersync,
         algorithms=["RS256"],
         audience="https://powersync.example.test",
     )
+
     assert payload["sub"] == auth_user["user_id"]
     assert payload["type"] == "powersync"
 
@@ -538,6 +574,7 @@ async def test_verify_email(client: AsyncClient, db_session: AsyncSession):
     db_session.add(user)
     await db_session.flush()
     plain_token = generate_opaque_token()
+
     db_session.add(
         EmailActionToken(
             user_id=user.user_id,
@@ -546,6 +583,7 @@ async def test_verify_email(client: AsyncClient, db_session: AsyncSession):
             expires_at=datetime.now(UTC) + timedelta(hours=1),
         )
     )
+
     await db_session.commit()
     response = await client.post("/v1/auth/verify-email", json={"token": plain_token})
     assert response.status_code == 200
@@ -558,6 +596,7 @@ async def test_verify_email_rejects_expired_token(client: AsyncClient, db_sessio
     db_session.add(user)
     await db_session.flush()
     plain_token = generate_opaque_token()
+
     db_session.add(
         EmailActionToken(
             user_id=user.user_id,
@@ -566,6 +605,7 @@ async def test_verify_email_rejects_expired_token(client: AsyncClient, db_sessio
             expires_at=datetime.now(UTC) - timedelta(minutes=1),
         )
     )
+
     await db_session.commit()
     response = await client.post("/v1/auth/verify-email", json={"token": plain_token})
     assert response.status_code == 400
@@ -585,12 +625,14 @@ async def test_resend_verification_sends_email_when_configured(
             "display_name": "Test User",
         },
     )
+
     assert register_response.status_code == 201
 
     response = await client.post(
         "/v1/auth/resend-verification",
         json={"email": "test@example.com"},
     )
+
     assert response.status_code == 200
     assert response.json()["message"] == "If the email is registered, a verification link has been sent"
     assert len(configured_email_delivery) == 1
@@ -613,12 +655,14 @@ async def test_forgot_password_returns_configuration_message(
             "display_name": "Test User",
         },
     )
+
     assert register_response.status_code == 201
 
     response = await client.post(
         "/v1/auth/forgot-password",
         json={"email": "test@example.com"},
     )
+
     assert response.status_code == 200
     assert response.json()["message"] == "Password reset is not configured on this server"
 
@@ -637,6 +681,7 @@ async def test_forgot_password_requires_app_public_base_url(
             "display_name": "Test User",
         },
     )
+
     assert register_response.status_code == 201
     settings = get_settings()
     monkeypatch.setattr(settings, "app_public_base_url", None)
@@ -645,6 +690,7 @@ async def test_forgot_password_requires_app_public_base_url(
         "/v1/auth/forgot-password",
         json={"email": "test@example.com"},
     )
+
     assert response.status_code == 200
     assert response.json()["message"] == "Password reset is not configured on this server"
     assert configured_email_delivery == []
@@ -663,12 +709,14 @@ async def test_forgot_password_sends_email_when_configured(
             "display_name": "Test User",
         },
     )
+
     assert register_response.status_code == 201
 
     response = await client.post(
         "/v1/auth/forgot-password",
         json={"email": "test@example.com"},
     )
+
     assert response.status_code == 200
     assert response.json()["message"] == "If the email is registered, a reset link has been sent"
     assert len(configured_email_delivery) == 1
@@ -694,11 +742,13 @@ async def test_forgot_password_send_failure_returns_service_unavailable(
             "display_name": "Test User",
         },
     )
+
     assert register_response.status_code == 201
     settings = get_settings()
     monkeypatch.setattr(settings, "email_delivery_enabled", True)
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.test")
     monkeypatch.setattr(settings, "smtp_from_email", "noreply@example.test")
+
     monkeypatch.setattr(
         email_service,
         "send_email",
@@ -709,6 +759,7 @@ async def test_forgot_password_send_failure_returns_service_unavailable(
         "/v1/auth/forgot-password",
         json={"email": "test@example.com"},
     )
+
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "SERVICE_UNAVAILABLE"
 
@@ -719,6 +770,7 @@ async def test_reset_password(client: AsyncClient, db_session: AsyncSession):
     db_session.add(user)
     await db_session.flush()
     plain_token = generate_opaque_token()
+
     db_session.add(
         EmailActionToken(
             user_id=user.user_id,
@@ -727,6 +779,7 @@ async def test_reset_password(client: AsyncClient, db_session: AsyncSession):
             expires_at=datetime.now(UTC) + timedelta(hours=1),
         )
     )
+
     await db_session.commit()
 
     response = await client.post(
@@ -736,6 +789,7 @@ async def test_reset_password(client: AsyncClient, db_session: AsyncSession):
             "password": "NewSecureP@ss123",
         },
     )
+
     assert response.status_code == 200
     assert response.json()["message"] == "Password has been reset successfully"
 
@@ -746,6 +800,7 @@ async def test_reset_password(client: AsyncClient, db_session: AsyncSession):
             "password": "NewSecureP@ss123",
         },
     )
+
     assert login_response.status_code == 200
 
 
@@ -757,6 +812,7 @@ async def test_reset_password_revokes_existing_access_token(
 ):
     """Test password reset revokes any existing authenticated session."""
     plain_token = generate_opaque_token()
+
     db_session.add(
         EmailActionToken(
             user_id=UUID(auth_user["user_id"]),
@@ -765,6 +821,7 @@ async def test_reset_password_revokes_existing_access_token(
             expires_at=datetime.now(UTC) + timedelta(hours=1),
         )
     )
+
     await db_session.commit()
 
     response = await client.post(
@@ -774,6 +831,7 @@ async def test_reset_password_revokes_existing_access_token(
             "password": "NewSecureP@ss123",
         },
     )
+
     assert response.status_code == 200
     protected_response = await client.get("/v1/users/me", headers=auth_headers)
     assert protected_response.status_code == 401
@@ -785,6 +843,7 @@ async def test_reset_password_rejects_expired_token(client: AsyncClient, db_sess
     db_session.add(user)
     await db_session.flush()
     plain_token = generate_opaque_token()
+
     db_session.add(
         EmailActionToken(
             user_id=user.user_id,
@@ -793,6 +852,7 @@ async def test_reset_password_rejects_expired_token(client: AsyncClient, db_sess
             expires_at=datetime.now(UTC) - timedelta(minutes=1),
         )
     )
+
     await db_session.commit()
 
     response = await client.post(
@@ -802,6 +862,7 @@ async def test_reset_password_rejects_expired_token(client: AsyncClient, db_sess
             "password": "NewSecureP@ss123",
         },
     )
+
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
@@ -812,6 +873,7 @@ async def test_exchange_code_rejects_expired_code(client: AsyncClient, db_sessio
     db_session.add(user)
     await db_session.flush()
     plain_code = generate_opaque_token()
+
     db_session.add(
         AuthExchangeCode(
             code_hash=hash_opaque_token(plain_code),
@@ -822,12 +884,14 @@ async def test_exchange_code_rejects_expired_code(client: AsyncClient, db_sessio
             expires_at=datetime.now(UTC) - timedelta(minutes=1),
         )
     )
+
     await db_session.commit()
 
     response = await client.post(
         "/v1/auth/exchange-code",
         json={"code": plain_code, "client_type": "web"},
     )
+
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHORIZED"
 
@@ -838,6 +902,7 @@ async def test_exchange_code_rejects_reused_code(client: AsyncClient, db_session
     db_session.add(user)
     await db_session.flush()
     plain_code = generate_opaque_token()
+
     db_session.add(
         AuthExchangeCode(
             code_hash=hash_opaque_token(plain_code),
@@ -849,11 +914,13 @@ async def test_exchange_code_rejects_reused_code(client: AsyncClient, db_session
             used_at=datetime.now(UTC),
         )
     )
+
     await db_session.commit()
 
     response = await client.post(
         "/v1/auth/exchange-code",
         json={"code": plain_code, "client_type": "web"},
     )
+
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "UNAUTHORIZED"

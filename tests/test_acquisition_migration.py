@@ -14,8 +14,8 @@ def test_managed_acquisition_has_a_follow_up_migration() -> None:
     ]
 
     assert len(revisions) == 1
-
     migration = revisions[0].read_text(encoding="utf-8")
+
     for column in (
         "download_root",
         "book_id",

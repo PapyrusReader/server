@@ -70,17 +70,22 @@ def _credentials(api_key: str | None, username: str | None, password: str | None
     values = {
         key: value for key, value in {"api_key": api_key, "username": username, "password": password}.items() if value
     }
+
     if not values:
         return None
+
     return {"encrypted": encrypt_secret_payload(values)}
 
 
 def _merge_credentials(endpoint: AcquisitionEndpointModel, replacement: dict[str, str] | None) -> None:
     if replacement is None:
         return
+
     current = endpoint.credentials or {}
+
     if encrypted := current.get("encrypted"):
         current = decrypt_secret_payload(encrypted)
+
     endpoint.credentials = {
         "encrypted": encrypt_secret_payload({**current, **decrypt_secret_payload(replacement["encrypted"])})
     }
@@ -133,6 +138,7 @@ async def list_endpoints(user_id: CurrentUserId, db: DbSession) -> list[Acquisit
         .where(AcquisitionEndpointModel.owner_user_id == user_id)
         .order_by(AcquisitionEndpointModel.name)
     )
+
     return list(result.scalars())
 
 
@@ -153,6 +159,7 @@ async def create_endpoint(
         ),
         settings=request.settings,
     )
+
     db.add(endpoint)
     await db.commit()
     await db.refresh(endpoint)
@@ -165,13 +172,16 @@ async def update_endpoint(
 ) -> AcquisitionEndpointModel:
     endpoint = await owned_endpoint(db, user_id, endpoint_id)
     updates = request.model_dump(exclude_unset=True, exclude={"api_key", "username", "password"})
+
     for field, value in updates.items():
         setattr(endpoint, field, str(value) if field == "base_url" else value)
+
     replacement = _credentials(
         request.api_key.get_secret_value() if request.api_key else None,
         request.username.get_secret_value() if request.username else None,
         request.password.get_secret_value() if request.password else None,
     )
+
     _merge_credentials(endpoint, replacement)
     await db.commit()
     await db.refresh(endpoint)
@@ -190,9 +200,7 @@ async def test_connection(
     db: DbSession,
 ) -> AcquisitionEndpointTestResult:
     endpoint = await build_test_endpoint(db, user_id, request)
-
     await test_endpoint_connection(endpoint)
-
     return AcquisitionEndpointTestResult(ok=True)
 
 
@@ -203,10 +211,13 @@ async def search_releases(user_id: CurrentUserId, request: SearchRequest, db: Db
         AcquisitionEndpointModel.enabled.is_(True),
         AcquisitionEndpointModel.kind.in_(("prowlarr", "torznab")),
     )
+
     if request.endpoint_ids:
         statement = statement.where(AcquisitionEndpointModel.endpoint_id.in_(request.endpoint_ids))
+
     result = await db.execute(statement)
     releases: list[Release] = []
+
     for endpoint in result.scalars():
         for candidate in await search_endpoint(endpoint, request.query):
             releases.append(
@@ -221,6 +232,7 @@ async def search_releases(user_id: CurrentUserId, request: SearchRequest, db: Db
                     format_hints=candidate.format_hints,
                 )
             )
+
     return releases
 
 
@@ -274,26 +286,32 @@ async def submit_release_batch_route(
 
 
 @protected_router.post(
-    "/arr/{endpoint_id}/commands", response_model=AcquisitionJob, status_code=status.HTTP_201_CREATED
+    "/arr/{endpoint_id}/commands",
+    response_model=AcquisitionJob,
+    status_code=status.HTTP_201_CREATED,
 )
 async def run_arr_command(
     user_id: CurrentUserId, endpoint_id: UUID, request: ArrCommandRequest, db: DbSession
 ) -> AcquisitionJobModel:
     """Delegate a managed search/acquisition to Readarr or another Arr app."""
     endpoint = await owned_endpoint(db, user_id, endpoint_id)
+
     job = AcquisitionJobModel(
         owner_user_id=user_id,
         endpoint_id=endpoint.endpoint_id,
         title=request.command,
         download_url=f"arr-command:{request.command}",
     )
+
     db.add(job)
+
     try:
         job.client_reference = await dispatch_arr_command(endpoint, request.command, request.ids)
         job.status = "submitted"
     except HTTPException as exc:
         job.status = "failed"
         job.error = str(exc.detail)
+
     await db.commit()
     await db.refresh(job)
     return job
@@ -343,7 +361,12 @@ async def choose_job_file(
     request: AcquisitionFileSelectionRequest,
     db: DbSession,
 ) -> AcquisitionJobModel:
-    return await select_job_file(db, user_id, job_id, request.file_index)
+    return await select_job_file(
+        db,
+        user_id,
+        job_id,
+        request.file_index,
+    )
 
 
 @protected_router.post("/jobs/{job_id}/cancel", response_model=AcquisitionJob)
@@ -382,6 +405,7 @@ async def list_rules(user_id: CurrentUserId, db: DbSession) -> list[AcquisitionR
 @protected_router.post("/rules", response_model=AcquisitionRule, status_code=status.HTTP_201_CREATED)
 async def create_rule(user_id: CurrentUserId, request: AcquisitionRuleCreate, db: DbSession) -> AcquisitionRuleModel:
     await owned_endpoint(db, user_id, request.download_client_id)
+
     rule = AcquisitionRuleModel(
         owner_user_id=user_id,
         name=request.name,
@@ -391,6 +415,7 @@ async def create_rule(user_id: CurrentUserId, request: AcquisitionRuleCreate, db
         filters=request.filters,
         enabled=request.enabled,
     )
+
     db.add(rule)
     await db.commit()
     await db.refresh(rule)
@@ -404,9 +429,12 @@ async def run_acquisition_rule(user_id: CurrentUserId, rule_id: UUID, db: DbSess
             AcquisitionRuleModel.rule_id == rule_id, AcquisitionRuleModel.owner_user_id == user_id
         )
     )
+
     rule = result.scalar_one_or_none()
+
     if rule is None:
         raise HTTPException(status_code=404, detail="Acquisition rule not found")
+
     return await run_rule(db, rule)
 
 

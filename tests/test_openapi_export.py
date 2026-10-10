@@ -12,6 +12,7 @@ def test_export_ignores_environment_and_dev_routes(tmp_path: Path) -> None:
     command = [sys.executable, "scripts/export_openapi.py", str(output)]
     subprocess.run(command, check=True)
     baseline = output.read_text()
+
     environment = {
         **os.environ,
         "DEBUG": "true",
@@ -19,6 +20,7 @@ def test_export_ignores_environment_and_dev_routes(tmp_path: Path) -> None:
         "PUBLIC_BASE_URL": "https://private-environment.example",
         "SECRET_KEY": "private-environment-secret",
     }
+
     subprocess.run(command, env=environment, check=True)
     assert output.read_text() == baseline
     assert "private-environment" not in baseline
@@ -26,5 +28,4 @@ def test_export_ignores_environment_and_dev_routes(tmp_path: Path) -> None:
     assert all(not path.startswith("/__dev") for path in schema["paths"])
     assert {"/v1/books", "/v1/auth/login", "/v1/opds/relay", "/v1/sync/powersync-upload"} <= schema["paths"].keys()
     assert schema["info"]["contact"]["url"] == "https://github.com/PapyrusReader/papyrus"
-
     subprocess.run([*command, "--check"], check=True)

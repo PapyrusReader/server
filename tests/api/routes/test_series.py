@@ -23,6 +23,7 @@ async def test_create_series(client: AsyncClient, auth_headers: dict[str, str]):
             "is_complete": True,
         },
     )
+
     assert response.status_code == 201
     data = response.json()
     assert data["name"] == "Harry Potter"
@@ -43,6 +44,7 @@ async def test_update_series(client: AsyncClient, auth_headers: dict[str, str], 
         headers=auth_headers,
         json={"is_complete": True},
     )
+
     assert response.status_code == 200
 
 

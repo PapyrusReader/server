@@ -12,7 +12,14 @@ class RegisterRequest(BaseModel):
 
     email: EmailStr = Field(..., examples=["user@example.com"])
     password: str = Field(..., min_length=8, examples=["SecureP@ss123"])
-    display_name: str = Field(..., min_length=1, max_length=100, examples=["John Doe"])
+
+    display_name: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        examples=["John Doe"],
+    )
+
     client_type: ClientType = "unknown"
     device_label: str | None = Field(default=None, max_length=255)
 
