@@ -1,5 +1,14 @@
 :8080 {
-	root * /srv/web
-	try_files {path} /index.html
-	file_server
+	root * /srv/web/current
+	header Cache-Control "no-cache"
+	@metadata path /release.json
+	handle @metadata {
+		file_server
+	}
+	handle {
+		try_files {path} /index.html
+		file_server {
+			hide .artifact-sha256
+		}
+	}
 }
