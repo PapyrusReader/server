@@ -18,4 +18,5 @@ sync_config:
   path: /config/sync-config.yaml
 
 telemetry:
+  disable_telemetry_sharing: false
   prometheus_port: 9090
