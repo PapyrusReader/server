@@ -34,7 +34,7 @@ The registered domain is `papyrus-reader.com`. Use `api.papyrus-reader.com`,
 `sync.papyrus-reader.com` and `app.papyrus-reader.com`.
 Point their DNS A records to the VM (add AAAA only if IPv6 routing works). The
 independent `papyrus-edge` Compose project owns public ports and HTTPS certificates.
-Its configuration is in the workspace repository's `deploy/edge` directory and
+Its configuration is in `PapyrusReader/observability` (`observability/edge` in the workspace) and
 uses `papyrus-api:8080`, `papyrus-sync:8080` and `papyrus-app:8080` as upstreams.
 The `web` service here serves the built Flutter app over internal HTTP, including
 verification/password-reset routes. The client
@@ -161,3 +161,12 @@ Keep the parent `web` directory mounted at `/srv/web`. Check `/` and `/login` af
 migration. Client delivery credentials and the restricted receiver are documented
 in the client's `docs/RELEASING.md`. This migration needs no database changes and
 must not run the full server deployment script or restart API/PowerSync services.
+
+## Observability
+
+PowerSync exposes Prometheus metrics on private container port 9090. The shared
+observability collector joins `papyrus-production_default` and scrapes that port.
+Do not publish it on the host or add a public Caddy route. Applying this YAML
+change only requires restarting PowerSync, followed by its readiness check.
+The `PapyrusReader/observability` repository owns dashboards, collection, alerts,
+and the bootstrap for restricted `papyrus_monitor` database roles.

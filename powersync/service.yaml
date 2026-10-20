@@ -16,3 +16,6 @@ client_auth:
 
 sync_config:
   path: /config/sync-config.yaml
+
+telemetry:
+  prometheus_port: 9090
