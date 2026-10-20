@@ -2,10 +2,10 @@ name: Release configuration checks
 
 on:
   pull_request:
-    paths: ['tools/**', '.github/workflows/**', 'pyproject.toml', 'deploy/**']
+    paths: ['tools/**', '.github/workflows/**', 'pyproject.toml', 'deploy/**', 'powersync/**']
   push:
     branches: [development, master]
-    paths: ['tools/**', '.github/workflows/**', 'pyproject.toml', 'deploy/**']
+    paths: ['tools/**', '.github/workflows/**', 'pyproject.toml', 'deploy/**', 'powersync/**']
 
 permissions:
   contents: read
@@ -19,3 +19,4 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m unittest discover -s tools/tests -v
+      - run: python tools/check_powersync_config.py
