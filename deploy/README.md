@@ -161,3 +161,12 @@ Keep the parent `web` directory mounted at `/srv/web`. Check `/` and `/login` af
 migration. Client delivery credentials and the restricted receiver are documented
 in the client's `docs/RELEASING.md`. This migration needs no database changes and
 must not run the full server deployment script or restart API/PowerSync services.
+
+## Observability
+
+PowerSync exposes Prometheus metrics on private container port 9090. The shared
+observability collector joins `papyrus-production_default` and scrapes that port.
+Do not publish it on the host or add a public Caddy route. Applying this YAML
+change only requires restarting PowerSync, followed by its readiness check.
+The `PapyrusReader/observability` repository owns dashboards, collection, alerts,
+and the bootstrap for restricted `papyrus_monitor` database roles.
