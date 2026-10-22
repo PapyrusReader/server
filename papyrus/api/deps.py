@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, Query, status
+from fastapi import Depends, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -90,9 +90,11 @@ async def get_current_auth_session(
 
 
 async def get_current_user_id(
+    request: Request,
     auth_session: Annotated[AuthSession, Depends(get_current_auth_session)],
 ) -> UUID:
     """Extract the current user ID from the validated session."""
+    request.state.authenticated_user_id = auth_session.user_id
     return auth_session.user_id
 
 

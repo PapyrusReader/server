@@ -72,6 +72,41 @@ match `papyrus-reader.com`; keep these aligned if you change a hostname. Generat
 `openssl rand -hex 32`. Database values must be URL-safe because connection URLs
 are assembled from them. Do not rotate the JWT private key on ordinary deploys.
 
+Set `FORWARDED_ALLOW_IPS` to the Caddy container's address on `papyrus-edge`:
+
+```sh
+docker inspect papyrus-edge-proxy-1 --format '{{(index .NetworkSettings.Networks "papyrus-edge").IPAddress}}'
+```
+
+Use that single private address in `production.env`, never `*` or the entire Docker
+subnet. The API must remain private behind Caddy. Caddy supplies the client address
+for IP-based authentication and OPDS relay limits. If the proxy is recreated with a
+different address, update this value and recreate the API container too.
+
+### Upload rate limits
+
+Sync uploads and media uploads use the authenticated account ID after session
+validation. Devices and sessions for one account share an allowance, while separate
+accounts remain independent even behind the same proxy or home network.
+
+The recommended initial values are `RATE_LIMIT_BATCH=300` and
+`RATE_LIMIT_UPLOAD=60` per minute. A sync request contains one client transaction,
+which can contain multiple row mutations. Offline backlogs naturally create bursts.
+These values are starting limits, not measured capacity guarantees. Keep the
+authentication limit at 5 and OPDS relay limit at 100 requests/minute per client IP.
+The current limiter is in memory for the single API process. Use shared limiter
+storage before scaling to multiple workers or replicas.
+
+Existing deployments must update these two values explicitly in `production.env`.
+Changing the example file does not change an installed configuration. Deploy the
+released server image through the normal release process, then verify independent
+accounts behind the proxy, 429 responses with `Retry-After`, and public probes.
+The matching client suppresses repeated upload attempts during the cooldown and
+leaves failed transactions queued for a later attempt. No migration or library reset
+is required.
+
+### Continue service setup
+
 Configure a real SMTP provider with TLS, verified sender, and its credentials;
 Mailpit is for local development. Add Google OAuth credentials if testing Google
 sign-in. Extract the matching client's `web-release` artifact into `web/`, so
