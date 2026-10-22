@@ -11,7 +11,7 @@ from papyrus.api.deps import CurrentUserId
 from papyrus.config import get_settings
 from papyrus.core.database import get_db
 from papyrus.core.exceptions import NotFoundError
-from papyrus.core.rate_limit import limiter
+from papyrus.core.rate_limit import get_authenticated_user_key, limiter
 from papyrus.schemas.media import MediaAssetResponse, MediaUsageResponse
 from papyrus.services import media as media_service
 
@@ -25,7 +25,7 @@ DBSession = Annotated[AsyncSession, Depends(get_db)]
     status_code=status.HTTP_201_CREATED,
     summary="Upload private media",
 )
-@limiter.limit(lambda: f"{get_settings().rate_limit_upload}/minute")
+@limiter.limit(lambda: f"{get_settings().rate_limit_upload}/minute", key_func=get_authenticated_user_key)
 async def upload_media(
     request: Request,
     user_id: CurrentUserId,

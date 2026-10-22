@@ -7,6 +7,7 @@ x-api: &api
     DEBUG: 'false'
     HOST: 0.0.0.0
     PORT: '8080'
+    FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:?Set FORWARDED_ALLOW_IPS to the edge proxy IP}
     POSTGRES_HOST: database
     POSTGRES_PORT: '5432'
     MEDIA_STORAGE_ROOT: /var/lib/papyrus/media
