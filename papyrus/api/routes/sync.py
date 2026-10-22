@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from papyrus.api.deps import CurrentUserId
 from papyrus.config import get_settings
 from papyrus.core.database import get_db
-from papyrus.core.rate_limit import limiter
+from papyrus.core.rate_limit import get_authenticated_user_key, limiter
 from papyrus.schemas.sync import (
     DataSyncSettingsResponse,
     FileStorageSettings,
@@ -44,7 +44,7 @@ async def get_data_sync_settings() -> DataSyncSettingsResponse:
     response_model=PowerSyncUploadResponse,
     summary="Upload PowerSync client-side mutations",
 )
-@limiter.limit(lambda: f"{get_settings().rate_limit_batch}/minute")
+@limiter.limit(lambda: f"{get_settings().rate_limit_batch}/minute", key_func=get_authenticated_user_key)
 async def upload_powersync_changes(
     request: Request,
     user_id: CurrentUserId,

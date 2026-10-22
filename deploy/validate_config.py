@@ -2,10 +2,19 @@
 
 import json
 import re
+from ipaddress import ip_address
 from pathlib import Path
 
 
 def validate(values: dict[str, str]) -> None:
+    try:
+        proxy_address = ip_address(values.get("FORWARDED_ALLOW_IPS", ""))
+    except ValueError as exc:
+        raise ValueError("FORWARDED_ALLOW_IPS must be the edge proxy's private IP address") from exc
+
+    if not proxy_address.is_private or proxy_address.is_loopback or proxy_address.is_unspecified:
+        raise ValueError("FORWARDED_ALLOW_IPS must be the edge proxy's private IP address")
+
     for key in ("API_DOMAIN", "SYNC_DOMAIN", "APP_DOMAIN"):
         value = values.get(key, "")
         if not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", value) or "." not in value:

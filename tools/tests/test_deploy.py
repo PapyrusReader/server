@@ -21,6 +21,7 @@ class DeploymentTest(unittest.TestCase):
             "APP_PUBLIC_BASE_URL": "https://app.papyrusreader.org",
             "CORS_ORIGINS": '["https://app.papyrusreader.org"]',
             "API_PREFIX": "/v1",
+            "FORWARDED_ALLOW_IPS": "172.20.0.2",
             "PAPYRUS_VERSION": "1.0.0",
             "SECRET_KEY": "a" * 64,
             "POSTGRES_PASSWORD": "b" * 64,

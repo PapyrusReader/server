@@ -13,7 +13,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from papyrus import __version__
@@ -22,7 +21,7 @@ from papyrus.config import get_settings
 from papyrus.core.database import async_session_maker
 from papyrus.core.dev_pages import DEV_PAGES_DIST_DIR, DEV_PAGES_STATIC_URL
 from papyrus.core.exceptions import AppError
-from papyrus.core.rate_limit import limiter
+from papyrus.core.rate_limit import limiter, rate_limit_exceeded_handler
 from papyrus.services import acquisition_monitor
 
 settings = get_settings()
@@ -107,14 +106,15 @@ Use the refresh token to obtain new access tokens via `{auth_base_path}/refresh`
 
 ## Rate Limiting
 
-Rate limits are enforced per user:
+Sync and file-upload limits are enforced per authenticated user, across sessions.
+Authentication and OPDS relay limits are enforced per client IP. Limits are configurable:
 
 | Endpoint Category | Limit |
 |-------------------|-------|
 | Authentication | 5 requests/minute |
-| General API | 100 requests/minute |
-| File uploads | 10 requests/minute |
-| Batch operations | 20 requests/minute |
+| OPDS relay | 100 requests/minute |
+| File uploads | 60 requests/minute |
+| Sync transactions | 300 requests/minute |
 """,
         contact={
             "name": "Papyrus Support",
@@ -128,7 +128,7 @@ Rate limits are enforced per user:
     )
 
     app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore
+    app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
 
     app.mount(
         DEV_PAGES_STATIC_URL,
@@ -142,7 +142,7 @@ Rate limits are enforced per user:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["X-OPDS-URL"],
+        expose_headers=["X-OPDS-URL", "Retry-After"],
     )
 
     @app.exception_handler(AppError)
@@ -221,6 +221,7 @@ def run() -> None:
         "papyrus.main:app",
         host=settings.host,
         port=settings.port,
+        forwarded_allow_ips=settings.forwarded_allow_ips,
         reload=settings.debug,
     )
 
