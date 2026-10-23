@@ -32,6 +32,7 @@ from papyrus.schemas.auth import (
 from papyrus.schemas.common import MessageResponse
 from papyrus.schemas.user import User
 from papyrus.services import auth as auth_service
+from papyrus.services.users import user_response
 
 router = APIRouter()
 DBSession = Annotated[AsyncSession, Depends(get_db)]
@@ -41,13 +42,13 @@ def _auth_rate_limit() -> str:
     return f"{get_settings().rate_limit_auth}/minute"
 
 
-def _auth_tokens_response(result: auth_service.AuthResult) -> AuthTokens:
+async def _auth_tokens_response(db: AsyncSession, result: auth_service.AuthResult) -> AuthTokens:
     return AuthTokens(
         access_token=result.access_token,
         refresh_token=result.refresh_token,
         token_type="Bearer",
         expires_in=result.expires_in,
-        user=User.model_validate(result.user),
+        user=await user_response(db, result.user),
     )
 
 
@@ -86,7 +87,7 @@ async def register_user(
 ) -> AuthTokens:
     """Create a new user account with email and password."""
     result = await auth_service.register_user(db, payload, request.headers.get("user-agent"))
-    return _auth_tokens_response(result)
+    return await _auth_tokens_response(db, result)
 
 
 @router.post(
@@ -102,7 +103,7 @@ async def login_user(
 ) -> AuthTokens:
     """Authenticate a user with email and password credentials."""
     result = await auth_service.login_user(db, payload, request.headers.get("user-agent"))
-    return _auth_tokens_response(result)
+    return await _auth_tokens_response(db, result)
 
 
 @router.get(
@@ -161,7 +162,7 @@ async def exchange_code(
 ) -> AuthTokens:
     """Exchange a one-time OAuth handoff code for Papyrus tokens."""
     result = await auth_service.exchange_login_code(db, payload, request.headers.get("user-agent"))
-    return _auth_tokens_response(result)
+    return await _auth_tokens_response(db, result)
 
 
 @router.post(
@@ -177,7 +178,7 @@ async def refresh_token(
 ) -> AuthTokens:
     """Exchange a valid refresh token for a new access token."""
     result = await auth_service.refresh_tokens(db, payload)
-    return _auth_tokens_response(result)
+    return await _auth_tokens_response(db, result)
 
 
 @router.post(
@@ -246,7 +247,7 @@ async def complete_google_link(
 ) -> User:
     """Consume a one-time code and link the Google identity to the authenticated user."""
     user = await auth_service.complete_google_link(db, user_id, request.code)
-    return User.model_validate(user)
+    return await user_response(db, user)
 
 
 @router.post(

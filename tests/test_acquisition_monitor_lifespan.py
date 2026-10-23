@@ -8,7 +8,15 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from papyrus import main
-from papyrus.services import acquisition_monitor
+from papyrus.services import account_deletion, acquisition_monitor
+
+
+@pytest.fixture(autouse=True)
+def isolated_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def run_cleanup(session_maker: async_sessionmaker[AsyncSession]) -> None:
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(account_deletion, "run_cleanup", run_cleanup)
 
 
 async def test_lifespan_starts_and_stops_configured_acquisition_monitor(
@@ -71,3 +79,23 @@ async def test_lifespan_does_not_start_incomplete_acquisition_monitor(
         await asyncio.sleep(0)
 
     assert not started
+
+
+async def test_lifespan_starts_and_stops_account_cleanup(monkeypatch: pytest.MonkeyPatch) -> None:
+    started = asyncio.Event()
+    stopped = asyncio.Event()
+
+    async def run_cleanup(session_maker: async_sessionmaker[AsyncSession]) -> None:
+        started.set()
+
+        try:
+            await asyncio.Event().wait()
+        finally:
+            stopped.set()
+
+    monkeypatch.setattr(account_deletion, "run_cleanup", run_cleanup)
+
+    async with main.lifespan(FastAPI()):
+        await asyncio.wait_for(started.wait(), timeout=1)
+
+    assert stopped.is_set()

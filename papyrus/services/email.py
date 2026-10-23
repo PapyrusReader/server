@@ -16,8 +16,8 @@ def is_email_delivery_configured() -> bool:
     return bool(settings.email_delivery_enabled and settings.smtp_host and settings.smtp_from_email)
 
 
-def send_email(recipient: str, subject: str, body: str) -> None:
-    """Send a plain-text email through the configured SMTP server."""
+def send_email(recipient: str, subject: str, body: str, *, html_body: str | None = None) -> None:
+    """Send plain text with an optional HTML alternative through the configured SMTP server."""
     settings = get_settings()
 
     if not is_email_delivery_configured():
@@ -37,6 +37,10 @@ def send_email(recipient: str, subject: str, body: str) -> None:
     message["To"] = recipient
     message["Subject"] = subject
     message.set_content(body)
+
+    if html_body is not None:
+        message.add_alternative(html_body, subtype="html")
+
     smtp_host = settings.smtp_host
 
     if smtp_host is None:

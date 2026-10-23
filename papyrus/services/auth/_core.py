@@ -120,6 +120,7 @@ async def _create_exchange_code(
     email_verified_at_provider: datetime | None = None,
     display_name: str | None = None,
     avatar_url: str | None = None,
+    code_challenge: str | None = None,
 ) -> str:
     plain_code = generate_opaque_token()
 
@@ -135,6 +136,7 @@ async def _create_exchange_code(
             display_name=display_name,
             avatar_url=avatar_url,
             redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
             expires_at=_now() + timedelta(minutes=get_settings().auth_exchange_code_expire_minutes),
         )
     )

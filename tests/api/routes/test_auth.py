@@ -368,6 +368,7 @@ async def test_google_oauth_flow_creates_user_and_exchanges_code(
     assert exchange_response.status_code == 200
     data = exchange_response.json()
     assert data["user"]["email"] == "google_user@example.com"
+    assert data["user"]["connected_providers"] == ["google"]
     assert data["user"]["display_name"] == "Google User"
 
 
@@ -514,6 +515,7 @@ async def test_google_link_flow_links_identity_to_existing_user(
     )
 
     assert complete_response.status_code == 200
+    assert complete_response.json()["connected_providers"] == ["google"]
 
     identity_result = await db_session.execute(
         select(UserIdentity).where(UserIdentity.provider_subject == "google-sub-link")

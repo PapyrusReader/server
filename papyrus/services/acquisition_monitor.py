@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from papyrus.config import get_settings
 from papyrus.core.exceptions import AppError, ConflictError, ForbiddenError, NotFoundError, ValidationError
-from papyrus.models import AcquisitionEndpoint, AcquisitionJob, MediaAsset
+from papyrus.models import AcquisitionEndpoint, AcquisitionJob, MediaAsset, User
 from papyrus.services import media as media_service
 from papyrus.services.acquisition import QbittorrentClient, QbittorrentFile, QbittorrentTorrent
 
@@ -62,7 +62,9 @@ async def claim_due_jobs(
             AcquisitionEndpoint,
             AcquisitionEndpoint.endpoint_id == AcquisitionJob.endpoint_id,
         )
+        .join(User, User.user_id == AcquisitionJob.owner_user_id)
         .where(
+            User.disabled_at.is_(None),
             AcquisitionEndpoint.kind == "qbittorrent",
             AcquisitionJob.status.in_(ACTIVE_JOB_STATUSES),
             AcquisitionJob.rule_id.is_(None),
