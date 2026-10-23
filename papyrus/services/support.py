@@ -140,11 +140,12 @@ def submit_support(payload: SupportRequest, attachments: list[SupportAttachment]
 
     try:
         add_support_to_project(headers, project, required_id(result.get("node_id")))
-    except HTTPException:
+    except HTTPException as error:
         logger.error(
-            "Support issue %s#%s was created but project routing failed; reconcile its project fields",
+            "Support issue %s#%s was created but project routing failed: %s Reconcile its project fields.",
             repository,
             number,
+            error.detail,
         )
 
     return SupportResponse(number=number, url=f"https://github.com/{repository}/issues/{number}")
@@ -257,7 +258,17 @@ def github_graphql(headers: dict[str, str], query: str, variables: dict[str, obj
         )
     )
 
-    if result.get("errors"):
+    errors = result.get("errors")
+
+    if isinstance(errors, list) and any(
+        isinstance(error, dict) and error.get("type") == "FORBIDDEN" for error in errors
+    ):
+        raise HTTPException(
+            status_code=502,
+            detail="GitHub denied project access. Check SUPPORT_GITHUB_TOKEN organization Projects write permission.",
+        )
+
+    if errors:
         raise HTTPException(status_code=502, detail="Submission failed.")
 
     return required_object(result.get("data"))

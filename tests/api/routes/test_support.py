@@ -342,7 +342,7 @@ async def test_project_configuration_is_checked_before_creating_an_issue_or_uplo
 
 
 @pytest.mark.parametrize("stage", ["add", "fields"])
-@pytest.mark.parametrize("failure", ["timeout", "graphql"])
+@pytest.mark.parametrize("failure", ["timeout", "graphql", "forbidden"])
 async def test_project_failure_after_creation_keeps_success_and_logs_issue_for_reconciliation(
     github, caplog, stage, failure
 ):
@@ -353,6 +353,15 @@ async def test_project_failure_after_creation_keeps_success_and_logs_issue_for_r
 
     if failure == "timeout":
         responses.append(TimeoutError())
+    elif failure == "forbidden":
+        responses.append(
+            github_response(
+                {
+                    "data": {"addProjectV2ItemById": None},
+                    "errors": [{"type": "FORBIDDEN", "message": "private upstream details"}],
+                }
+            )
+        )
     else:
         responses.append(github_response({"errors": [{"message": "private upstream details"}]}))
 
@@ -370,6 +379,9 @@ async def test_project_failure_after_creation_keeps_success_and_logs_issue_for_r
     assert "PapyrusReader/client#42" in caplog.text
     assert "private upstream details" not in caplog.text
     assert "test-server-secret" not in caplog.text
+
+    if failure == "forbidden":
+        assert "SUPPORT_GITHUB_TOKEN organization Projects write permission" in caplog.text
 
 
 async def test_issue_creation_failure_is_not_retried_or_added_to_project(github):

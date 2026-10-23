@@ -28,6 +28,12 @@ checked before uploads or issue creation. If project updates fail after the issu
 is created, submission still succeeds and the server logs its issue number for
 manual reconciliation, avoiding duplicate reports from a retry.
 
+Reading a public project and its `viewerCanUpdate` value only confirms visibility
+and the token owner's role. It does not prove the token has Projects write access.
+A `FORBIDDEN` project mutation is logged with the issue number and a permission
+hint. Grant organization Projects read/write to the configured token, then add
+any already-created reports to the project without resubmitting them.
+
 The form accepts up to five PNG, JPEG, GIF, WebP, MP4, MOV, or WebM files, each up to
 10 MiB. The server checks sizes and media signatures before contacting GitHub.
 The multipart request is bounded to 50 MiB plus 64 KiB of form overhead, including
