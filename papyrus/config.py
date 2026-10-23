@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import computed_field, field_validator
+from pydantic import Field, SecretStr, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -36,6 +36,24 @@ class Settings(BaseSettings):
     rate_limit_general: int
     rate_limit_upload: int
     rate_limit_batch: int
+    support_github_token: SecretStr | None = None
+
+    support_github_repository: str = Field(
+        default="PapyrusReader/client",
+        pattern=r"^[A-Za-z0-9-]+/[A-Za-z0-9][A-Za-z0-9_.-]*$",
+    )
+
+    support_github_assignee: str = Field(default="Eoic", pattern=r"^[A-Za-z0-9-]+$")
+    support_github_project_owner: str = Field(default="PapyrusReader", pattern=r"^[A-Za-z0-9-]+$")
+    support_github_project_number: int = Field(default=1, gt=0)
+    support_github_bug_label: str = Field(default="bug", min_length=1)
+    support_github_feature_label: str = Field(default="enhancement", min_length=1)
+    support_github_bug_type: str = Field(default="Bug", min_length=1)
+    support_github_feature_type: str = Field(default="Feature", min_length=1)
+    support_github_status_field: str = Field(default="Status", min_length=1)
+    support_github_status: str = Field(default="Backlog", min_length=1)
+    support_github_kind_field: str = Field(default="Kind", min_length=1)
+    support_github_kind: str = Field(default="Task", min_length=1)
     public_base_url: str | None = None
     app_public_base_url: str | None = None
     google_oauth_client_id: str | None = None
@@ -123,6 +141,7 @@ class Settings(BaseSettings):
         return value.strip().rstrip("/")
 
     @field_validator(
+        "support_github_token",
         "public_base_url",
         "app_public_base_url",
         "google_oauth_client_id",
