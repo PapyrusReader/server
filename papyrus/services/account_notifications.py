@@ -4,9 +4,6 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from html import escape
-from pathlib import Path
-from string import Template
 from urllib.parse import urlsplit
 
 from sqlalchemy import delete, exists, select, tuple_, update
@@ -46,7 +43,7 @@ def _sign_in_url() -> str | None:
 def render_account_email(display_name: str, deletion_due_at: datetime | None) -> AccountEmail:
     """Keep email links informational: recovery still requires sign-in and explicit consent."""
     greeting = f"Hi {display_name}," if display_name else "Hello,"
-    deadline_html = ""
+    detail = None
     deadline_text = ""
 
     if deletion_due_at is not None:
@@ -68,11 +65,7 @@ def render_account_email(display_name: str, deletion_due_at: datetime | None) ->
 
         action_label = "Sign in to keep your account"
         deadline_text = f"Recovery deadline: {deadline}\n\n"
-        deadline_html = (
-            '<div style="margin:0 0 24px;padding:20px;background:#f3f1fb;border-radius:10px;">'
-            '<p style="margin:0 0 8px;font-size:12px;letter-spacing:1px;color:#645f73;">RECOVERY DEADLINE</p>'
-            f'<p style="margin:0;font-size:18px;line-height:28px;font-weight:700;">{escape(deadline)}</p></div>'
-        )
+        detail = ("RECOVERY DEADLINE", deadline)
     else:
         subject = "Your Papyrus account deletion was cancelled"
         heading = "Your account is staying"
@@ -88,35 +81,19 @@ def render_account_email(display_name: str, deletion_due_at: datetime | None) ->
         action_label = "Open Papyrus"
 
     url = _sign_in_url()
-    action_html = ""
-    action_text = ""
+    action_text = f"{action_label}: {url}\n\n" if url is not None else ""
 
-    if url is not None:
-        escaped_url = escape(url, quote=True)
-        action_text = f"{action_label}: {url}\n\n"
-
-        action_html = (
-            '<table role="presentation" cellspacing="0" cellpadding="0"><tr>'
-            '<td style="border-radius:8px;background:#5654a8;text-align:center;">'
-            f'<a href="{escaped_url}" style="display:inline-block;padding:14px 24px;border:1px solid #5654a8;'
-            'border-radius:8px;color:#ffffff;font-size:16px;line-height:24px;font-weight:700;text-decoration:none;">'
-            f"{escape(action_label)}</a></td></tr></table>"
-            '<p style="margin:16px 0 0;font-size:12px;line-height:20px;color:#726c86;overflow-wrap:anywhere;">'
-            f'Or open <a href="{escaped_url}" style="color:#5654a8;word-break:break-all;">{escaped_url}</a></p>'
-        )
-
-    template = Template((Path(__file__).parents[1] / "templates" / "account_notification.html").read_text())
-
-    html = template.substitute(
-        subject=escape(subject),
-        preheader=escape(preheader),
-        heading=escape(heading),
-        greeting=escape(greeting),
-        summary=escape(summary),
-        deadline=deadline_html,
-        guidance=escape(guidance),
-        action=action_html,
-        security_note=escape(security_note),
+    html = email.render_email_html(
+        subject=subject,
+        preheader=preheader,
+        heading=heading,
+        greeting=greeting,
+        summary=summary,
+        guidance=guidance,
+        security_note=security_note,
+        action_label=action_label,
+        action_url=url,
+        detail=detail,
     )
 
     text = (
