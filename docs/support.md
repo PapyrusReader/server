@@ -24,9 +24,11 @@ By default, bug reports receive the `bug` label and native `Bug` issue type. Fea
 receive `enhancement` and `Feature`. Both are assigned to `Eoic` and added to the
 Papyrus project (#1) with Status `Backlog` and Kind `Task`. Priority, milestone,
 and requirement links are left for triage. Project access and field options are
-checked before uploads or issue creation. If project updates fail after the issue
-is created, submission still succeeds and the server logs its issue number for
-manual reconciliation, avoiding duplicate reports from a retry.
+checked before uploads or issue creation. The server sends the confirmed issue
+response before applying project updates in a background task. Slow project updates
+cannot delay that response. If updates fail, the server logs the issue number for
+manual reconciliation. Background routing is not persisted or retried, so an abrupt
+server shutdown can leave project metadata incomplete.
 
 Reading a public project and its `viewerCanUpdate` value only confirms visibility
 and the token owner's role. It does not prove the token has Projects write access.

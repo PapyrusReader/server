@@ -3,7 +3,7 @@
 from collections.abc import Callable, Coroutine
 from typing import Annotated, Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.routing import APIRoute
 from pydantic import Json
 from starlette.types import Message
@@ -51,7 +51,8 @@ router = APIRouter(route_class=SupportRoute)
 @router.post("/issues", response_model=SupportResponse, status_code=201)
 def create_support_issue(
     request: Request,
+    background_tasks: BackgroundTasks,
     payload: Annotated[Json[SupportRequest], Form()],
     attachments: Annotated[list[UploadFile] | None, File()] = None,
 ) -> SupportResponse:
-    return submit_support(payload, read_attachments(attachments or []))
+    return submit_support(payload, read_attachments(attachments or []), background_tasks)

@@ -8,7 +8,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
 from papyrus.config import get_settings
 from papyrus.schemas.support import SupportRequest, SupportResponse
@@ -43,7 +43,11 @@ class SupportProject:
     kind_option: str
 
 
-def submit_support(payload: SupportRequest, attachments: list[SupportAttachment]) -> SupportResponse:
+def submit_support(
+    payload: SupportRequest,
+    attachments: list[SupportAttachment],
+    background_tasks: BackgroundTasks,
+) -> SupportResponse:
     settings = get_settings()
     token = settings.support_github_token
     repository = settings.support_github_repository
@@ -138,8 +142,20 @@ def submit_support(payload: SupportRequest, attachments: list[SupportAttachment]
     if not isinstance(number, int) or isinstance(number, bool) or number <= 0:
         raise HTTPException(status_code=504, detail="Submission failed.")
 
+    background_tasks.add_task(route_support_issue, headers, project, result.get("node_id"), repository, number)
+    return SupportResponse(number=number, url=f"https://github.com/{repository}/issues/{number}")
+
+
+def route_support_issue(
+    headers: dict[str, str],
+    project: SupportProject,
+    issue_id: object,
+    repository: str,
+    number: int,
+) -> None:
+    """Apply best-effort project metadata after the confirmed issue response has been sent."""
     try:
-        add_support_to_project(headers, project, required_id(result.get("node_id")))
+        add_support_to_project(headers, project, required_id(issue_id))
     except HTTPException as error:
         logger.error(
             "Support issue %s#%s was created but project routing failed: %s Reconcile its project fields.",
@@ -147,8 +163,6 @@ def submit_support(payload: SupportRequest, attachments: list[SupportAttachment]
             number,
             error.detail,
         )
-
-    return SupportResponse(number=number, url=f"https://github.com/{repository}/issues/{number}")
 
 
 def required_object(value: object) -> dict[str, object]:

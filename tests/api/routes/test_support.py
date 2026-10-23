@@ -186,6 +186,61 @@ MP4 = b"\x00\x00\x00\x18ftypmp42" + b"video-bytes"
 ASSET_URL = "https://github.com/user-attachments/assets/11111111-2222-3333-4444-555555555555"
 
 
+@pytest.mark.parametrize("timeout_stage", [None, "AddSupportToProject", "RouteSupport"])
+async def test_confirmed_response_is_sent_before_project_mutations_with_five_attachments(github, timeout_stage):
+    messages = []
+    app = create_app()
+
+    async def observed_app(scope, receive, send):
+        async def capture_send(message):
+            await send(message)
+            messages.append(message)
+
+        await app(scope, receive, capture_send)
+
+    def respond(request, **kwargs):
+        if request.full_url == "https://api.github.com/repos/PapyrusReader/client":
+            return github_response({"id": 123})
+
+        if request.full_url.startswith("https://uploads.github.com/"):
+            return github_response({"url": ASSET_URL})
+
+        if request.full_url.endswith("/graphql"):
+            query = json.loads(request.data)["query"]
+
+            if "mutation " in query:
+                assert messages[0]["type"] == "http.response.start"
+                assert messages[0]["status"] == 201
+                assert messages[-1]["type"] == "http.response.body"
+                assert not messages[-1].get("more_body", False)
+                body = b"".join(message.get("body", b"") for message in messages)
+
+                assert json.loads(body) == {
+                    "number": 42,
+                    "url": "https://github.com/PapyrusReader/client/issues/42",
+                }
+
+                if timeout_stage and timeout_stage in query:
+                    raise TimeoutError()
+
+        return github_success(request, **kwargs)
+
+    github.side_effect = respond
+
+    async with AsyncClient(transport=ASGITransport(app=observed_app), base_url="http://test") as client:
+        response = await client.post(
+            f"{get_settings().api_prefix}/support/issues",
+            data={"payload": json.dumps(PAYLOAD)},
+            files=[("attachments", ("screen.png", PNG))] * 5,
+        )
+
+    assert response.status_code == 201
+    requests = [call.args[0] for call in github.call_args_list]
+    assert sum(request.full_url.startswith("https://uploads.github.com/") for request in requests) == 5
+    assert sum(request.full_url.endswith("/issues") for request in requests) == 1
+    assert len(requests) == (9 if timeout_stage == "AddSupportToProject" else 10)
+
+
 async def test_media_is_uploaded_to_github_and_embedded_in_issue(github):
     github.side_effect = [
         github_response(PROJECT),
