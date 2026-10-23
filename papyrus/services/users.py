@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.core.exceptions import ForbiddenError, NotFoundError, UnauthorizedError, ValidationError
 from papyrus.core.security import hash_password, verify_password
-from papyrus.models import AuthSession, PasswordCredential, User
+from papyrus.models import AuthSession, PasswordCredential, User, UserIdentity
 from papyrus.schemas.user import UpdateUserRequest
+from papyrus.schemas.user import User as UserResponse
 
 
 def _now() -> datetime:
@@ -57,18 +58,6 @@ async def update_user_profile(session: AsyncSession, user_id: UUID, request: Upd
     return user
 
 
-async def delete_user_account(session: AsyncSession, user_id: UUID, password: str) -> None:
-    user = await _get_active_user(session, user_id)
-    credential = await session.get(PasswordCredential, user_id)
-
-    if credential is not None and not verify_password(password, credential.password_hash):
-        raise UnauthorizedError("Current password is incorrect")
-
-    user.disabled_at = _now()
-    await _revoke_user_sessions(session, user_id)
-    await session.commit()
-
-
 async def change_user_password(session: AsyncSession, user_id: UUID, current_password: str, new_password: str) -> None:
     user = await _get_active_user(session, user_id)
     credential = await session.get(PasswordCredential, user.user_id)
@@ -83,3 +72,10 @@ async def change_user_password(session: AsyncSession, user_id: UUID, current_pas
     credential.password_changed_at = _now()
     await _revoke_user_sessions(session, user_id)
     await session.commit()
+
+
+async def user_response(session: AsyncSession, user: User) -> UserResponse:
+    providers = await session.scalars(select(UserIdentity.provider).where(UserIdentity.user_id == user.user_id))
+    response = UserResponse.model_validate(user)
+    response.connected_providers = sorted(set(providers))
+    return response

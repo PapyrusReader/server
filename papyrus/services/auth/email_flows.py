@@ -17,6 +17,7 @@ from papyrus.services.auth._core import (
     _normalize_email,
     _now,
     _password_reset_email_body,
+    _password_reset_email_html,
     _revoke_user_sessions,
     _verification_email_body,
 )
@@ -81,6 +82,7 @@ async def begin_password_reset(session: AsyncSession, email: str) -> str:
         normalized_email,
         "Reset your Papyrus password",
         _password_reset_email_body(token),
+        html_body=_password_reset_email_html(token, user.display_name),
     )
 
     await session.commit()

@@ -18,6 +18,7 @@ from papyrus.core.security import (
 )
 from papyrus.models import AuthExchangeCode, AuthSession, EmailActionToken, User
 from papyrus.services.auth.types import AuthResult, GoogleIdentity
+from papyrus.services.email import render_email_html
 
 
 def _now() -> datetime:
@@ -120,6 +121,7 @@ async def _create_exchange_code(
     email_verified_at_provider: datetime | None = None,
     display_name: str | None = None,
     avatar_url: str | None = None,
+    code_challenge: str | None = None,
 ) -> str:
     plain_code = generate_opaque_token()
 
@@ -135,6 +137,7 @@ async def _create_exchange_code(
             display_name=display_name,
             avatar_url=avatar_url,
             redirect_uri=redirect_uri,
+            code_challenge=code_challenge,
             expires_at=_now() + timedelta(minutes=get_settings().auth_exchange_code_expire_minutes),
         )
     )
@@ -278,3 +281,20 @@ def _password_reset_email_body(token: str) -> str:
         )
 
     return "\n".join(lines)
+
+
+def _password_reset_email_html(token: str, display_name: str) -> str:
+    expiry = get_settings().password_reset_token_expire_minutes
+
+    return render_email_html(
+        subject="Reset your Papyrus password",
+        preheader=f"Choose a new password. This link expires in {expiry} minutes.",
+        category="ACCOUNT SECURITY",
+        heading="Reset your password",
+        greeting=f"Hi {display_name}," if display_name else "Hello,",
+        summary="We received a request to reset your Papyrus password. Choose a new password using the button below.",
+        guidance=f"This link expires in {expiry} minutes and can only be used once.",
+        security_note="If you didn't request this, you can ignore this email. Your password will stay the same.",
+        action_label="Reset password",
+        action_url=_build_app_url("/reset-password", {"token": token}),
+    )

@@ -270,7 +270,12 @@ async def _used_bytes(session: AsyncSession, user_id: UUID) -> int:
 
 async def _lock_user_uploads(session: AsyncSession, user_id: UUID) -> None:
     """Serialize quota and replacement decisions for one user's uploads."""
-    await session.execute(select(User.user_id).where(User.user_id == user_id).with_for_update())
+    user = await session.scalar(
+        select(User).where(User.user_id == user_id).with_for_update().execution_options(populate_existing=True)
+    )
+
+    if user is None or user.disabled_at is not None:
+        raise ForbiddenError("User account is unavailable")
 
 
 async def _write_upload_to_temp_file(

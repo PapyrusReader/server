@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     postgres_db: str
     secret_key: str
     algorithm: str
+    account_deletion_retention_notice: str = (
+        "Automated database and media backups are not currently implemented. "
+        "The planned backup retention limit is 30 days after permanent deletion. "
+        "Self-hosted operators must disclose any separate backups or exceptional retention."
+    )
+
     access_token_expire_minutes: int
     refresh_token_expire_days: int
     rate_limit_auth: int

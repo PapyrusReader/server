@@ -30,3 +30,4 @@ class GoogleIdentity:
     email_verified: bool
     display_name: str | None
     avatar_url: str | None
+    nonce: str | None = None

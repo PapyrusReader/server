@@ -96,6 +96,8 @@ def test_auth_models_are_registered_with_metadata() -> None:
         "created_at",
         "last_login_at",
         "disabled_at",
+        "deletion_requested_at",
+        "deletion_due_at",
     }
 
     assert set(powersync_demo_items_table.columns.keys()) == {

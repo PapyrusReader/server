@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Delete your Papyrus account</title>
+<style nonce="__NONCE__">
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { max-width: 28rem; margin: 4rem auto; padding: 0 1.5rem; line-height: 1.5; }
+h1 { font-size: 1.75rem; line-height: 1.2; }
+h2 { font-size: 1rem; font-weight: 500; overflow-wrap: anywhere; }
+.brand { font-weight: 600; opacity: .65; margin-bottom: 2rem; }
+input, button { border: 1px solid #8888; border-radius: .5rem; }
+button { width: 100%; background: transparent; color: inherit; }
+button[type=submit], #confirm { background: light-dark(#252525, #e5e5e5); color: light-dark(white, #161616); border: 0; }
+#confirm.destructive { background: light-dark(#b3261e, #ffb4ab); color: light-dark(white, #690005); }
+#back { background: transparent; }
+.actions { display: flex; gap: .75rem; }
+.actions button { flex: 1; }
+details { font-size: .875rem; margin-top: 2rem; }
+summary { cursor: pointer; }
+.or { text-align: center; opacity: .65; font-size: .875rem; }
+label, input, button { display: block; }
+input { box-sizing: border-box; width: 100%; padding: .75rem; margin: .3rem 0 1rem; font: inherit; }
+button { padding: .75rem 1rem; margin: 1rem 0; font: inherit; cursor: pointer; }
+button:disabled { cursor: default; opacity: .6; }
+[hidden] { display: none !important; }
+#error { color: light-dark(#a41515, #ffb4ab); }
+</style>
+</head>
+<body>
+<main>
+<div class="brand">Papyrus</div>
+<h1 id="heading" tabindex="-1">Delete your account</h1>
+<p id="intro">Your account and synced library will be permanently deleted after 30 days. Sign in to continue.</p>
+<p id="error" role="alert"></p>
+<form id="credentials">
+<label for="email">Email</label><input id="email" type="email" autocomplete="username" required>
+<label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required>
+<button type="submit">Continue</button>
+<p class="or">or</p>
+<button type="button" id="google">Continue with Google</button>
+</form>
+<section id="confirmation" hidden>
+<p id="deadline"></p>
+<div class="actions">
+<button id="back" type="button">Cancel</button>
+<button id="confirm" type="button"></button>
+</div>
+</section>
+<p id="result" role="status"></p>
+<details>
+<summary>What happens to my data?</summary>
+<p>Your profile, synced books, notes, bookmarks and reading history will be permanently deleted after 30 days. Sign in before then and choose Keep account to cancel deletion.</p>
+<p>Files on your devices or in external storage won’t be removed.</p>
+<p id="retention"></p>
+</details>
+</main>
+<script nonce="__NONCE__">
+const base = location.pathname.replace(/\/$/, '');
+const credentials = document.getElementById('credentials');
+const confirmation = document.getElementById('confirmation');
+const error = document.getElementById('error');
+const verifierKey = `papyrus-deletion-verifier:${base}`;
+let authorization;
+let busy = false;
+function setBusy(value) {
+  busy = value;
+  document.querySelectorAll('button').forEach(button => button.disabled = value);
+}
+async function post(path, body) {
+  const response = await fetch(`${base}/${path}`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body), cache: 'no-store'
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error?.message || 'Request failed. Please try again.');
+  return result;
+}
+async function run(action) {
+  if (busy) return;
+  setBusy(true);
+  error.textContent = '';
+  try { await action(); } catch (failure) { error.textContent = failure.message || 'Unable to connect. Please try again.'; }
+  finally { setBusy(false); }
+}
+function preview(value) {
+  authorization = value;
+  credentials.hidden = true;
+  confirmation.hidden = false;
+  document.getElementById('password').value = '';
+  document.getElementById('heading').textContent = value.deletion_pending ? 'Keep your account?' : 'Delete account?';
+  document.getElementById('intro').hidden = true;
+  const date = new Date(value.deletion_due_at).toLocaleString(undefined, {dateStyle: 'long', timeStyle: 'short'});
+  document.getElementById('deadline').textContent = value.deletion_pending
+    ? `Your account is scheduled for deletion on ${date}. Keep your account to cancel deletion.`
+    : `Your account, synced library and reading data will be permanently deleted on ${date}. You’ll be signed out immediately. You can cancel deletion by signing in before then.`;
+  document.querySelector('details').hidden = true;
+  document.getElementById('confirm').textContent = value.deletion_pending ? 'Keep account' : 'Delete account';
+  document.getElementById('confirm').classList.toggle('destructive', !value.deletion_pending);
+  document.getElementById('back').textContent = value.deletion_pending ? 'Not now' : 'Cancel';
+  document.getElementById('heading').focus();
+}
+credentials.addEventListener('submit', event => {
+  event.preventDefault();
+  run(async () => preview(await post('password', {
+    email: document.getElementById('email').value, password: document.getElementById('password').value
+  })));
+});
+document.getElementById('google').addEventListener('click', () => run(async () => {
+  const verifier = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, '0')).join('');
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
+  const challenge = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  sessionStorage.setItem(verifierKey, verifier);
+  const parameters = new URLSearchParams({redirect_uri: `${location.origin}${base}`, challenge});
+  location.assign(`${base}/google/start?${parameters}`);
+}));
+document.getElementById('confirm').addEventListener('click', () => run(async () => {
+  await post(authorization.deletion_pending ? 'cancel' : 'schedule', {
+    authorization_token: authorization.authorization_token
+  });
+  document.getElementById('heading').textContent = authorization.deletion_pending ? 'Account kept' : 'Deletion scheduled';
+  document.getElementById('result').textContent = authorization.deletion_pending
+    ? 'You can now sign in to Papyrus.'
+    : 'Sign in within 30 days if you change your mind and want to keep your account.';
+  authorization = null;
+  confirmation.hidden = true;
+  document.getElementById('heading').focus();
+}));
+document.getElementById('back').addEventListener('click', () => {
+  authorization = null;
+  confirmation.hidden = true;
+  credentials.hidden = false;
+  document.querySelector('details').hidden = false;
+  document.getElementById('intro').hidden = false;
+  document.getElementById('heading').textContent = 'Delete your account';
+  document.getElementById('email').focus();
+});
+const parameters = new URLSearchParams(location.search);
+history.replaceState(null, '', base);
+const code = parameters.get('code');
+if (parameters.has('error')) error.textContent = parameters.get('error');
+if (code) run(async () => {
+  const verifier = sessionStorage.getItem(verifierKey);
+  sessionStorage.removeItem(verifierKey);
+  if (!verifier) throw new Error('This Google authorization was started in another browser. Please verify again.');
+  preview(await post('exchange', {code, verifier}));
+});
+fetch(`${base}/policy`, {cache: 'no-store'})
+  .then(response => response.json())
+  .then(policy => document.getElementById('retention').textContent = policy.retention_notice)
+  .catch(() => document.getElementById('retention').textContent = 'Retention policy could not be loaded. Contact the server operator about backups.');
+</script>
+</body>
+</html>

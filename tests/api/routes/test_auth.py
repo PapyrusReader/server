@@ -80,16 +80,16 @@ def unconfigured_powersync(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture
-def configured_email_delivery(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str, str]]:
+def configured_email_delivery(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str, str, str | None]]:
     settings = get_settings()
     monkeypatch.setattr(settings, "email_delivery_enabled", True)
     monkeypatch.setattr(settings, "smtp_host", "smtp.example.test")
     monkeypatch.setattr(settings, "smtp_from_email", "noreply@example.test")
     monkeypatch.setattr(settings, "app_public_base_url", "http://papyrus.localhost:3000")
-    sent_messages: list[tuple[str, str, str]] = []
+    sent_messages: list[tuple[str, str, str, str | None]] = []
 
-    def fake_send_email(recipient: str, subject: str, body: str) -> None:
-        sent_messages.append((recipient, subject, body))
+    def fake_send_email(recipient: str, subject: str, body: str, *, html_body: str | None = None) -> None:
+        sent_messages.append((recipient, subject, body, html_body))
 
     monkeypatch.setattr(email_service, "send_email", fake_send_email)
     return sent_messages
@@ -368,6 +368,7 @@ async def test_google_oauth_flow_creates_user_and_exchanges_code(
     assert exchange_response.status_code == 200
     data = exchange_response.json()
     assert data["user"]["email"] == "google_user@example.com"
+    assert data["user"]["connected_providers"] == ["google"]
     assert data["user"]["display_name"] == "Google User"
 
 
@@ -514,6 +515,7 @@ async def test_google_link_flow_links_identity_to_existing_user(
     )
 
     assert complete_response.status_code == 200
+    assert complete_response.json()["connected_providers"] == ["google"]
 
     identity_result = await db_session.execute(
         select(UserIdentity).where(UserIdentity.provider_subject == "google-sub-link")
@@ -614,7 +616,7 @@ async def test_verify_email_rejects_expired_token(client: AsyncClient, db_sessio
 
 async def test_resend_verification_sends_email_when_configured(
     client: AsyncClient,
-    configured_email_delivery: list[tuple[str, str, str]],
+    configured_email_delivery: list[tuple[str, str, str, str | None]],
 ):
     """Test resend verification sends an email when SMTP is configured."""
     register_response = await client.post(
@@ -636,10 +638,11 @@ async def test_resend_verification_sends_email_when_configured(
     assert response.status_code == 200
     assert response.json()["message"] == "If the email is registered, a verification link has been sent"
     assert len(configured_email_delivery) == 1
-    recipient, subject, body = configured_email_delivery[0]
+    recipient, subject, body, html = configured_email_delivery[0]
     assert recipient == "test@example.com"
     assert subject == "Verify your Papyrus email address"
     assert "Verification token:" in body
+    assert html is None
 
 
 async def test_forgot_password_returns_configuration_message(
@@ -670,7 +673,7 @@ async def test_forgot_password_returns_configuration_message(
 async def test_forgot_password_requires_app_public_base_url(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
-    configured_email_delivery: list[tuple[str, str, str]],
+    configured_email_delivery: list[tuple[str, str, str, str | None]],
 ):
     """Test forgot password does not send linkless email when app URL is missing."""
     register_response = await client.post(
@@ -698,7 +701,7 @@ async def test_forgot_password_requires_app_public_base_url(
 
 async def test_forgot_password_sends_email_when_configured(
     client: AsyncClient,
-    configured_email_delivery: list[tuple[str, str, str]],
+    configured_email_delivery: list[tuple[str, str, str, str | None]],
 ):
     """Test forgot password issues a token and sends an email when SMTP is configured."""
     register_response = await client.post(
@@ -706,7 +709,7 @@ async def test_forgot_password_sends_email_when_configured(
         json={
             "email": "test@example.com",
             "password": "SecureP@ss123",
-            "display_name": "Test User",
+            "display_name": '<script>alert("name")</script>',
         },
     )
 
@@ -720,13 +723,26 @@ async def test_forgot_password_sends_email_when_configured(
     assert response.status_code == 200
     assert response.json()["message"] == "If the email is registered, a reset link has been sent"
     assert len(configured_email_delivery) == 1
-    recipient, subject, body = configured_email_delivery[0]
+    recipient, subject, body, html = configured_email_delivery[0]
     assert recipient == "test@example.com"
     assert subject == "Reset your Papyrus password"
     assert "http://papyrus.localhost:3000/reset-password?token=" in body
     assert "This link expires in 60 minutes." in body
     assert "Reset token:" not in body
     assert "/v1/auth/reset-password" not in body
+    assert html is not None
+    assert "Reset your password" in html
+    assert "This link expires in 60 minutes and can only be used once." in html
+    assert "If you didn&#x27;t request this" in html
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+    reset_url = next(line for line in body.splitlines() if line.startswith("http://"))
+    assert f'href="{reset_url}"' in html
+    assert ">Reset password</a>" in html
+    token = parse_qs(urlparse(reset_url).query)["token"][0]
+    payload = {"token": token, "password": "NewSecureP@ss456"}
+    assert (await client.post("/v1/auth/reset-password", json=payload)).status_code == 200
+    assert (await client.post("/v1/auth/reset-password", json=payload)).status_code == 400
 
 
 async def test_forgot_password_send_failure_returns_service_unavailable(
@@ -752,7 +768,7 @@ async def test_forgot_password_send_failure_returns_service_unavailable(
     monkeypatch.setattr(
         email_service,
         "send_email",
-        lambda recipient, subject, body: (_ for _ in ()).throw(ServiceUnavailableError("Email delivery failed")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(ServiceUnavailableError("Email delivery failed")),
     )
 
     response = await client.post(

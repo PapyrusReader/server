@@ -79,16 +79,3 @@ async def test_change_user_password_rejects_invalid_current_password(
                 "WrongPassword123",
                 "NewSecureP@ss123",
             )
-
-
-async def test_delete_user_account_disables_user_and_revokes_sessions(
-    test_session_maker: async_sessionmaker[AsyncSession],
-):
-    """Test account deletion disables the user and revokes sessions."""
-    async with test_session_maker() as session:
-        user, _ = await _seed_user_with_session(session)
-        await user_service.delete_user_account(session, user.user_id, "SecureP@ss123")
-        await session.refresh(user)
-        assert user.disabled_at is not None
-        session_result = await session.execute(select(AuthSession).where(AuthSession.user_id == user.user_id))
-        assert all(auth_session.revoked_at is not None for auth_session in session_result.scalars())

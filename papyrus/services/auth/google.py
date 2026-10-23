@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 from uuid import UUID
 
@@ -109,6 +109,7 @@ class GoogleOAuthClient:
             email_verified=bool(claims.get("email_verified", False)),
             display_name=str(claims["name"]) if isinstance(claims.get("name"), str) else None,
             avatar_url=str(claims["picture"]) if isinstance(claims.get("picture"), str) else None,
+            nonce=claims.get("nonce"),
         )
 
 
@@ -176,6 +177,29 @@ def build_google_login_authorization_url(redirect_uri: str, callback_uri: str) -
     return google_oauth_client.build_authorization_url(callback_uri, state)
 
 
+def build_google_account_authorization_url(
+    redirect_uri: str,
+    callback_uri: str,
+    challenge: str,
+    expected_user_id: UUID | None = None,
+) -> str:
+    _validate_oauth_redirect_uri(redirect_uri)
+
+    state = create_state_token(
+        {
+            "redirect_uri": redirect_uri,
+            "mode": "account_deletion",
+            "challenge": challenge,
+            "user_id": str(expected_user_id) if expected_user_id is not None else None,
+        }
+    )
+
+    url = urlsplit(google_oauth_client.build_authorization_url(callback_uri, state))
+    query = dict(parse_qsl(url.query))
+    query.update({"prompt": "select_account consent", "nonce": challenge})
+    return urlunsplit((url.scheme, url.netloc, url.path, urlencode(query), url.fragment))
+
+
 async def build_google_link_authorization_url(user_id: UUID, redirect_uri: str, callback_uri: str) -> str:
     _validate_oauth_redirect_uri(redirect_uri)
 
@@ -198,6 +222,9 @@ async def _resolve_google_login_user(session: AsyncSession, identity: GoogleIden
     existing_identity = identity_result.scalar_one_or_none()
 
     if existing_identity is not None:
+        if existing_identity.user.deletion_due_at is not None:
+            return existing_identity.user, None
+
         if existing_identity.user.disabled_at is not None:
             return None, "account_disabled"
 
@@ -261,6 +288,39 @@ async def handle_google_callback(
 
     identity = google_oauth_client.exchange_code_for_identity(code, callback_uri)
     mode = state.get("mode")
+
+    if mode == "account_deletion":
+        challenge = state.get("challenge")
+
+        if not isinstance(challenge, str) or identity.nonce != challenge:
+            raise ValidationError("Google authorization does not match this request")
+
+        user_id = await session.scalar(
+            select(UserIdentity.user_id).where(
+                UserIdentity.provider == GOOGLE_PROVIDER,
+                UserIdentity.provider_subject == identity.subject,
+            )
+        )
+
+        expected_user_id = state.get("user_id")
+
+        if user_id is None or (expected_user_id is not None and str(user_id) != expected_user_id):
+            return _build_redirect_uri(redirect_uri, {"error": "Use the Google account linked to your Papyrus account"})
+
+        from papyrus.services.account_deletion import GOOGLE_HANDOFF_PURPOSE, _lock_user
+
+        await _lock_user(session, user_id)
+
+        exchange_code = await _create_exchange_code(
+            session,
+            purpose=GOOGLE_HANDOFF_PURPOSE,
+            redirect_uri=redirect_uri,
+            user_id=user_id,
+            code_challenge=challenge,
+        )
+
+        await session.commit()
+        return _build_redirect_uri(redirect_uri, {"code": exchange_code})
 
     if mode == "login":
         user, callback_error = await _resolve_google_login_user(session, identity)
