@@ -51,6 +51,7 @@ endpoints, jobs and rules. Provider adapters, job lifecycle and release tokens
 live in [the acquisition service](papyrus/services/acquisition/). The monitor
 imports selected media and handles retry/cancellation. [OPDS relay setup](docs/opds-relay.md)
 describes catalog transport and origin restrictions.
+See [in-app support setup](docs/support.md) for GitHub issue submission configuration.
 
 ## Verification
 
