@@ -43,6 +43,12 @@ client's authorized redirect URI to
 `https://api.papyrus-reader.com/v1/auth/oauth/google/callback`; mobile callbacks remain
 `papyrus://auth/callback`.
 
+Windows and Linux apps receive the server's login result at
+`http://localhost:43821/auth/callback`. The API allows this exact desktop callback
+in production without adding `localhost` to `OAUTH_ALLOWED_REDIRECT_HOSTS`.
+Google still redirects to the public API callback above. Do not register the
+desktop loopback URL as the Google web client's authorized redirect URI.
+
 Provision the shared edge project and its `papyrus-edge` network before deploying
 these services. Keep domain values aligned with `edge.env`; the ACME contact email
 belongs there. The public landing page is a separate Compose project owned by the

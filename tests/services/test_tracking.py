@@ -11,6 +11,7 @@ from papyrus.models import SyncGoalPeriod, SyncReadingActivity, SyncReadingGoal
 from papyrus.schemas.goal import GoalType
 from papyrus.schemas.sync import PowerSyncCrudMutation
 from papyrus.schemas.tracking import Activity, GoalDefinition, GoalRule, PeriodRecord
+from papyrus.services import goal_history
 from papyrus.services.sync import apply_powersync_upload_batch
 from tests.services.test_sync import _create_book, _create_user
 
@@ -24,10 +25,12 @@ def mutation(table, payload):
     )
 
 
-async def setup(session):
+async def setup(session, now: datetime | None = None):
     owner = await _create_user(session, f"{uuid4()}@example.com")
     book = await _create_book(session, owner)
-    now = datetime.now(UTC) - timedelta(minutes=30)
+
+    if now is None:
+        now = datetime.now(UTC) - timedelta(minutes=30)
 
     goal = GoalDefinition(
         id=uuid4(),
@@ -183,9 +186,27 @@ async def test_goal_rule_branches_merge_without_rewriting_existing_history(test_
             await apply_powersync_upload_batch(session, owner, [mutation("reading_goals", rewrite)])
 
 
-async def test_book_goal_deletion_preserves_activity_and_periods(test_session_maker):
+@pytest.mark.parametrize(
+    "minutes_from_midnight,expected_period_count,first_period_archived",
+    [(-1, 1, True), (0, 1, False), (1, 2, False)],
+)
+async def test_book_goal_deletion_preserves_activity_and_periods(
+    test_session_maker,
+    monkeypatch,
+    minutes_from_midnight,
+    expected_period_count,
+    first_period_archived,
+):
     async with test_session_maker() as session:
-        owner, book_id, goal, activity = await setup(session)
+        owner, book_id, goal, activity = await setup(session, now=datetime(2026, 1, 1, 12, tzinfo=UTC))
+        deletion_at = goal.end_date + timedelta(minutes=minutes_from_midnight)
+
+        class DeletionTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return deletion_at.astimezone(tz)
+
+        monkeypatch.setattr(goal_history, "datetime", DeletionTime)
 
         await apply_powersync_upload_batch(
             session,
@@ -212,8 +233,21 @@ async def test_book_goal_deletion_preserves_activity_and_periods(test_session_ma
 
         assert await session.get(SyncReadingActivity, activity.id) is not None
         periods = (await session.execute(select(SyncGoalPeriod))).scalars().all()
-        assert len(periods) == 1
-        assert periods[0].payload["definition"]["is_archived"]
+        definitions = sorted(
+            [GoalDefinition.model_validate(period.payload["definition"]) for period in periods],
+            key=lambda definition: definition.start_date,
+        )
+
+        assert len(definitions) == expected_period_count
+        assert definitions[0].start_date == goal.start_date
+        assert definitions[0].end_date == min(goal.end_date, deletion_at)
+        assert definitions[0].is_archived == first_period_archived
+
+        if expected_period_count == 2:
+            assert definitions[1].start_date == goal.end_date
+            assert definitions[1].end_date == deletion_at
+            assert definitions[1].is_archived
+
         assert await session.get(SyncReadingGoal, goal.id) is None
         await apply_powersync_upload_batch(session, owner, [mutation("reading_goals", goal)])
         assert await session.get(SyncReadingGoal, goal.id) is None

@@ -32,20 +32,6 @@ async def test_update_current_user(client: AsyncClient, auth_headers: dict[str, 
     assert data["display_name"] == "Updated Name"
 
 
-async def test_delete_current_user(client: AsyncClient, auth_headers: dict[str, str], auth_user: dict[str, str]):
-    """Test deleting current user account."""
-    response = await client.request(
-        "DELETE",
-        "/v1/users/me",
-        headers=auth_headers,
-        json={"password": auth_user["password"]},
-    )
-
-    assert response.status_code == 204
-    protected_response = await client.get("/v1/users/me", headers=auth_headers)
-    assert protected_response.status_code == 401
-
-
 async def test_get_user_preferences(client: AsyncClient, auth_headers: dict[str, str]):
     """Test getting user preferences."""
     response = await client.get("/v1/users/me/preferences", headers=auth_headers)

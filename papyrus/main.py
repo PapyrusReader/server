@@ -22,7 +22,7 @@ from papyrus.core.database import async_session_maker
 from papyrus.core.dev_pages import DEV_PAGES_DIST_DIR, DEV_PAGES_STATIC_URL
 from papyrus.core.exceptions import AppError
 from papyrus.core.rate_limit import limiter, rate_limit_exceeded_handler
-from papyrus.services import acquisition_monitor
+from papyrus.services import account_deletion, acquisition_monitor
 
 settings = get_settings()
 
@@ -44,6 +44,9 @@ def configure_logging() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan events."""
+    cleanup_task = asyncio.create_task(
+        account_deletion.run_cleanup(async_session_maker), name="account-deletion-cleanup"
+    )
     monitor_task: asyncio.Task[None] | None = None
 
     if settings.acquisition_enabled and settings.acquisition_import_root is not None:
@@ -58,6 +61,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         yield
     finally:
+        cleanup_task.cancel()
+
+        with suppress(asyncio.CancelledError):
+            await cleanup_task
+
         if monitor_task is not None:
             monitor_task.cancel()
 

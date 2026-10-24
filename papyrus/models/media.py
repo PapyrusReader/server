@@ -35,3 +35,12 @@ class MediaAsset(Base):
     storage_path: Mapped[str] = mapped_column(String(2048), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class AccountMediaCleanup(Base):
+    """Durable cleanup work surviving the account's cascading database deletion."""
+
+    __tablename__ = "account_media_cleanup"
+
+    user_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())

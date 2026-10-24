@@ -17,6 +17,7 @@ from papyrus.services.auth._core import (
     _normalize_email,
     _now,
     _password_reset_email_body,
+    _password_reset_email_html,
     _revoke_user_sessions,
     _verification_email_body,
 )
@@ -81,6 +82,7 @@ async def begin_password_reset(session: AsyncSession, email: str) -> str:
         normalized_email,
         "Reset your Papyrus password",
         _password_reset_email_body(token),
+        html_body=_password_reset_email_html(token, user.display_name),
     )
 
     await session.commit()
@@ -88,8 +90,11 @@ async def begin_password_reset(session: AsyncSession, email: str) -> str:
 
 
 async def reset_password(session: AsyncSession, token: str, new_password: str) -> str:
+    """Restore password access during the grace period without cancelling deletion or signing in."""
+    from papyrus.services.account_deletion import _lock_user
+
     email_token = await _consume_email_action_token(session, token, PASSWORD_RESET_ACTION)
-    user = await _get_active_user(session, email_token.user_id)
+    user = await _lock_user(session, email_token.user_id)
 
     credential_result = await session.execute(
         select(PasswordCredential).where(PasswordCredential.user_id == user.user_id)

@@ -10,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.core.exceptions import ForbiddenError, NotFoundError, UnauthorizedError, ValidationError
 from papyrus.core.security import hash_password, verify_password
-from papyrus.models import AuthSession, PasswordCredential, User
+from papyrus.models import AuthSession, PasswordCredential, User, UserIdentity
 from papyrus.schemas.user import UpdateUserRequest
+from papyrus.schemas.user import User as UserResponse
+from papyrus.services import avatars
 
 
 def _now() -> datetime:
@@ -44,29 +46,27 @@ async def get_user_profile(session: AsyncSession, user_id: UUID) -> User:
 
 
 async def update_user_profile(session: AsyncSession, user_id: UUID, request: UpdateUserRequest) -> User:
-    user = await _get_active_user(session, user_id)
+    user = await avatars.lock_user(session, user_id)
+    previous_avatar = user.avatar_url
+
+    if request.avatar_url is not None:
+        avatar_url = str(request.avatar_url)
+
+        if avatar_url.startswith(avatars.AVATAR_PREFIX) and avatar_url != previous_avatar:
+            raise ValidationError("Upload a photo before using it in your profile")
+
+        user.avatar_url = avatar_url or None
 
     if request.display_name is not None:
         user.display_name = request.display_name
 
-    if request.avatar_url is not None:
-        user.avatar_url = str(request.avatar_url)
-
     await session.commit()
+
+    if user.avatar_url != previous_avatar:
+        avatars.delete_previous_avatar(user_id, previous_avatar)
+
     await session.refresh(user)
     return user
-
-
-async def delete_user_account(session: AsyncSession, user_id: UUID, password: str) -> None:
-    user = await _get_active_user(session, user_id)
-    credential = await session.get(PasswordCredential, user_id)
-
-    if credential is not None and not verify_password(password, credential.password_hash):
-        raise UnauthorizedError("Current password is incorrect")
-
-    user.disabled_at = _now()
-    await _revoke_user_sessions(session, user_id)
-    await session.commit()
 
 
 async def change_user_password(session: AsyncSession, user_id: UUID, current_password: str, new_password: str) -> None:
@@ -83,3 +83,10 @@ async def change_user_password(session: AsyncSession, user_id: UUID, current_pas
     credential.password_changed_at = _now()
     await _revoke_user_sessions(session, user_id)
     await session.commit()
+
+
+async def user_response(session: AsyncSession, user: User) -> UserResponse:
+    providers = await session.scalars(select(UserIdentity.provider).where(UserIdentity.user_id == user.user_id))
+    response = UserResponse.model_validate(user)
+    response.connected_providers = sorted(set(providers))
+    return response

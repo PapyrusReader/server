@@ -3,6 +3,7 @@
 from fastapi import APIRouter, FastAPI
 
 from papyrus.api.routes import (
+    account_deletion,
     acquisition,
     annotations,
     auth,
@@ -21,12 +22,17 @@ from papyrus.api.routes import (
     series,
     shelves,
     storage,
+    support,
     sync,
     tags,
     users,
 )
 
 api_router = APIRouter()
+
+api_router.include_router(account_deletion.router, prefix="/account-deletion", tags=["Account deletion"])
+
+api_router.include_router(support.router, prefix="/support", tags=["Support"])
 
 api_router.include_router(opds.router, prefix="/opds", tags=["OPDS"])
 

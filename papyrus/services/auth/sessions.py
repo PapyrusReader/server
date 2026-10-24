@@ -88,11 +88,16 @@ async def login_user(
     if user is None or user.password_credential is None:
         raise UnauthorizedError("Invalid email or password")
 
-    if user.disabled_at is not None:
-        raise ForbiddenError("User account is disabled")
-
     if not verify_password(request.password, user.password_credential.password_hash):
         raise UnauthorizedError("Invalid email or password")
+
+    if user.deletion_due_at is not None:
+        from papyrus.services.account_deletion import require_account_recovery
+
+        await require_account_recovery(session, user.user_id)
+
+    if user.disabled_at is not None:
+        raise ForbiddenError("User account is disabled")
 
     auth_result = await _create_session_for_user(
         session,
@@ -172,6 +177,13 @@ async def exchange_login_code(
 
     if exchange_code.user_id is None:
         raise UnauthorizedError("Exchange code is missing a user")
+
+    user = await session.get(User, exchange_code.user_id)
+
+    if user is not None and user.deletion_due_at is not None:
+        from papyrus.services.account_deletion import require_account_recovery
+
+        await require_account_recovery(session, user.user_id)
 
     user = await _get_active_user(session, exchange_code.user_id)
 

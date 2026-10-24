@@ -18,6 +18,7 @@ class User(BaseModel):
     email_verified: bool = False
     created_at: datetime
     last_login_at: datetime | None = None
+    connected_providers: list[str] = Field(default_factory=list)
 
 
 class UpdateUserRequest(BaseModel):
@@ -36,9 +37,3 @@ class UserPreferences(BaseModel):
     notifications_enabled: bool | None = Field(None, examples=[True])
     default_shelf: str | None = Field(None, examples=["Currently Reading"])
     sync_wifi_only: bool | None = Field(None, examples=[False])
-
-
-class DeleteAccountRequest(BaseModel):
-    """Account deletion request."""
-
-    password: str = Field(..., description="Current password for confirmation")

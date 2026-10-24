@@ -1,19 +1,47 @@
 """User routes."""
 
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, File, Form, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.api.deps import CurrentUserId
+from papyrus.config import get_settings
 from papyrus.core.database import get_db
+from papyrus.core.rate_limit import get_authenticated_user_key, limiter
 from papyrus.schemas.auth import ChangePasswordRequest
 from papyrus.schemas.common import MessageResponse
-from papyrus.schemas.user import DeleteAccountRequest, UpdateUserRequest, User, UserPreferences
+from papyrus.schemas.user import UpdateUserRequest, User, UserPreferences
+from papyrus.services import avatars
 from papyrus.services import users as user_service
 
 router = APIRouter()
 DBSession = Annotated[AsyncSession, Depends(get_db)]
+
+
+@router.post("/me/avatar", response_model=User, summary="Save profile with private photo")
+@limiter.limit(lambda: f"{get_settings().rate_limit_upload}/minute", key_func=get_authenticated_user_key)
+async def upload_avatar(
+    request: Request,
+    user_id: CurrentUserId,
+    db: DBSession,
+    file: Annotated[UploadFile, File()],
+    display_name: Annotated[str, Form(min_length=1, max_length=100)],
+) -> User:
+    user = await avatars.upload_avatar(db, user_id, file=file, display_name=display_name)
+    return await user_service.user_response(db, user)
+
+
+@router.get("/me/avatar/{avatar_id}", summary="Download current private profile photo")
+async def download_avatar(user_id: CurrentUserId, db: DBSession, avatar_id: UUID) -> Response:
+    contents, content_type = await avatars.download_avatar(db, user_id, avatar_id)
+
+    return Response(
+        content=contents,
+        media_type=content_type,
+        headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @router.get(
@@ -24,7 +52,7 @@ DBSession = Annotated[AsyncSession, Depends(get_db)]
 async def get_current_user(user_id: CurrentUserId, db: DBSession) -> User:
     """Return the authenticated user's profile information."""
     user = await user_service.get_user_profile(db, user_id)
-    return User.model_validate(user)
+    return await user_service.user_response(db, user)
 
 
 @router.patch(
@@ -39,22 +67,7 @@ async def update_current_user(
 ) -> User:
     """Update the authenticated user's profile information."""
     user = await user_service.update_user_profile(db, user_id, request)
-    return User.model_validate(user)
-
-
-@router.delete(
-    "/me",
-    status_code=status.HTTP_204_NO_CONTENT,
-    summary="Delete current user account",
-)
-async def delete_current_user(
-    user_id: CurrentUserId,
-    request: DeleteAccountRequest,
-    db: DBSession,
-) -> Response:
-    """Disable the user account and revoke active sessions."""
-    await user_service.delete_user_account(db, user_id, request.password)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    return await user_service.user_response(db, user)
 
 
 @router.get(
