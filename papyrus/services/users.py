@@ -13,6 +13,7 @@ from papyrus.core.security import hash_password, verify_password
 from papyrus.models import AuthSession, PasswordCredential, User, UserIdentity
 from papyrus.schemas.user import UpdateUserRequest
 from papyrus.schemas.user import User as UserResponse
+from papyrus.services import avatars
 
 
 def _now() -> datetime:
@@ -45,15 +46,25 @@ async def get_user_profile(session: AsyncSession, user_id: UUID) -> User:
 
 
 async def update_user_profile(session: AsyncSession, user_id: UUID, request: UpdateUserRequest) -> User:
-    user = await _get_active_user(session, user_id)
+    user = await avatars.lock_user(session, user_id)
+    previous_avatar = user.avatar_url
+
+    if request.avatar_url is not None:
+        avatar_url = str(request.avatar_url)
+
+        if avatar_url.startswith(avatars.AVATAR_PREFIX) and avatar_url != previous_avatar:
+            raise ValidationError("Upload a photo before using it in your profile")
+
+        user.avatar_url = avatar_url or None
 
     if request.display_name is not None:
         user.display_name = request.display_name
 
-    if request.avatar_url is not None:
-        user.avatar_url = str(request.avatar_url)
-
     await session.commit()
+
+    if user.avatar_url != previous_avatar:
+        avatars.delete_previous_avatar(user_id, previous_avatar)
+
     await session.refresh(user)
     return user
 
