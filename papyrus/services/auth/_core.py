@@ -146,15 +146,26 @@ async def _create_exchange_code(
     return plain_code
 
 
-async def _consume_exchange_code(session: AsyncSession, code: str, purpose: str) -> AuthExchangeCode:
-    result = await session.execute(
-        select(AuthExchangeCode).where(
-            AuthExchangeCode.code_hash == hash_opaque_token(code),
-            AuthExchangeCode.purpose == purpose,
-            AuthExchangeCode.used_at.is_(None),
-        )
+async def _lock_credential_owner(session: AsyncSession, user_id: UUID | None) -> None:
+    """Match deletion's owner-before-credential lock order and refresh cached account state."""
+    if user_id is None:
+        return
+
+    await session.scalar(
+        select(User).where(User.user_id == user_id).with_for_update().execution_options(populate_existing=True)
     )
 
+
+async def _consume_exchange_code(session: AsyncSession, code: str, purpose: str) -> AuthExchangeCode:
+    query = select(AuthExchangeCode).where(
+        AuthExchangeCode.code_hash == hash_opaque_token(code),
+        AuthExchangeCode.purpose == purpose,
+        AuthExchangeCode.used_at.is_(None),
+    )
+
+    user_id = await session.scalar(query.with_only_columns(AuthExchangeCode.user_id))
+    await _lock_credential_owner(session, user_id)
+    result = await session.execute(query.with_for_update().execution_options(populate_existing=True))
     exchange_code = result.scalar_one_or_none()
 
     if exchange_code is None or exchange_code.expires_at <= _now():
@@ -187,14 +198,15 @@ async def _issue_email_action_token(
 
 
 async def _consume_email_action_token(session: AsyncSession, token: str, action_type: str) -> EmailActionToken:
-    result = await session.execute(
-        select(EmailActionToken).where(
-            EmailActionToken.token_hash == hash_opaque_token(token),
-            EmailActionToken.action_type == action_type,
-            EmailActionToken.used_at.is_(None),
-        )
+    query = select(EmailActionToken).where(
+        EmailActionToken.token_hash == hash_opaque_token(token),
+        EmailActionToken.action_type == action_type,
+        EmailActionToken.used_at.is_(None),
     )
 
+    user_id = await session.scalar(query.with_only_columns(EmailActionToken.user_id))
+    await _lock_credential_owner(session, user_id)
+    result = await session.execute(query.with_for_update().execution_options(populate_existing=True))
     email_token = result.scalar_one_or_none()
 
     if email_token is None or email_token.expires_at <= _now():
