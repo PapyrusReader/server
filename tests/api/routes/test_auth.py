@@ -322,12 +322,28 @@ async def test_logout_all_revokes_other_sessions(client: AsyncClient):
     assert second_protected_response.status_code == 401
 
 
+@pytest.mark.parametrize(
+    ("redirect_uri", "client_type"),
+    [
+        ("papyrus://auth/callback", "mobile"),
+        ("http://localhost:43821/auth/callback", "desktop"),
+        ("https://app.example.test/auth/callback", "web"),
+    ],
+)
 async def test_google_oauth_flow_creates_user_and_exchanges_code(
     client: AsyncClient,
     monkeypatch: pytest.MonkeyPatch,
     configured_google: None,
+    redirect_uri: str,
+    client_type: str,
 ):
-    """Test the browser-based Google OAuth flow."""
+    """Production redirects complete login without development host allowances."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "debug", False)
+    monkeypatch.setattr(settings, "public_base_url", "https://api.example.test")
+    monkeypatch.setattr(settings, "app_public_base_url", "https://app.example.test")
+    monkeypatch.setattr(settings, "oauth_allowed_redirect_hosts", ["app.example.test"])
+
     monkeypatch.setattr(
         auth_service.google_oauth_client,
         "exchange_code_for_identity",
@@ -342,12 +358,16 @@ async def test_google_oauth_flow_creates_user_and_exchanges_code(
 
     start_response = await client.get(
         "/v1/auth/oauth/google/start",
-        params={"redirect_uri": "papyrus://auth/callback"},
+        params={"redirect_uri": redirect_uri},
         follow_redirects=False,
     )
 
     assert start_response.status_code == 302
     start_location = start_response.headers["location"]
+    assert parse_qs(urlparse(start_location).query)["redirect_uri"] == [
+        "https://api.example.test/v1/auth/oauth/google/callback"
+    ]
+
     state = parse_qs(urlparse(start_location).query)["state"][0]
 
     callback_response = await client.get(
@@ -358,11 +378,12 @@ async def test_google_oauth_flow_creates_user_and_exchanges_code(
 
     assert callback_response.status_code == 302
     redirect_location = callback_response.headers["location"]
+    assert redirect_location.split("?", 1)[0] == redirect_uri
     exchange_code = parse_qs(urlparse(redirect_location).query)["code"][0]
 
     exchange_response = await client.post(
         "/v1/auth/exchange-code",
-        json={"code": exchange_code, "client_type": "web"},
+        json={"code": exchange_code, "client_type": client_type},
     )
 
     assert exchange_response.status_code == 200
@@ -435,14 +456,36 @@ async def test_google_oauth_start_requires_configuration(
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
+@pytest.mark.parametrize(
+    "redirect_uri",
+    [
+        "https://evil.example.test/auth/callback",
+        "http://localhost:43822/auth/callback",
+        "http://localhost:43821/other",
+        "http://localhost:43821/auth/callback?next=https://evil.example.test",
+        "http://localhost:43821/auth/callback#fragment",
+        "http://user@localhost:43821/auth/callback",
+        "http://localhost.evil.example.test:43821/auth/callback",
+        "http://localhost:43821@evil.example.test/auth/callback",
+        "http://127.0.0.1:43821/auth/callback",
+    ],
+)
 async def test_google_oauth_start_rejects_unallowed_redirect_uri(
     client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
     configured_google: None,
+    redirect_uri: str,
 ):
     """Test Google OAuth cannot redirect exchange codes to arbitrary origins."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "debug", False)
+    monkeypatch.setattr(settings, "public_base_url", "https://api.example.test")
+    monkeypatch.setattr(settings, "app_public_base_url", "https://app.example.test")
+    monkeypatch.setattr(settings, "oauth_allowed_redirect_hosts", ["app.example.test"])
+
     response = await client.get(
         "/v1/auth/oauth/google/start",
-        params={"redirect_uri": "https://evil.example.test/auth/callback"},
+        params={"redirect_uri": redirect_uri},
         follow_redirects=False,
     )
 

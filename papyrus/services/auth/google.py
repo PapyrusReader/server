@@ -31,6 +31,7 @@ from papyrus.services.auth.types import GOOGLE_PROVIDER, GoogleIdentity
 GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_JWKS_URL = "https://www.googleapis.com/oauth2/v3/certs"
+DESKTOP_OAUTH_REDIRECT_URI = "http://localhost:43821/auth/callback"
 
 
 class GoogleOAuthClient:
@@ -133,6 +134,10 @@ def _configured_base_hosts() -> set[str]:
 
 
 def _is_allowed_oauth_redirect_uri(redirect_uri: str) -> bool:
+    """Allow the fixed desktop callback without opening every loopback URL."""
+    if redirect_uri == DESKTOP_OAUTH_REDIRECT_URI:
+        return True
+
     settings = get_settings()
     parsed = urlsplit(redirect_uri)
     scheme = parsed.scheme.lower()
