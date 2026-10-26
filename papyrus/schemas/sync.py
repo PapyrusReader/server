@@ -76,7 +76,8 @@ UPLOAD_FIELDS = {
     "tags": ENTITY_FIELDS | {"name", "color_hex", "description"},
     "notes": ENTITY_FIELDS | {"book_id", "title", "content", "location", "tags", "is_pinned"},
     "annotations": ENTITY_FIELDS | {"book_id", "selected_text", "color", "location", "note"},
-    "bookmarks": ENTITY_FIELDS | {"book_id", "position", "page_number", "chapter_title", "note", "color_hex"},
+    "bookmarks": ENTITY_FIELDS
+    | {"book_id", "position", "page_number", "chapter_title", "note", "color_hex", "reader_locator"},
     "book_shelves": {"owner_user_id", "book_id", "shelf_id", "added_at", "sort_order"},
     "book_tags": {"owner_user_id", "book_id", "tag_id", "created_at"},
 }

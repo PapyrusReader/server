@@ -13,6 +13,14 @@ from tests.api.routes.test_library_sync import mutation, upload
 async def test_bookmark_roundtrip_retry_partial_update_and_null_clear(client, auth_headers, auth_user, db_session):
     book_id, bookmark_id = uuid4(), uuid4()
     created_at = "2025-01-02T03:04:05Z"
+    locator = {
+        "version": 1,
+        "type": "epub",
+        "spineIndex": 2,
+        "textOffset": 42,
+        "localProgression": 0.1,
+        "totalProgression": 0.25,
+    }
 
     bookmark = mutation(
         "bookmarks",
@@ -20,6 +28,7 @@ async def test_bookmark_roundtrip_retry_partial_update_and_null_clear(client, au
         {
             "book_id": str(book_id),
             "position": 0.25,
+            "reader_locator": locator,
             "page_number": 12,
             "chapter_title": "Chapter",
             "note": "Remember",
@@ -58,6 +67,7 @@ async def test_bookmark_roundtrip_retry_partial_update_and_null_clear(client, au
     assert response.status_code == 200, response.text
     row = (await db_session.execute(text("SELECT * FROM bookmarks"))).mappings().one()
     assert row["position"] == 0.25
+    assert row["reader_locator"] == locator
     assert row["color_hex"] == "#ABCDEF"
     assert row["note"] is row["page_number"] is row["chapter_title"] is None
     assert row["owner_user_id"] == UUID(auth_user["user_id"])
@@ -239,3 +249,32 @@ async def test_bookmark_requires_live_book_and_rejects_unknown_fields(client, au
     assert response.status_code == 400
     response = await upload(client, auth_headers, mutation("bookmarks", uuid4(), {"local_path": "/tmp/book"}))
     assert response.status_code == 422
+
+
+async def test_annotation_selection_and_freehand_note_roundtrip(client, auth_headers, db_session):
+    from tests.services.test_reader_locations import EPUB, SELECTION
+
+    book_id, annotation_id, note_id = uuid4(), uuid4(), uuid4()
+    location = {"page_number": 1, "reader_locator": EPUB, "selection": SELECTION}
+
+    response = await upload(
+        client,
+        auth_headers,
+        mutation("books", book_id, {"title": "Book"}),
+        mutation(
+            "annotations",
+            annotation_id,
+            {"book_id": str(book_id), "selected_text": SELECTION["text"], "location": location},
+        ),
+        mutation(
+            "notes", note_id, {"book_id": str(book_id), "title": "Thought", "content": "A note", "location": None}
+        ),
+    )
+
+    assert response.status_code == 200, response.text
+
+    saved = (await db_session.execute(text("SELECT location FROM annotations"))).scalar_one()
+    assert saved == location
+    note = (await db_session.execute(text("SELECT content, location FROM notes"))).one()
+    assert note.content == "A note"
+    assert note.location is None

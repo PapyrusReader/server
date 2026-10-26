@@ -1,6 +1,7 @@
 """Owned library rows and durable entity deletion markers."""
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -83,6 +84,7 @@ class SyncBookmark(LibraryEntity, Base):
     __tablename__ = "bookmarks"
     __table_args__ = (CheckConstraint("position >= 0 AND position <= 1", name="ck_bookmarks_position_range"),)
 
+    reader_locator: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     bookmark_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     book_id: Mapped[UUID] = mapped_column(ForeignKey("books.book_id", ondelete="CASCADE"), index=True)
     position: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")
