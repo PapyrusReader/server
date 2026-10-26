@@ -29,7 +29,9 @@ def finite_number(value: Any) -> bool:
 
 
 def validate_location(value: dict[str, Any]) -> dict[str, Any]:
-    if value.keys() - {"chapter", "chapter_title", "page_number", "percentage"}:
+    from papyrus.services.reader_location_validation import validate_reader_locator, validate_reader_selection
+
+    if value.keys() - {"chapter", "chapter_title", "page_number", "percentage", "reader_locator", "selection"}:
         raise ValidationError("Unsupported location fields")
 
     page = value.get("page_number")
@@ -51,6 +53,18 @@ def validate_location(value: dict[str, Any]) -> dict[str, Any]:
 
     if percentage is not None and not finite_number(percentage):
         raise ValidationError("location.percentage must be a finite number")
+
+    locator = value.get("reader_locator")
+    selection = value.get("selection")
+
+    if locator is not None:
+        validate_reader_locator(locator)
+
+    if selection is not None:
+        validate_reader_selection(selection)
+
+        if locator != selection["start"]:
+            raise ValidationError("Selection must begin at its saved location")
 
     return value
 
@@ -109,6 +123,11 @@ def convert_value(column: Any, value: Any) -> Any:
 
         if not isinstance(value, dict):
             raise ValidationError(f"{key} must be an object")
+
+        if key == "reader_locator":
+            from papyrus.services.reader_location_validation import validate_reader_locator
+
+            return validate_reader_locator(value)
 
         return validate_location(value) if key == "location" else value
 

@@ -121,6 +121,7 @@ streams:
     query: |
       SELECT
         bookmark_id AS id,
+        reader_locator::text AS reader_locator,
         book_id::text AS book_id,
         position,
         page_number,
