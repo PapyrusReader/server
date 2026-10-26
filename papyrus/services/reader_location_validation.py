@@ -14,6 +14,24 @@ def _fraction(value: Any) -> bool:
     return finite_number(value) and 0 <= value <= 1
 
 
+def _valid_pdf_rectangle(rectangle: Any, start_page: int, end_page: int) -> bool:
+    if not isinstance(rectangle, dict):
+        return False
+
+    if rectangle.keys() != {"pageIndex", "left", "top", "right", "bottom"}:
+        return False
+
+    page_index = rectangle["pageIndex"]
+
+    if not _index(page_index) or not start_page <= page_index <= end_page:
+        return False
+
+    if any(not _fraction(rectangle[key]) for key in ("left", "top", "right", "bottom")):
+        return False
+
+    return not (rectangle["left"] >= rectangle["right"] or rectangle["top"] >= rectangle["bottom"])
+
+
 def validate_reader_locator(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict) or type(value.get("version")) is not int or value["version"] != 1:
         raise ValidationError("Unsupported reader locator version")
@@ -66,15 +84,7 @@ def validate_reader_selection(value: Any) -> dict[str, Any]:
         raise ValidationError("Invalid PDF selection range")
 
     for rectangle in rectangles:
-        if (
-            not isinstance(rectangle, dict)
-            or rectangle.keys() != {"pageIndex", "left", "top", "right", "bottom"}
-            or not _index(rectangle.get("pageIndex"))
-            or not start["pageIndex"] <= rectangle["pageIndex"] <= end["pageIndex"]
-            or any(not _fraction(rectangle.get(key)) for key in ("left", "top", "right", "bottom"))
-            or rectangle["left"] >= rectangle["right"]
-            or rectangle["top"] >= rectangle["bottom"]
-        ):
+        if not _valid_pdf_rectangle(rectangle, start["pageIndex"], end["pageIndex"]):
             raise ValidationError("Invalid PDF selection rectangle")
 
     return value

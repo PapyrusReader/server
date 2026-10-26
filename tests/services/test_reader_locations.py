@@ -71,3 +71,27 @@ def test_invalid_selection_is_rejected(patch):
 def test_selection_must_match_saved_start():
     with pytest.raises(ValidationError):
         validate_location({"page_number": 1, "reader_locator": PDF, "selection": SELECTION})
+
+
+@pytest.mark.parametrize(
+    "rectangle",
+    [
+        None,
+        False,
+        [],
+        {},
+        {"pageIndex": 3, "left": 0.1, "top": 0.2, "right": 0.8},
+        {"pageIndex": "3", "left": 0.1, "top": 0.2, "right": 0.8, "bottom": 0.3},
+        {"pageIndex": True, "left": 0.1, "top": 0.2, "right": 0.8, "bottom": 0.3},
+        {"pageIndex": 2, "left": 0.1, "top": 0.2, "right": 0.8, "bottom": 0.3},
+        {"pageIndex": 4, "left": 0.1, "top": 0.2, "right": 0.8, "bottom": 0.3},
+        {"pageIndex": 3, "left": None, "top": 0.2, "right": 0.8, "bottom": 0.3},
+        {"pageIndex": 3, "left": float("nan"), "top": 0.2, "right": 0.8, "bottom": 0.3},
+        {"pageIndex": 3, "left": 0.1, "top": 0.2, "right": 1.1, "bottom": 0.3},
+        {"pageIndex": 3, "left": 0.8, "top": 0.2, "right": 0.1, "bottom": 0.3},
+        {"pageIndex": 3, "left": 0.1, "top": 0.3, "right": 0.8, "bottom": 0.3},
+    ],
+)
+def test_malformed_pdf_rectangles_raise_validation_error(rectangle):
+    with pytest.raises(ValidationError, match="Invalid PDF selection rectangle"):
+        validate_reader_selection({"text": "PDF words", "start": PDF, "end": PDF, "rectangles": [rectangle]})
