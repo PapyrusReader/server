@@ -20,6 +20,8 @@ from papyrus.main import create_app
 from papyrus.main import settings as app_settings
 from papyrus.models import AuthSession, Base, PasswordCredential, User
 
+pytest_plugins = ["tests.timing"]
+
 
 @pytest.fixture
 def user_id() -> str:

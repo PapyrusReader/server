@@ -59,6 +59,7 @@ maintainer's reviewed examples. The rules below also apply in standalone checkou
 - If database behavior changes, add the narrowest regression test that proves the query or transaction behavior.
 - Mark schema-changing tests with `pytest.mark.migration`. Ordinary tests share the schema and truncate rows after each case; migration tests rebuild it before and after each case, including failures.
 - Use `public_client` or `public_debug_client` for routes that do not access the database. These fixtures reject accidental database access.
+- Set `PAPYRUS_TEST_TIMING=/tmp/pytest-timing.json` to export setup, call, and teardown timings. CI publishes these as a job summary and artifact.
 - Do not claim success without running the most relevant checks, or explicitly stating why they were not run.
 
 ## Migration Rules
