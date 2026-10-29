@@ -53,6 +53,7 @@ addopts = "-v --tb=short"
 markers = [
     "integration: tests that require a running database",
     "auth_smoke: provider-backed authentication smoke tests",
+    "migration: tests that alter the database schema and require a full rebuild",
 ]
 
 [tool.ruff]

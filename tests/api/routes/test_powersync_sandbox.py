@@ -37,20 +37,20 @@ async def _seed_demo_item(
     return item
 
 
-async def test_powersync_sandbox_not_registered_in_production_mode(prod_client: AsyncClient):
+async def test_powersync_sandbox_not_registered_in_production_mode(public_client: AsyncClient):
     """The PowerSync sandbox page is absent when debug mode is disabled."""
-    response = await prod_client.get("/__dev/powersync-sandbox")
+    response = await public_client.get("/__dev/powersync-sandbox")
     assert response.status_code == 404
 
 
 async def test_powersync_sandbox_registered_in_debug_vite_mode(
-    debug_client: AsyncClient,
+    public_debug_client: AsyncClient,
     monkeypatch,
 ):
     """The PowerSync sandbox page uses Vite-served assets when configured."""
     monkeypatch.setattr(app_settings, "dev_pages_use_vite", True)
     monkeypatch.setattr(app_settings, "dev_pages_vite_url", "http://vite.test:5173")
-    response = await debug_client.get("/__dev/powersync-sandbox")
+    response = await public_debug_client.get("/__dev/powersync-sandbox")
     assert response.status_code == 200
     assert "PowerSync Sandbox" in response.text
     assert 'data-dev-page="powersync-sandbox"' in response.text
@@ -66,7 +66,7 @@ async def test_powersync_sandbox_registered_in_debug_vite_mode(
 
 
 async def test_powersync_sandbox_renders_built_assets_when_manifest_exists(
-    debug_client: AsyncClient,
+    public_debug_client: AsyncClient,
     monkeypatch,
     tmp_path,
 ):
@@ -90,7 +90,7 @@ async def test_powersync_sandbox_renders_built_assets_when_manifest_exists(
     monkeypatch.setattr(app_settings, "dev_pages_use_vite", False)
     monkeypatch.setattr(app_settings, "dev_pages_manifest_path", str(manifest_path))
     dev_pages._load_manifest.cache_clear()
-    response = await debug_client.get("/__dev/powersync-sandbox")
+    response = await public_debug_client.get("/__dev/powersync-sandbox")
     assert response.status_code == 200
     assert 'href="/__dev/static/assets/powersync-sandbox.css"' in response.text
     assert 'src="/__dev/static/assets/powersync-sandbox.js"' in response.text
@@ -98,9 +98,9 @@ async def test_powersync_sandbox_renders_built_assets_when_manifest_exists(
     assert "@vite/client" not in response.text
 
 
-async def test_powersync_sandbox_config_returns_expected_urls(debug_client: AsyncClient):
+async def test_powersync_sandbox_config_returns_expected_urls(public_debug_client: AsyncClient):
     """The sandbox config endpoint exposes the browser and backend integration URLs."""
-    response = await debug_client.get("/__dev/powersync-sandbox/config?client=Two Tabs")
+    response = await public_debug_client.get("/__dev/powersync-sandbox/config?client=Two Tabs")
     assert response.status_code == 200
     body = response.json()
     assert body["register_url"] == "/v1/auth/register"
@@ -115,7 +115,7 @@ async def test_powersync_sandbox_config_returns_expected_urls(debug_client: Asyn
 
 
 async def test_powersync_sandbox_worker_asset_is_served_from_backend_origin(
-    debug_client: AsyncClient,
+    public_debug_client: AsyncClient,
     monkeypatch,
 ):
     """Worker assets and their nested chunks are proxied through the backend origin."""
@@ -125,19 +125,21 @@ async def test_powersync_sandbox_worker_asset_is_served_from_backend_origin(
         lambda asset_path: f"// {asset_path}".encode(),
     )
 
-    response = await debug_client.get("/__dev/powersync-sandbox/worker/WASQLiteDB.umd.js")
+    response = await public_debug_client.get("/__dev/powersync-sandbox/worker/WASQLiteDB.umd.js")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/javascript")
     assert response.headers["x-papyrus-vendor-path"] == "WASQLiteDB.umd.js"
     assert response.text == "// worker/WASQLiteDB.umd.js"
-    nested_response = await debug_client.get("/__dev/powersync-sandbox/worker/node_modules_pnpm_example_chunk.umd.js")
+    nested_response = await public_debug_client.get(
+        "/__dev/powersync-sandbox/worker/node_modules_pnpm_example_chunk.umd.js"
+    )
     assert nested_response.status_code == 200
     assert nested_response.headers["x-papyrus-vendor-path"] == "node_modules_pnpm_example_chunk.umd.js"
     assert nested_response.text == "// worker/node_modules_pnpm_example_chunk.umd.js"
 
 
 async def test_powersync_sandbox_root_asset_is_served_from_backend_origin(
-    debug_client: AsyncClient,
+    public_debug_client: AsyncClient,
     monkeypatch,
 ):
     """Root dist assets such as WASM binaries are proxied through the backend origin."""
@@ -147,7 +149,7 @@ async def test_powersync_sandbox_root_asset_is_served_from_backend_origin(
         lambda asset_path: f"// {asset_path}".encode(),
     )
 
-    response = await debug_client.get("/__dev/powersync-sandbox/ca59e199e1138b553fad.wasm")
+    response = await public_debug_client.get("/__dev/powersync-sandbox/ca59e199e1138b553fad.wasm")
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("application/wasm")
     assert response.headers["x-papyrus-vendor-path"] == "ca59e199e1138b553fad.wasm"

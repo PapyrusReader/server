@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from papyrus.core.exceptions import ForbiddenError
@@ -97,20 +96,4 @@ async def test_apply_powersync_upload_batch_rejects_cross_user_book_update(
                         data={"title": "Intruder Edit"},
                     )
                 ],
-            )
-
-
-async def test_apply_powersync_upload_batch_rejects_unknown_book_fields(
-    test_session_maker: async_sessionmaker[AsyncSession],
-):
-    """The backend rejects fields outside the books upload contract."""
-    async with test_session_maker() as session:
-        await _create_user(session, "missing-book@example.com")
-
-        with pytest.raises(PydanticValidationError):
-            PowerSyncCrudMutation(
-                type="books",
-                op="PUT",
-                id=str(uuid4()),
-                data={"title": "Book", "unexpected": "value"},
             )

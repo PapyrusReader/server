@@ -3,12 +3,15 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import inspect
 
 from papyrus.models import Base
+
+pytestmark = pytest.mark.migration
 
 
 async def test_bookmark_revision_upgrade_downgrade_and_metadata(db_session):
