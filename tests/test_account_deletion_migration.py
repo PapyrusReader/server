@@ -11,6 +11,8 @@ from sqlalchemy import text
 
 from papyrus.models import Base
 
+pytestmark = pytest.mark.migration
+
 REVISIONS = [
     "e6f7a8b9c012_add_account_deletion.py",
     "f7a8b9c0d123_add_account_notifications.py",

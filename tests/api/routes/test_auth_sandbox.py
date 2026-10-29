@@ -8,20 +8,20 @@ from papyrus.core import dev_pages
 from papyrus.main import settings as app_settings
 
 
-async def test_auth_sandbox_not_registered_in_production_mode(prod_client: AsyncClient):
+async def test_auth_sandbox_not_registered_in_production_mode(public_client: AsyncClient):
     """Test the auth sandbox is absent when debug mode is disabled."""
-    response = await prod_client.get("/__dev/auth-sandbox")
+    response = await public_client.get("/__dev/auth-sandbox")
     assert response.status_code == 404
 
 
 async def test_auth_sandbox_registered_in_debug_vite_mode(
-    debug_client: AsyncClient,
+    public_debug_client: AsyncClient,
     monkeypatch,
 ):
     """Test the auth sandbox page points at the Vite dev server when enabled."""
     monkeypatch.setattr(app_settings, "dev_pages_use_vite", True)
     monkeypatch.setattr(app_settings, "dev_pages_vite_url", "http://vite.test:5173")
-    response = await debug_client.get("/__dev/auth-sandbox")
+    response = await public_debug_client.get("/__dev/auth-sandbox")
     assert response.status_code == 200
     assert "Authentication sandbox" in response.text
     assert "window.__PAPYRUS_DEV_PAGE_CONFIG__ =" in response.text
@@ -38,7 +38,7 @@ async def test_auth_sandbox_registered_in_debug_vite_mode(
 
 
 async def test_auth_sandbox_renders_built_assets_when_manifest_exists(
-    debug_client: AsyncClient,
+    public_debug_client: AsyncClient,
     monkeypatch,
     tmp_path,
 ):
@@ -62,7 +62,7 @@ async def test_auth_sandbox_renders_built_assets_when_manifest_exists(
     monkeypatch.setattr(app_settings, "dev_pages_use_vite", False)
     monkeypatch.setattr(app_settings, "dev_pages_manifest_path", str(manifest_path))
     dev_pages._load_manifest.cache_clear()
-    response = await debug_client.get("/__dev/auth-sandbox")
+    response = await public_debug_client.get("/__dev/auth-sandbox")
     assert response.status_code == 200
     assert 'href="/__dev/static/assets/auth-sandbox.css"' in response.text
     assert 'src="/__dev/static/assets/auth-sandbox.js"' in response.text

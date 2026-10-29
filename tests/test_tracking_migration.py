@@ -5,12 +5,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import inspect
 
 from papyrus.models import Base, SyncBook, User
+
+pytestmark = pytest.mark.migration
 
 
 async def test_tracking_upgrade_preserves_library_and_matches_metadata(db_session):

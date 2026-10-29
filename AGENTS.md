@@ -57,6 +57,9 @@ maintainer's reviewed examples. The rules below also apply in standalone checkou
 - Add or update tests for every behavior change.
 - Prefer route tests for HTTP contract changes and service tests for business logic.
 - If database behavior changes, add the narrowest regression test that proves the query or transaction behavior.
+- Mark schema-changing tests with `pytest.mark.migration`. Ordinary tests share the schema and truncate rows after each case; migration tests rebuild it before and after each case, including failures.
+- Use `public_client` or `public_debug_client` for routes that do not access the database. These fixtures reject accidental database access.
+- Set `PAPYRUS_TEST_TIMING=/tmp/pytest-timing.json` to export setup, call, and teardown timings. CI publishes these as a job summary and artifact.
 - Do not claim success without running the most relevant checks, or explicitly stating why they were not run.
 
 ## Migration Rules
@@ -102,7 +105,7 @@ When checked out inside the Papyrus workspace, run from its root:
 - `tools/papyrus check server` runs Ruff lint, non-mutating format checks, and Mypy.
 - `tools/papyrus test server -- tests/services/test_sync.py` runs focused tests.
 
-The shared fixtures drop and recreate test tables. Most route tests need PostgreSQL
+The shared fixtures truncate test rows and rebuild tables for migration tests. Most route tests need PostgreSQL
 without being marked `integration`. Use a separate local test database, never the
 application database; do not run suites concurrently on the same database. The CLI
 checks the database target and holds a workspace test lock. External `auth_smoke`

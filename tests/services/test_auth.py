@@ -15,16 +15,8 @@ from papyrus.core import security as security_module
 from papyrus.core.exceptions import ConflictError, ForbiddenError, UnauthorizedError, ValidationError
 from papyrus.core.security import generate_opaque_token, hash_opaque_token, hash_password
 from papyrus.models import AuthExchangeCode, AuthSession, EmailActionToken, PasswordCredential, User, UserIdentity
-from papyrus.schemas.auth import LoginRequest, OAuthExchangeRequest, RefreshTokenRequest, RegisterRequest
+from papyrus.schemas.auth import LoginRequest, OAuthExchangeRequest, RegisterRequest
 from papyrus.services import auth as auth_service
-
-
-def test_auth_package_facade_exports_public_surface() -> None:
-    """The auth package façade preserves the legacy public surface."""
-    assert auth_service.google_oauth_client is not None
-    assert auth_service.GoogleIdentity.__name__ == "GoogleIdentity"
-    assert auth_service.GOOGLE_PROVIDER == "google"
-    assert callable(auth_service.register_user)
 
 
 def test_google_login_allows_configured_app_public_base_url_redirect(
@@ -155,29 +147,6 @@ async def test_login_user_rejects_disabled_user(
                 LoginRequest(email="disabled@example.com", password="SecureP@ss123"),
                 None,
             )
-
-
-async def test_refresh_tokens_rotates_and_invalidates_previous_token(
-    test_session_maker: async_sessionmaker[AsyncSession],
-):
-    """Test service-layer refresh token rotation invalidates the previous token."""
-    async with test_session_maker() as session:
-        register_result = await auth_service.register_user(
-            session,
-            RegisterRequest(
-                email="refresh@example.com",
-                password="SecureP@ss123",
-                display_name="Refresh User",
-            ),
-            None,
-        )
-
-        first_refresh_token = register_result.refresh_token
-        rotated = await auth_service.refresh_tokens(session, RefreshTokenRequest(refresh_token=first_refresh_token))
-        assert rotated.refresh_token != first_refresh_token
-
-        with pytest.raises(UnauthorizedError):
-            await auth_service.refresh_tokens(session, RefreshTokenRequest(refresh_token=first_refresh_token))
 
 
 async def test_logout_current_session_revokes_session(

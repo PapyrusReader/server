@@ -5,6 +5,10 @@ on:
     branches: [development, master]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
     runs-on: ubuntu-latest
@@ -65,4 +69,15 @@ jobs:
         run: uv run mypy .
 
       - name: Pytest
-        run: uv run pytest
+        env:
+          PAPYRUS_TEST_TIMING: build/test-results/timing.json
+        run: uv run pytest --durations=20
+
+      - name: Save test timing report
+        if: ${{ !cancelled() && hashFiles('build/test-results/timing.json') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-test-timing-${{ github.run_attempt }}
+          path: build/test-results/timing.*
+          if-no-files-found: error
+          retention-days: 14

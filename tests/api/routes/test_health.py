@@ -3,9 +3,9 @@
 from httpx import AsyncClient
 
 
-async def test_index_lists_available_pages(prod_client: AsyncClient):
+async def test_index_lists_available_pages(public_client: AsyncClient):
     """Test root index returns the available page endpoints."""
-    response = await prod_client.get("/")
+    response = await public_client.get("/")
     assert response.status_code == 200
     data = response.json()
     pages = {page["name"]: page["path"] for page in data["pages"]}
@@ -16,9 +16,9 @@ async def test_index_lists_available_pages(prod_client: AsyncClient):
     assert "auth_sandbox" not in pages
 
 
-async def test_index_lists_debug_pages(debug_client: AsyncClient):
+async def test_index_lists_debug_pages(public_debug_client: AsyncClient):
     """Test root index includes the debug sandboxes in debug mode."""
-    response = await debug_client.get("/")
+    response = await public_debug_client.get("/")
     assert response.status_code == 200
     data = response.json()
     pages = {page["name"]: page["path"] for page in data["pages"]}
@@ -26,9 +26,9 @@ async def test_index_lists_debug_pages(debug_client: AsyncClient):
     assert pages["powersync_sandbox"] == "http://localhost:8080/__dev/powersync-sandbox"
 
 
-async def test_health_check(client: AsyncClient):
+async def test_health_check(public_client: AsyncClient):
     """Test health check endpoint."""
-    response = await client.get("/health")
+    response = await public_client.get("/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
