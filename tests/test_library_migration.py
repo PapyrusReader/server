@@ -4,12 +4,15 @@ import importlib.util
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 from sqlalchemy import text
 
 from papyrus.models import Base
+
+pytestmark = pytest.mark.migration
 
 
 async def test_library_revision_backfill_and_metadata(db_session, auth_user):

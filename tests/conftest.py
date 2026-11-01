@@ -1,6 +1,6 @@
 import os
 from collections.abc import AsyncGenerator
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -8,8 +8,9 @@ import asyncpg
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
 from sqlalchemy.engine import URL, make_url
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from papyrus.config import get_settings
 from papyrus.core.database import get_db
@@ -18,6 +19,8 @@ from papyrus.core.security import create_access_token, generate_opaque_token, ha
 from papyrus.main import create_app
 from papyrus.main import settings as app_settings
 from papyrus.models import AuthSession, Base, PasswordCredential, User
+
+pytest_plugins = ["tests.timing"]
 
 
 @pytest.fixture
@@ -139,22 +142,92 @@ async def setup_test_db() -> None:
         await connection.close()
 
 
-@pytest_asyncio.fixture
-async def test_session_maker(setup_test_db: None) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
-    engine = create_async_engine(TEST_DATABASE_URL)
-    session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-
+async def rebuild_schema(engine: AsyncEngine) -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
+
+@pytest_asyncio.fixture(scope="session")
+async def test_schema(setup_test_db: None) -> AsyncGenerator[None, None]:
+    engine = create_async_engine(TEST_DATABASE_URL)
+
     try:
-        yield session_maker
+        await rebuild_schema(engine)
+        yield
     finally:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
 
         await engine.dispose()
+
+
+@asynccontextmanager
+async def isolated_sessions(
+    engine: AsyncEngine,
+    *,
+    migration: bool = False,
+) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+    """Preserve real transactions while removing committed state even after failure."""
+    if migration:
+        await rebuild_schema(engine)
+
+    try:
+        yield async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    finally:
+        if migration:
+            await rebuild_schema(engine)
+        else:
+            tables = ", ".join(_quote_ident(table.name) for table in Base.metadata.sorted_tables)
+
+            async with engine.begin() as conn:
+                await conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+
+
+@pytest_asyncio.fixture
+async def test_session_maker(
+    test_schema: None,
+    request: pytest.FixtureRequest,
+) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+    engine = create_async_engine(TEST_DATABASE_URL)
+
+    try:
+        async with isolated_sessions(
+            engine, migration=request.node.get_closest_marker("migration") is not None
+        ) as maker:
+            yield maker
+    finally:
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def public_client(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[AsyncClient, None]:
+    """Exercise public routes without opening a database connection."""
+    async with public_http_client(monkeypatch, debug=False) as client:
+        yield client
+
+
+@pytest_asyncio.fixture
+async def public_debug_client(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[AsyncClient, None]:
+    async with public_http_client(monkeypatch, debug=True) as client:
+        yield client
+
+
+@asynccontextmanager
+async def public_http_client(monkeypatch: pytest.MonkeyPatch, *, debug: bool) -> AsyncGenerator[AsyncClient, None]:
+    monkeypatch.setattr(app_settings, "debug", debug)
+    monkeypatch.setattr(app_settings, "public_base_url", "http://localhost:8080")
+    monkeypatch.setattr(app_settings, "app_public_base_url", "http://papyrus.localhost:3000")
+    app = create_app()
+
+    async def reject_database_access() -> AsyncGenerator[AsyncSession, None]:
+        raise AssertionError("Use a database-backed client for routes that access the database")
+        yield
+
+    app.dependency_overrides[get_db] = reject_database_access
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        yield client
 
 
 @pytest_asyncio.fixture
@@ -219,6 +292,7 @@ async def db_session(
 @pytest_asyncio.fixture
 async def auth_user(
     test_session_maker: async_sessionmaker[AsyncSession],
+    fixture_password_hash: str,
 ) -> dict[str, str]:
     user_uuid = uuid4()
     refresh_token = generate_opaque_token()
@@ -233,7 +307,7 @@ async def auth_user(
         )
 
         session.add(user)
-        session.add(PasswordCredential(user_id=user_uuid, password_hash=hash_password("current_password")))
+        session.add(PasswordCredential(user_id=user_uuid, password_hash=fixture_password_hash))
         await session.flush()
 
         auth_session = AuthSession(
@@ -261,6 +335,11 @@ async def auth_user(
 @pytest_asyncio.fixture
 async def auth_headers(auth_user: dict[str, str]) -> dict[str, str]:
     return {"Authorization": f"Bearer {auth_user['access_token']}"}
+
+
+@pytest.fixture(scope="session")
+def fixture_password_hash() -> str:
+    return hash_password("current_password")
 
 
 @pytest.fixture(autouse=True)
