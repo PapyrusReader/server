@@ -130,9 +130,11 @@ async def test_powersync_sandbox_worker_asset_is_served_from_backend_origin(
     assert response.headers["content-type"].startswith("text/javascript")
     assert response.headers["x-papyrus-vendor-path"] == "WASQLiteDB.umd.js"
     assert response.text == "// worker/WASQLiteDB.umd.js"
+
     nested_response = await public_debug_client.get(
         "/__dev/powersync-sandbox/worker/node_modules_pnpm_example_chunk.umd.js"
     )
+
     assert nested_response.status_code == 200
     assert nested_response.headers["x-papyrus-vendor-path"] == "node_modules_pnpm_example_chunk.umd.js"
     assert nested_response.text == "// worker/node_modules_pnpm_example_chunk.umd.js"
