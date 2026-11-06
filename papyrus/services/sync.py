@@ -11,6 +11,7 @@ from papyrus.models import User
 from papyrus.schemas.sync import PowerSyncCrudMutation
 from papyrus.services import media as media_service
 from papyrus.services.library_sync import apply_library_mutation
+from papyrus.services.reading_timer_sync import apply_timer_transaction
 
 
 async def lock_owner_mutations(session: AsyncSession, user_id: UUID) -> None:
@@ -35,7 +36,17 @@ async def apply_powersync_upload_batch(
     try:
         await lock_owner_mutations(session, user_id)
 
+        if any(mutation.table == "reading_timers" for mutation in batch):
+            if not await apply_timer_transaction(session, user_id, batch):
+                await session.commit()
+                return 0
+
+            applied_count += 1
+
         for mutation in batch:
+            if mutation.table == "reading_timers":
+                continue
+
             applied, deleted_media_paths = await apply_library_mutation(session, user_id, mutation)
             applied_count += applied
             media_paths_to_delete.extend(deleted_media_paths)

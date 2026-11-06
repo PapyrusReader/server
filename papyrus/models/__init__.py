@@ -20,11 +20,13 @@ from papyrus.models.library import (
 )
 from papyrus.models.media import AccountMediaCleanup, MediaAsset
 from papyrus.models.powersync_demo import PowerSyncDemoItem
+from papyrus.models.reading_timer import SyncReadingTimer
 from papyrus.models.sync import SyncBook
 from papyrus.models.tracking import SyncGoalPeriod, SyncReadingActivity, SyncReadingGoal
 from papyrus.models.user import User
 
 __all__ = [
+    "SyncReadingTimer",
     "SyncReadingGoal",
     "SyncReadingActivity",
     "SyncGoalPeriod",

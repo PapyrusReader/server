@@ -195,3 +195,11 @@ streams:
         created_at::text AS created_at, updated_at::text AS updated_at
       FROM goal_periods
       WHERE owner_user_id::text = auth.user_id()
+
+  reading_timers:
+    auto_subscribe: true
+    query: |
+      SELECT id, owner_user_id::text AS owner_user_id, payload::text AS payload,
+        status, base_version, created_at::text AS created_at, updated_at::text AS updated_at
+      FROM reading_timers
+      WHERE owner_user_id::text = auth.user_id()
