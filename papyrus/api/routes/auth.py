@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from papyrus.api.deps import CurrentSessionId, CurrentUserId
+from papyrus.api.deps import CurrentUserId, RevocableAuthSession
 from papyrus.config import get_settings
 from papyrus.core.database import get_db
 from papyrus.core.rate_limit import limiter
@@ -22,24 +22,37 @@ from papyrus.schemas.auth import (
     OAuthExchangeRequest,
     OAuthLinkCompleteRequest,
     OAuthStartRequest,
+    PendingVerificationResponse,
     PowerSyncTokenResponse,
     RefreshTokenRequest,
     RegisterRequest,
     ResendVerificationRequest,
+    ResendVerificationResponse,
     ResetPasswordRequest,
     VerifyEmailRequest,
 )
-from papyrus.schemas.common import MessageResponse
+from papyrus.schemas.common import Error, MessageResponse
 from papyrus.schemas.user import User
 from papyrus.services import auth as auth_service
 from papyrus.services.users import user_response
 
-router = APIRouter()
+router = APIRouter(
+    responses={
+        400: {"model": Error, "description": "Invalid request or VERIFICATION_TOKEN_INVALID."},
+        401: {"model": Error, "description": "Invalid, expired or revoked credentials."},
+        403: {"model": Error, "description": "EMAIL_VERIFICATION_REQUIRED includes email and resend_after seconds."},
+        429: {"model": Error, "description": "RATE_LIMIT_EXCEEDED with Retry-After and details.retry_after seconds."},
+        503: {
+            "model": Error,
+            "description": "VERIFICATION_UNAVAILABLE with Retry-After: 60. Retry sign-in or resend after an uncertain registration outcome.",
+        },
+    },
+)
 DBSession = Annotated[AsyncSession, Depends(get_db)]
 
 
 def _auth_rate_limit() -> str:
-    return f"{get_settings().rate_limit_auth}/minute"
+    return f"{min(5, get_settings().rate_limit_auth)}/minute"
 
 
 async def _auth_tokens_response(db: AsyncSession, result: auth_service.AuthResult) -> AuthTokens:
@@ -75,7 +88,7 @@ def _public_callback_url(request: Request, route_name: str) -> str:
 
 @router.post(
     "/register",
-    response_model=AuthTokens,
+    response_model=PendingVerificationResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Register a new user account",
 )
@@ -84,10 +97,9 @@ async def register_user(
     request: Request,
     payload: RegisterRequest,
     db: DBSession,
-) -> AuthTokens:
+) -> PendingVerificationResponse:
     """Create a new user account with email and password."""
-    result = await auth_service.register_user(db, payload, request.headers.get("user-agent"))
-    return await _auth_tokens_response(db, result)
+    return await auth_service.register_user(db, payload, request.headers.get("user-agent"))
 
 
 @router.post(
@@ -187,16 +199,15 @@ async def refresh_token(
     summary="Logout and invalidate the current session",
 )
 async def logout_user(
-    user_id: CurrentUserId,
-    session_id: CurrentSessionId,
+    auth_session: RevocableAuthSession,
     db: DBSession,
     request: LogoutRequest | None = None,
 ) -> Response:
     """Invalidate the current session or all sessions if requested."""
     if request is not None and request.all_devices:
-        await auth_service.logout_all_sessions(db, user_id)
+        await auth_service.logout_all_sessions(db, auth_session.user_id)
     else:
-        await auth_service.logout_current_session(db, user_id, session_id)
+        await auth_service.logout_current_session(db, auth_session.user_id, auth_session.session_id)
 
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -207,11 +218,11 @@ async def logout_user(
     summary="Logout from all sessions",
 )
 async def logout_all(
-    user_id: CurrentUserId,
+    auth_session: RevocableAuthSession,
     db: DBSession,
 ) -> Response:
     """Invalidate all refresh-token backed sessions for the user."""
-    await auth_service.logout_all_sessions(db, user_id)
+    await auth_service.logout_all_sessions(db, auth_session.user_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -288,7 +299,7 @@ async def verify_email(
 
 @router.post(
     "/resend-verification",
-    response_model=MessageResponse,
+    response_model=ResendVerificationResponse,
     summary="Resend verification email",
 )
 @limiter.limit(_auth_rate_limit)
@@ -296,10 +307,10 @@ async def resend_verification(
     request: Request,
     payload: ResendVerificationRequest,
     db: DBSession,
-) -> MessageResponse:
+) -> ResendVerificationResponse:
     """Issue a new verification token when email delivery is enabled."""
     message = await auth_service.resend_verification_email(db, payload.email)
-    return MessageResponse(message=message)
+    return ResendVerificationResponse(message=message)
 
 
 @router.post(

@@ -64,13 +64,25 @@ async def test_photo_requires_authentication_and_owner(
     url = saved.json()["avatar_url"]
     assert (await client.get(f"/v1{url}")).status_code == 401
     assert (await upload(client, {})).status_code == 401
-    other = await client.post(
-        "/v1/auth/register",
-        json={"email": "other@example.com", "password": "SecureP@ss123", "display_name": "Other"},
+    from papyrus.core.security import create_access_token, generate_opaque_token, hash_opaque_token
+    from papyrus.models import AuthSession
+    from papyrus.services.auth.verification import record_verification
+
+    other = User(display_name="Other", primary_email="other@example.com")
+    record_verification(other, "papyrus_email")
+    db_session.add(other)
+    await db_session.flush()
+
+    session = AuthSession(
+        user_id=other.user_id,
+        refresh_token_hash=hash_opaque_token(generate_opaque_token()),
+        expires_at=datetime.now(UTC) + timedelta(days=1),
     )
 
-    assert other.status_code == 201
-    other_headers = {"Authorization": f"Bearer {other.json()['access_token']}"}
+    db_session.add(session)
+    await db_session.commit()
+    token = create_access_token({"sub": str(other.user_id), "sid": str(session.session_id)})
+    other_headers = {"Authorization": f"Bearer {token}"}
     assert (await client.get(f"/v1{url}", headers=other_headers)).status_code == 404
     forged = await client.patch("/v1/users/me", headers=other_headers, json={"avatar_url": url})
     assert forged.status_code == 400

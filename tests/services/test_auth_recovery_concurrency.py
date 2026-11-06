@@ -8,14 +8,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from papyrus.core.exceptions import UnauthorizedError, ValidationError
-from papyrus.models import AuthSession, User
+from papyrus.core.security import hash_opaque_token
+from papyrus.models import AuthSession, EmailActionToken, User
 from papyrus.schemas.account_deletion import AccountPasswordRequest
 from papyrus.schemas.auth import OAuthExchangeRequest
 from papyrus.services import account_deletion, auth
 from papyrus.services.auth import _core
 
 
-@pytest.mark.parametrize("flow", ["google", "password_reset"])
+@pytest.mark.parametrize("flow", ["google", "password_reset", "verification"])
 async def test_cancellation_revokes_waiting_authentication_without_deadlock(
     test_session_maker: async_sessionmaker[AsyncSession],
     auth_user: dict[str, str],
@@ -33,6 +34,12 @@ async def test_cancellation_revokes_waiting_authentication_without_deadlock(
 
         if flow == "google":
             token = await _core._create_exchange_code(setup, purpose="login", redirect_uri="", user_id=user_id)
+        elif flow == "verification":
+            token = await _core._issue_email_action_token(setup, user_id, auth.EMAIL_VERIFICATION_ACTION, 5)
+            stored = await setup.scalar(
+                select(EmailActionToken).where(EmailActionToken.token_hash == hash_opaque_token(token))
+            )
+            stored.email = "user@example.com"
         else:
             token = await _core._issue_email_action_token(setup, user_id, auth.PASSWORD_RESET_ACTION, 5)
 
@@ -64,6 +71,9 @@ async def test_cancellation_revokes_waiting_authentication_without_deadlock(
             if flow == "google":
                 with pytest.raises(UnauthorizedError):
                     await auth.exchange_login_code(authentication, OAuthExchangeRequest(code=token), None)
+            elif flow == "verification":
+                with pytest.raises(ValidationError):
+                    await auth.verify_email_token(authentication, token)
             else:
                 with pytest.raises(ValidationError):
                     await auth.reset_password(authentication, token, "RacingP@ssword123")

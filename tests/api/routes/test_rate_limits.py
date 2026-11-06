@@ -62,7 +62,12 @@ async def test_upload_limits_are_per_validated_user_across_sessions(
     monkeypatch.setattr(settings, limit_setting, 1)
     monkeypatch.setattr(settings, "media_storage_root", str(tmp_path))
     monkeypatch.setattr(settings, "cors_origins", ["https://app.papyrus.test"])
-    other_user = User(display_name="Other", primary_email="rate-other@example.com", primary_email_verified=True)
+    other_user = User(
+        display_name="Other",
+        primary_email="rate-other@example.com",
+        email_verified_at=datetime.now(UTC),
+        email_verification_source="papyrus_email",
+    )
     db_session.add(other_user)
     await db_session.flush()
     owner_id = UUID(auth_user["user_id"])

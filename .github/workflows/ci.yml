@@ -68,6 +68,20 @@ jobs:
       - name: Mypy
         run: uv run mypy .
 
+      - name: Export public API snapshot
+        run: |
+          mkdir -p build/api
+          uv run --locked python scripts/export_openapi.py build/api/openapi.json
+          uv run --locked python scripts/export_openapi.py build/api/openapi.json --check
+
+      - name: Upload public API snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-openapi-${{ github.sha }}
+          path: build/api/openapi.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Pytest
         env:
           PAPYRUS_TEST_TIMING: build/test-results/timing.json

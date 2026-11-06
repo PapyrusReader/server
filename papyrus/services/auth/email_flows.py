@@ -2,59 +2,105 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.config import get_settings
+from papyrus.core.exceptions import (
+    NotFoundError,
+    ValidationError,
+    VerificationTokenInvalidError,
+    VerificationUnavailableError,
+)
 from papyrus.core.security import hash_password
-from papyrus.models import PasswordCredential
+from papyrus.models import PasswordCredential, User
 from papyrus.services import email as email_service
 from papyrus.services.auth._core import (
     _consume_email_action_token,
-    _get_active_user,
     _get_user_by_email,
     _issue_email_action_token,
+    _lock_credential_owner,
     _normalize_email,
     _now,
     _password_reset_email_body,
     _password_reset_email_html,
+    _revoke_credentials,
     _revoke_user_sessions,
-    _verification_email_body,
 )
 from papyrus.services.auth.types import EMAIL_VERIFICATION_ACTION, PASSWORD_RESET_ACTION
+from papyrus.services.auth.verification import (
+    accepts_verification,
+    cancel_verification_deliveries,
+    queue_verification,
+    record_verification,
+    require_delivery_configuration,
+)
+
+
+async def change_primary_email(session: AsyncSession, user_id: UUID, email: str | None) -> User:
+    """Change an existing address and invalidate its evidence and credentials atomically.
+
+    The caller commits the transaction. Initial account creation may assign the
+    address directly because it has no prior evidence or credentials to invalidate.
+    """
+    await _lock_credential_owner(session, user_id)
+    user = await session.get(User, user_id)
+
+    if user is None:
+        raise NotFoundError("User not found")
+
+    normalized_email = _normalize_email(email) if email is not None else None
+
+    if user.primary_email == normalized_email:
+        return user
+
+    user.primary_email = normalized_email
+    user.email_verified_at = None
+    user.email_verification_source = None
+    await _revoke_credentials(session, user.user_id)
+    await session.flush()
+    return user
 
 
 async def resend_verification_email(session: AsyncSession, email: str) -> str:
-    normalized_email = _normalize_email(email)
-    user = await _get_user_by_email(session, normalized_email)
+    require_delivery_configuration()
 
-    if user is None or user.primary_email_verified:
-        return "If the email is registered, a verification link has been sent"
+    try:
+        user = await session.scalar(
+            select(User)
+            .where(User.primary_email == _normalize_email(email))
+            .with_for_update()
+            .execution_options(populate_existing=True),
+        )
 
-    if not email_service.is_email_delivery_configured():
-        return "Email verification is not configured on this server"
+        if user is not None:
+            await queue_verification(session, user)
 
-    token = await _issue_email_action_token(
-        session,
-        user.user_id,
-        EMAIL_VERIFICATION_ACTION,
-        get_settings().email_verification_token_expire_minutes,
-    )
+        await session.commit()
+    except SQLAlchemyError as error:
+        await session.rollback()
+        raise VerificationUnavailableError() from error
 
-    email_service.send_email(
-        normalized_email,
-        "Verify your Papyrus email address",
-        _verification_email_body(token),
-    )
-
-    await session.commit()
     return "If the email is registered, a verification link has been sent"
 
 
 async def verify_email_token(session: AsyncSession, token: str) -> str:
-    email_token = await _consume_email_action_token(session, token, EMAIL_VERIFICATION_ACTION)
-    user = await _get_active_user(session, email_token.user_id)
-    user.primary_email_verified = True
+    try:
+        email_token = await _consume_email_action_token(session, token, EMAIL_VERIFICATION_ACTION)
+    except ValidationError as error:
+        raise VerificationTokenInvalidError() from error
+
+    user = await session.get(User, email_token.user_id)
+
+    if user is None or not accepts_verification(user) or email_token.email != user.primary_email:
+        await session.rollback()
+        raise VerificationTokenInvalidError()
+
+    record_verification(user, "papyrus_email")
+    await cancel_verification_deliveries(session, user)
     await session.commit()
     return "Email verified successfully"
 

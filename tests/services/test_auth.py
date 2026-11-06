@@ -14,9 +14,18 @@ from papyrus.config import get_settings
 from papyrus.core import security as security_module
 from papyrus.core.exceptions import ConflictError, ForbiddenError, UnauthorizedError, ValidationError
 from papyrus.core.security import generate_opaque_token, hash_opaque_token, hash_password
-from papyrus.models import AuthExchangeCode, AuthSession, EmailActionToken, PasswordCredential, User, UserIdentity
+from papyrus.models import (
+    AuthExchangeCode,
+    AuthSession,
+    EmailActionToken,
+    PasswordCredential,
+    User,
+    UserIdentity,
+    VerificationDelivery,
+)
 from papyrus.schemas.auth import LoginRequest, OAuthExchangeRequest, RegisterRequest
 from papyrus.services import auth as auth_service
+from papyrus.services.auth.verification import record_verification
 
 
 def test_google_login_allows_configured_app_public_base_url_redirect(
@@ -49,16 +58,38 @@ async def _create_user_with_password(
     user = User(
         display_name=display_name,
         primary_email=email,
-        primary_email_verified=True,
+        email_verified_at=datetime.now(UTC),
+        email_verification_source="papyrus_email",
         disabled_at=datetime.now(UTC) if disabled else None,
     )
 
+    record_verification(user, "papyrus_email")
     session.add(user)
     await session.flush()
     session.add(PasswordCredential(user_id=user.user_id, password_hash=hash_password(password)))
     await session.commit()
     await session.refresh(user)
     return user
+
+
+@pytest.fixture(autouse=True)
+def verification_configuration(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "email_delivery_enabled", True)
+    monkeypatch.setattr(settings, "smtp_host", "smtp.example.test")
+    monkeypatch.setattr(settings, "smtp_from_email", "noreply@example.test")
+    monkeypatch.setattr(settings, "app_public_base_url", "https://app.example.test")
+
+
+async def register_verified(session, request, user_agent):
+    await auth_service.register_user(session, request, user_agent)
+    delivery = await session.scalar(
+        select(VerificationDelivery).join(EmailActionToken).where(EmailActionToken.email == request.email)
+    )
+    await auth_service.verify_email_token(session, delivery.token)
+    return await auth_service.login_user(
+        session, LoginRequest(email=request.email, password=request.password), user_agent
+    )
 
 
 @pytest.fixture
@@ -83,10 +114,10 @@ def configured_powersync(monkeypatch: pytest.MonkeyPatch) -> None:
     security_module._get_powersync_public_key.cache_clear()
 
 
-async def test_register_user_creates_user_and_session(
+async def test_register_user_creates_pending_account_and_delivery(
     test_session_maker: async_sessionmaker[AsyncSession],
 ):
-    """Test registration creates a user and backing auth session."""
+    """Registration atomically creates pending data without a session."""
     async with test_session_maker() as session:
         result = await auth_service.register_user(
             session,
@@ -99,12 +130,10 @@ async def test_register_user_creates_user_and_session(
             "pytest",
         )
 
-        session_result = await session.execute(select(AuthSession).where(AuthSession.user_id == result.user.user_id))
-        auth_session = session_result.scalar_one()
-        assert result.user.primary_email == "register@example.com"
-        assert result.refresh_token
-        assert auth_session.client_type == "web"
-        assert auth_session.revoked_at is None
+        assert result.email == "register@example.com"
+        assert result.status == "verification_required"
+        assert await session.scalar(select(AuthSession)) is None
+        assert await session.scalar(select(VerificationDelivery)) is not None
 
 
 async def test_register_user_rejects_duplicate_email(
@@ -154,7 +183,7 @@ async def test_logout_current_session_revokes_session(
 ):
     """Test logout_current_session revokes only the targeted session."""
     async with test_session_maker() as session:
-        result = await auth_service.register_user(
+        result = await register_verified(
             session,
             RegisterRequest(
                 email="logout@example.com",
@@ -176,7 +205,7 @@ async def test_logout_all_sessions_revokes_every_session(
 ):
     """Test logout_all_sessions revokes all sessions for the user."""
     async with test_session_maker() as session:
-        await auth_service.register_user(
+        await register_verified(
             session,
             RegisterRequest(
                 email="all-sessions@example.com",
@@ -203,7 +232,7 @@ async def test_reset_password_revokes_all_sessions(
 ):
     """Test password reset revokes active sessions."""
     async with test_session_maker() as session:
-        register_result = await auth_service.register_user(
+        register_result = await register_verified(
             session,
             RegisterRequest(
                 email="reset@example.com",
@@ -244,9 +273,11 @@ async def test_google_login_reuses_existing_identity(
         user = User(
             display_name="Google User",
             primary_email="google@example.com",
-            primary_email_verified=True,
+            email_verified_at=datetime.now(UTC),
+            email_verification_source="papyrus_email",
         )
 
+        record_verification(user, "papyrus_email")
         session.add(user)
         await session.flush()
 
@@ -418,12 +449,14 @@ async def test_verify_email_token_rejects_expired_and_reused_tokens(
                 EmailActionToken(
                     user_id=user.user_id,
                     action_type=auth_service.EMAIL_VERIFICATION_ACTION,
+                    email=user.primary_email,
                     token_hash=hash_opaque_token(expired_token),
                     expires_at=datetime.now(UTC) - timedelta(minutes=1),
                 ),
                 EmailActionToken(
                     user_id=user.user_id,
                     action_type=auth_service.EMAIL_VERIFICATION_ACTION,
+                    email=user.primary_email,
                     token_hash=hash_opaque_token(valid_token),
                     expires_at=datetime.now(UTC) + timedelta(minutes=30),
                 ),

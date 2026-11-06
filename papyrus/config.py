@@ -62,7 +62,7 @@ class Settings(BaseSettings):
     oauth_allowed_redirect_hosts: list[str] = []
     oauth_state_expire_minutes: int = 10
     auth_exchange_code_expire_minutes: int = 5
-    email_verification_token_expire_minutes: int = 1440
+    email_verification_token_expire_minutes: int = Field(default=1440, ge=1440, le=1440)
     password_reset_token_expire_minutes: int = 60
     email_delivery_enabled: bool = False
     smtp_host: str | None = None

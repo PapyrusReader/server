@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import NoReturn
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from papyrus.config import get_settings
@@ -19,13 +19,12 @@ from papyrus.models import (
     AccountMediaCleanup,
     AuthExchangeCode,
     AuthSession,
-    EmailActionToken,
     PasswordCredential,
     User,
 )
 from papyrus.schemas.account_deletion import AccountDeletionAuthorization, AccountDeletionStatus, AccountPasswordRequest
 from papyrus.services.account_notifications import deliver_pending_notifications, queue_account_notification
-from papyrus.services.auth._core import _create_session_for_user
+from papyrus.services.auth._core import _create_session_for_user, _revoke_credentials
 from papyrus.services.auth.types import AuthResult
 from papyrus.services.media import media_root
 
@@ -164,13 +163,6 @@ async def exchange_google(session: AsyncSession, code: str, verifier: str) -> Ac
     return await _authorize(session, user)
 
 
-async def _revoke_credentials(session: AsyncSession, user_id: UUID) -> None:
-    now = _now()
-    await session.execute(update(AuthSession).where(AuthSession.user_id == user_id).values(revoked_at=now))
-    await session.execute(update(AuthExchangeCode).where(AuthExchangeCode.user_id == user_id).values(used_at=now))
-    await session.execute(update(EmailActionToken).where(EmailActionToken.user_id == user_id).values(used_at=now))
-
-
 async def schedule_deletion(session: AsyncSession, token: str) -> AccountDeletionStatus:
     user, authorization = await _lock_authorization(session, token, AUTHORIZATION_PURPOSE)
     return await _schedule_deletion(session, user, authorization.created_at)
@@ -228,6 +220,9 @@ async def cancel_deletion(
     if user.deletion_due_at is None:
         raise ValidationError("No account deletion is scheduled")
 
+    from papyrus.services.auth.verification import require_verified
+
+    await require_verified(session, user)
     user.deletion_requested_at = None
     user.deletion_due_at = None
     user.disabled_at = None

@@ -24,6 +24,18 @@ class RegisterRequest(BaseModel):
     device_label: str | None = Field(default=None, max_length=255)
 
 
+class PendingVerificationResponse(BaseModel):
+    status: Literal["verification_required"] = "verification_required"
+    email: EmailStr
+    message: str = "Check your email to verify your account, then sign in."
+    resend_after: int = Field(default=60, ge=0)
+
+
+class ResendVerificationResponse(BaseModel):
+    message: str = "If the email is registered, a verification link has been sent"
+    resend_after: int = Field(default=60, ge=0)
+
+
 class LoginRequest(BaseModel):
     """User login request."""
 

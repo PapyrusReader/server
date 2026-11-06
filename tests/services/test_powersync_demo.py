@@ -18,7 +18,8 @@ async def _create_user(session: AsyncSession, email: str) -> User:
     user = User(
         display_name=email.split("@", 1)[0],
         primary_email=email,
-        primary_email_verified=True,
+        email_verified_at=datetime.now(UTC),
+        email_verification_source="papyrus_email",
         last_login_at=datetime.now(UTC),
     )
 
