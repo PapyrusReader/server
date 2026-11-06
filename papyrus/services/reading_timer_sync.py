@@ -60,6 +60,9 @@ def validate_effects(batch: list[PowerSyncCrudMutation], timer: TimerPayload, st
         if mutation.table != "reading_activities":
             raise ValidationError("Unexpected timer save effect")
 
+        if mutation.op.upper() != "PUT":
+            raise ValidationError("Timer activities must use PUT")
+
         activity = Activity.model_validate((mutation.op_data or {}).get("payload"))
 
         if activity.id in seen or str(activity.id) != mutation.id or activity.book_id != timer.book_id:

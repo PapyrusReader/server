@@ -27,6 +27,11 @@ batch, including progress updates. Terminal rows remain durable so later offline
 writes cannot revive a saved or discarded session. Stable activity IDs use the
 session UUID and interval index.
 
+Save batches must use `PUT` for every reading or completion activity. An activity
+`PATCH` is rejected because a missing target would otherwise be silently skipped,
+allowing the timer to become terminal without its history. Rejection leaves the
+timer and book progress unchanged so a corrected batch can be retried.
+
 The old local `reading_timer` draft is moved to the new table once when its profile
 opens. Guest and authenticated databases remain separate. Account/server switches
 invalidate the old repository and subscription.

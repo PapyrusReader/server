@@ -227,6 +227,54 @@ async def test_invalid_save_rolls_back_state_and_history(test_session_maker):
         assert (await session.scalars(select(SyncReadingActivity))).all() == []
 
 
+@pytest.mark.parametrize("activity_kind", ["reading", "completion"])
+async def test_missing_activity_patch_rejects_save_without_losing_retry(test_session_maker, activity_kind):
+    async with test_session_maker() as session:
+        user, timer = await setup(session)
+        await apply_powersync_upload_batch(session, user, [mutation(timer)])
+        original_page = (await session.get(SyncBook, timer.book_id)).current_page
+        finished = transition(timer, phase="finished")
+        batch = saved(finished, timer)
+        effect = batch[1]
+
+        if activity_kind == "completion":
+            completion = Activity(
+                id=timer.id,
+                book_id=timer.book_id,
+                book_title=timer.book_title,
+                kind="completion",
+                start_time=finished.intervals[0].end,
+                end_time=finished.intervals[0].end,
+                created_at=datetime.now(UTC),
+            )
+
+            effect = PowerSyncCrudMutation(
+                table="reading_activities",
+                op="PUT",
+                id=str(completion.id),
+                op_data={"payload": completion.model_dump(mode="json")},
+            )
+
+            batch.append(effect)
+
+        effect.op = "PATCH"
+
+        with pytest.raises(ValidationError, match="Timer activities must use PUT"):
+            await apply_powersync_upload_batch(session, user, batch)
+
+        row = await session.get(SyncReadingTimer, timer.id)
+        assert row.status == "active"
+        assert row.payload["version"] == timer.version
+        assert (await session.get(SyncBook, timer.book_id)).current_page == original_page
+        assert (await session.scalars(select(SyncReadingActivity))).all() == []
+        effect.op = "PUT"
+        assert await apply_powersync_upload_batch(session, user, batch) == len(batch)
+        assert await apply_powersync_upload_batch(session, user, batch) == 0
+        assert (await session.get(SyncReadingTimer, timer.id)).status == "saved"
+        assert (await session.get(SyncBook, timer.book_id)).current_page == 12
+        assert len((await session.scalars(select(SyncReadingActivity))).all()) == len(batch) - 2
+
+
 async def test_deleted_book_closes_timer_without_resurrecting_book(test_session_maker):
     async with test_session_maker() as session:
         user, timer = await setup(session)
