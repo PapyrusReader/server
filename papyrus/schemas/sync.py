@@ -55,6 +55,7 @@ BOOK_UPLOAD_FIELDS |= frozenset(
 ENTITY_FIELDS = frozenset({"owner_user_id", "created_at", "updated_at"})
 
 UPLOAD_FIELDS = {
+    "reading_timers": ENTITY_FIELDS | {"payload", "status", "base_version"},
     "reading_goals": ENTITY_FIELDS | {"payload"},
     "reading_activities": ENTITY_FIELDS | {"payload"},
     "goal_periods": ENTITY_FIELDS | {"payload"},
@@ -97,6 +98,7 @@ class PowerSyncCrudMutation(BaseModel):
         "bookmarks",
         "book_shelves",
         "book_tags",
+        "reading_timers",
         "reading_goals",
         "reading_activities",
         "goal_periods",
