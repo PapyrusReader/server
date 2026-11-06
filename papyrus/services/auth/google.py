@@ -10,11 +10,11 @@ from uuid import UUID
 
 import jwt
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from papyrus.config import get_settings
-from papyrus.core.exceptions import ConflictError, ForbiddenError, ValidationError
+from papyrus.core.exceptions import ConflictError, ForbiddenError, ValidationError, VerificationUnavailableError
 from papyrus.core.security import create_state_token, decode_state_token
 from papyrus.models import User, UserIdentity
 from papyrus.services.auth._core import (
@@ -23,10 +23,16 @@ from papyrus.services.auth._core import (
     _default_display_name,
     _get_active_user,
     _get_user_by_email,
+    _lock_credential_owner,
     _normalize_email,
     _now,
 )
 from papyrus.services.auth.types import GOOGLE_PROVIDER, GoogleIdentity
+from papyrus.services.auth.verification import (
+    cancel_verification_deliveries,
+    queue_verification,
+    record_verification,
+)
 
 GOOGLE_AUTHORIZATION_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -100,6 +106,7 @@ class GoogleOAuthClient:
             algorithms=["RS256"],
             audience=settings.google_oauth_client_id,
             issuer=["accounts.google.com", "https://accounts.google.com"],
+            options={"require": ["sub", "exp", "iss", "aud"]},
         )
 
         email = claims.get("email")
@@ -107,7 +114,8 @@ class GoogleOAuthClient:
         return GoogleIdentity(
             subject=str(claims["sub"]),
             email=_normalize_email(email) if isinstance(email, str) else None,
-            email_verified=bool(claims.get("email_verified", False)),
+            email_verified=claims.get("email_verified") is True,
+            hosted_domain=claims.get("hd") if isinstance(claims.get("hd"), str) else None,
             display_name=str(claims["name"]) if isinstance(claims.get("name"), str) else None,
             avatar_url=str(claims["picture"]) if isinstance(claims.get("picture"), str) else None,
             nonce=claims.get("nonce"),
@@ -214,57 +222,89 @@ async def build_google_link_authorization_url(user_id: UUID, redirect_uri: str, 
     )
 
 
-async def _resolve_google_login_user(session: AsyncSession, identity: GoogleIdentity) -> tuple[User | None, str | None]:
-    identity_result = await session.execute(
-        select(UserIdentity)
-        .options(selectinload(UserIdentity.user))
-        .where(
-            UserIdentity.provider == GOOGLE_PROVIDER,
-            UserIdentity.provider_subject == identity.subject,
-        )
+def _google_is_authoritative(identity: GoogleIdentity) -> bool:
+    if identity.email is None:
+        return False
+
+    return identity.email.endswith("@gmail.com") or (
+        identity.email_verified and bool(identity.hosted_domain and identity.hosted_domain.strip())
     )
 
-    existing_identity = identity_result.scalar_one_or_none()
+
+async def _resolve_google_login_user(session: AsyncSession, identity: GoogleIdentity) -> tuple[User | None, str | None]:
+    if identity.email is not None:
+        identity.email = _normalize_email(identity.email)
+
+    existing_identity = await session.scalar(
+        select(UserIdentity).where(
+            UserIdentity.provider == GOOGLE_PROVIDER,
+            UserIdentity.provider_subject == identity.subject,
+        ),
+    )
+
+    new_account = existing_identity is None
 
     if existing_identity is not None:
-        if existing_identity.user.deletion_due_at is not None:
-            return existing_identity.user, None
+        await _lock_credential_owner(session, existing_identity.user_id)
+        user = await session.get(User, existing_identity.user_id)
 
-        if existing_identity.user.disabled_at is not None:
+        if user is None or (user.disabled_at is not None and user.deletion_due_at is None):
             return None, "account_disabled"
+
+        if user.deletion_due_at is not None and user.deletion_due_at <= _now():
+            return None, "account_disabled"
+
+        if user.primary_email is None:
+            if identity.email is None:
+                return None, "email_required"
+
+            if await _get_user_by_email(session, identity.email) is not None:
+                return None, "account_exists"
+
+            user.primary_email = identity.email
 
         existing_identity.last_used_at = _now()
         existing_identity.email_at_provider = identity.email
         existing_identity.email_verified_at_provider = _now() if identity.email_verified else None
-        return existing_identity.user, None
+        existing_identity.hosted_domain = identity.hosted_domain
+    else:
+        if identity.email is None:
+            return None, "email_required"
 
-    if identity.email is not None:
-        existing_user = await _get_user_by_email(session, identity.email)
-
-        if existing_user is not None:
+        if await _get_user_by_email(session, identity.email) is not None:
             return None, "account_exists"
 
-    user = User(
-        display_name=_default_display_name(identity, identity.email),
-        avatar_url=identity.avatar_url,
-        primary_email=identity.email,
-        primary_email_verified=identity.email_verified,
-        last_login_at=_now(),
-    )
-
-    session.add(user)
-    await session.flush()
-
-    session.add(
-        UserIdentity(
-            user_id=user.user_id,
-            provider=GOOGLE_PROVIDER,
-            provider_subject=identity.subject,
-            email_at_provider=identity.email,
-            email_verified_at_provider=_now() if identity.email_verified else None,
-            last_used_at=_now(),
+        user = User(
+            display_name=_default_display_name(identity, identity.email),
+            avatar_url=identity.avatar_url,
+            primary_email=identity.email,
+            primary_email_verified=False,
         )
-    )
+
+        session.add(user)
+        await session.flush()
+
+        session.add(
+            UserIdentity(
+                user_id=user.user_id,
+                provider=GOOGLE_PROVIDER,
+                provider_subject=identity.subject,
+                email_at_provider=identity.email,
+                email_verified_at_provider=_now() if identity.email_verified else None,
+                hosted_domain=identity.hosted_domain,
+                last_used_at=_now(),
+            ),
+        )
+
+    if identity.email == user.primary_email and _google_is_authoritative(identity) and not user.email_verified:
+        record_verification(user, "google", identity.subject)
+        await cancel_verification_deliveries(session, user)
+
+    if not user.email_verified:
+        queued = await queue_verification(session, user)
+
+        if new_account and not queued:
+            raise VerificationUnavailableError()
 
     await session.flush()
     return user, None
@@ -328,20 +368,30 @@ async def handle_google_callback(
         return _build_redirect_uri(redirect_uri, {"code": exchange_code})
 
     if mode == "login":
-        user, callback_error = await _resolve_google_login_user(session, identity)
+        try:
+            user, callback_error = await _resolve_google_login_user(session, identity)
 
-        if callback_error is not None or user is None:
+            if callback_error is not None or user is None:
+                await session.rollback()
+                return _build_redirect_uri(redirect_uri, {"error": callback_error or "oauth_failed"})
+
+            purpose = "login" if user.email_verified else "login_pending_verification"
+
+            exchange_code = await _create_exchange_code(
+                session,
+                purpose=purpose,
+                redirect_uri=redirect_uri,
+                user_id=user.user_id,
+            )
+
+            await session.commit()
+        except IntegrityError:
             await session.rollback()
-            return _build_redirect_uri(redirect_uri, {"error": callback_error or "oauth_failed"})
+            return _build_redirect_uri(redirect_uri, {"error": "account_exists"})
+        except (VerificationUnavailableError, SQLAlchemyError):
+            await session.rollback()
+            return _build_redirect_uri(redirect_uri, {"error": "verification_unavailable"})
 
-        exchange_code = await _create_exchange_code(
-            session,
-            purpose="login",
-            redirect_uri=redirect_uri,
-            user_id=user.user_id,
-        )
-
-        await session.commit()
         return _build_redirect_uri(redirect_uri, {"code": exchange_code})
 
     if mode == "link":
@@ -358,6 +408,7 @@ async def handle_google_callback(
             provider=GOOGLE_PROVIDER,
             provider_subject=identity.subject,
             email_at_provider=identity.email,
+            hosted_domain=identity.hosted_domain,
             email_verified_at_provider=_now() if identity.email_verified else None,
             display_name=identity.display_name,
             avatar_url=identity.avatar_url,
@@ -403,6 +454,7 @@ async def complete_google_link(session: AsyncSession, user_id: UUID, code: str) 
             provider=GOOGLE_PROVIDER,
             provider_subject=exchange_code.provider_subject,
             email_at_provider=exchange_code.email_at_provider,
+            hosted_domain=exchange_code.hosted_domain,
             email_verified_at_provider=exchange_code.email_verified_at_provider,
             last_used_at=_now(),
         )
@@ -410,7 +462,7 @@ async def complete_google_link(session: AsyncSession, user_id: UUID, code: str) 
 
     if user.primary_email is None and exchange_code.email_at_provider is not None:
         user.primary_email = exchange_code.email_at_provider
-        user.primary_email_verified = exchange_code.email_verified_at_provider is not None
+        user.primary_email_verified = False
 
     if user.avatar_url is None and exchange_code.avatar_url is not None:
         user.avatar_url = exchange_code.avatar_url

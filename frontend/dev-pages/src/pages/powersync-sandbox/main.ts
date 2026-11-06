@@ -32,6 +32,13 @@ interface CurrentUser {
   email?: string | null;
 }
 
+interface PendingVerificationPayload {
+  status: "verification_required";
+  email: string;
+  message: string;
+  resend_after: number;
+}
+
 interface AuthTokensPayload {
   access_token?: string;
   refresh_token?: string;
@@ -549,7 +556,7 @@ async function handleOAuthReturn(): Promise<void> {
 function registerHandlers(): void {
   refs.register.onclick = async () => {
     await runButtonAction("register", refs.register, "Registering", "Registering user", async () => {
-      const { response, body } = await callSandboxApi<AuthTokensPayload>(config.register_url, {
+      const { response, body } = await callSandboxApi<PendingVerificationPayload>(config.register_url, {
         method: "POST",
         body: JSON.stringify({
           email: refs.email.value,
@@ -561,9 +568,7 @@ function registerHandlers(): void {
       });
 
       if (response.ok && body && typeof body === "object") {
-        applyTokens(body as AuthTokensPayload);
-        await refreshServerItems();
-        markOutcome("success", "Registration succeeded.");
+        markOutcome("success", "Check your email to verify your account, then sign in.");
         return;
       }
 

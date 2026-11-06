@@ -303,6 +303,9 @@ async def auth_user(
             display_name="Example User",
             primary_email="user@example.com",
             primary_email_verified=True,
+            verified_email="user@example.com",
+            verification_source="papyrus_email",
+            verified_at=datetime.now(UTC),
             last_login_at=datetime.now(UTC),
         )
 

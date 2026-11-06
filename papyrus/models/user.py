@@ -28,6 +28,11 @@ class User(Base):
         server_default=text("false"),
     )
 
+    verified_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    verification_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    verification_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -57,7 +62,14 @@ class User(Base):
 
     @property
     def email_verified(self) -> bool:
-        return self.primary_email_verified
+        return (
+            self.primary_email_verified
+            and self.primary_email is not None
+            and self.verified_email == self.primary_email
+            and self.verification_source in {"papyrus_email", "google"}
+            and self.verified_at is not None
+            and (self.verification_source != "google" or self.verification_subject is not None)
+        )
 
 
 from papyrus.models.auth import AuthSession, PasswordCredential, UserIdentity  # noqa: E402

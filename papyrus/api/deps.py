@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from papyrus.core.database import get_db
 from papyrus.core.security import decode_token
-from papyrus.models import AuthSession
+from papyrus.models import AuthSession, User
 
 security = HTTPBearer()
 
@@ -39,7 +39,7 @@ async def get_current_access_token_payload(
     return payload
 
 
-async def get_current_auth_session(
+async def get_revocable_auth_session(
     payload: Annotated[dict[str, Any], Depends(get_current_access_token_payload)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> AuthSession:
@@ -62,6 +62,13 @@ async def get_current_auth_session(
             detail={"code": "INVALID_TOKEN", "message": "Token contains malformed identifiers"},
         ) from exc
 
+    await db.scalar(
+        select(User)
+        .where(User.user_id == user_uuid)
+        .with_for_update(key_share=True)
+        .execution_options(populate_existing=True),
+    )
+
     result = await db.execute(
         select(AuthSession).options(selectinload(AuthSession.user)).where(AuthSession.session_id == session_uuid)
     )
@@ -80,13 +87,26 @@ async def get_current_auth_session(
             detail={"code": "SESSION_REVOKED", "message": "Session is expired or revoked"},
         )
 
-    if auth_session.user.disabled_at is not None:
+    if auth_session.user.disabled_at is not None or auth_session.user.deletion_due_at is not None:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"code": "ACCOUNT_DISABLED", "message": "User account is disabled"},
         )
 
     return auth_session
+
+
+async def get_current_auth_session(
+    auth_session: Annotated[AuthSession, Depends(get_revocable_auth_session)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> AuthSession:
+    from papyrus.services.auth.verification import require_verified
+
+    await require_verified(db, auth_session.user)
+    return auth_session
+
+
+RevocableAuthSession = Annotated[AuthSession, Depends(get_revocable_auth_session)]
 
 
 async def get_current_user_id(

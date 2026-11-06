@@ -114,3 +114,31 @@ class RateLimitError(AppError):
             status_code=429,
             details=details,
         )
+
+
+class VerificationRequiredError(AppError):
+    def __init__(self, email: str | None, resend_after: int) -> None:
+        super().__init__(
+            "Verify your email address before signing in.",
+            code="EMAIL_VERIFICATION_REQUIRED",
+            status_code=403,
+            details={"email": email, "resend_after": resend_after},
+        )
+
+
+class VerificationUnavailableError(AppError):
+    def __init__(self) -> None:
+        super().__init__(
+            "Verification email is temporarily unavailable. Please try again later.",
+            code="VERIFICATION_UNAVAILABLE",
+            status_code=503,
+        )
+
+
+class VerificationTokenInvalidError(ValidationError):
+    def __init__(self) -> None:
+        super().__init__(
+            "This verification link is invalid or expired. Request a new link or sign in if you already verified.",
+        )
+
+        self.code = "VERIFICATION_TOKEN_INVALID"

@@ -7,6 +7,8 @@ from papyrus.models.auth import (
     EmailActionToken,
     PasswordCredential,
     UserIdentity,
+    VerificationDelivery,
+    VerificationRecipient,
 )
 from papyrus.models.library import (
     SyncAnnotation,
@@ -53,4 +55,6 @@ __all__ = [
     "SyncBook",
     "User",
     "UserIdentity",
+    "VerificationDelivery",
+    "VerificationRecipient",
 ]

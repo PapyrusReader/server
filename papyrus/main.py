@@ -14,6 +14,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import Response
 
 from papyrus import __version__
 from papyrus.api.routes import api_router, include_debug_routers
@@ -23,11 +25,32 @@ from papyrus.core.dev_pages import DEV_PAGES_DIST_DIR, DEV_PAGES_STATIC_URL
 from papyrus.core.exceptions import AppError
 from papyrus.core.rate_limit import limiter, rate_limit_exceeded_handler
 from papyrus.services import account_deletion, acquisition_monitor
+from papyrus.services.auth import verification
 
 settings = get_settings()
 
 
+class AuthQueryFilter(logging.Filter):
+    """Keep OAuth state, codes and any token query parameters out of access logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        arguments = record.args
+
+        if isinstance(arguments, tuple) and len(arguments) == 5:
+            client, method, path, version, status_code = arguments
+
+            if isinstance(path, str) and ("/auth/" in path or "/account-deletion" in path):
+                record.args = (client, method, path.split("?", 1)[0], version, status_code)
+
+        return True
+
+
 def configure_logging() -> None:
+    access_logger = logging.getLogger("uvicorn.access")
+
+    if not any(isinstance(item, AuthQueryFilter) for item in access_logger.filters):
+        access_logger.addFilter(AuthQueryFilter())
+
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -47,6 +70,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cleanup_task = asyncio.create_task(
         account_deletion.run_cleanup(async_session_maker), name="account-deletion-cleanup"
     )
+    verification_task = asyncio.create_task(
+        verification.run_delivery(async_session_maker), name="verification-delivery"
+    )
     monitor_task: asyncio.Task[None] | None = None
 
     if settings.acquisition_enabled and settings.acquisition_import_root is not None:
@@ -61,6 +87,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         yield
     finally:
+        verification_task.cancel()
+
+        with suppress(asyncio.CancelledError):
+            await verification_task
+
         cleanup_task.cancel()
 
         with suppress(asyncio.CancelledError):
@@ -102,7 +133,7 @@ e-book reader application. It provides endpoints for:
 ## Authentication
 
 Most endpoints require authentication via JWT Bearer token. Obtain tokens
-through the `{auth_base_path}/register`, `{auth_base_path}/login`, or the
+after email verification through `{auth_base_path}/login` or the
 browser-based `{auth_base_path}/oauth/google/start` flow.
 
 ```
@@ -153,10 +184,22 @@ Authentication and OPDS relay limits are enforced per client IP. Limits are conf
         expose_headers=["X-OPDS-URL", "Retry-After"],
     )
 
+    @app.middleware("http")
+    async def no_store_auth(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        response = await call_next(request)
+
+        if request.url.path.startswith(
+            (auth_base_path + "/", f"{settings.api_prefix}/account-deletion")
+        ) or response.status_code in {401, 403}:
+            response.headers["Cache-Control"] = "no-store"
+
+        return response
+
     @app.exception_handler(AppError)
     async def app_exception_handler(request: Request, exc: AppError) -> JSONResponse:
         return JSONResponse(
             status_code=exc.status_code,
+            headers={"Retry-After": "60"} if exc.code == "VERIFICATION_UNAVAILABLE" else None,
             content={
                 "error": {
                     "code": exc.code,
@@ -173,6 +216,7 @@ Authentication and OPDS relay limits are enforced per client IP. Limits are conf
 
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            headers={"Cache-Control": "no-store"},
             content={
                 "error": {
                     "code": "INTERNAL_ERROR",

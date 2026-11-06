@@ -22,6 +22,7 @@ class UserIdentity(Base):
     provider: Mapped[str] = mapped_column(String(32), nullable=False)
     provider_subject: Mapped[str] = mapped_column(String(255), nullable=False)
     email_at_provider: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    hosted_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
     email_verified_at_provider: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -93,6 +94,7 @@ class AuthExchangeCode(Base):
     provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     provider_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
     email_at_provider: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    hosted_domain: Mapped[str | None] = mapped_column(String(255), nullable=True)
     email_verified_at_provider: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
@@ -110,6 +112,7 @@ class EmailActionToken(Base):
 
     token_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     action_type: Mapped[str] = mapped_column(String(32), nullable=False)
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -133,5 +136,32 @@ class AccountNotification(Base):
     html_body: Mapped[str] = mapped_column(Text, nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class VerificationRecipient(Base):
+    """Persist the normalized recipient cooldown across workers and account transitions."""
+
+    __tablename__ = "verification_recipients"
+
+    email: Mapped[str] = mapped_column(String(255), primary_key=True)
+    last_queued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class VerificationDelivery(Base):
+    """Restricted outbox containing deliverable secrets only until delivery or invalidation."""
+
+    __tablename__ = "verification_deliveries"
+
+    token_id: Mapped[UUID] = mapped_column(
+        ForeignKey("email_action_tokens.token_id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True)
+    recipient: Mapped[str] = mapped_column(String(255), nullable=False)
+    token: Mapped[str] = mapped_column(Text, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

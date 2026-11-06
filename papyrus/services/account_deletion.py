@@ -22,6 +22,7 @@ from papyrus.models import (
     EmailActionToken,
     PasswordCredential,
     User,
+    VerificationDelivery,
 )
 from papyrus.schemas.account_deletion import AccountDeletionAuthorization, AccountDeletionStatus, AccountPasswordRequest
 from papyrus.services.account_notifications import deliver_pending_notifications, queue_account_notification
@@ -166,6 +167,7 @@ async def exchange_google(session: AsyncSession, code: str, verifier: str) -> Ac
 
 async def _revoke_credentials(session: AsyncSession, user_id: UUID) -> None:
     now = _now()
+    await session.execute(delete(VerificationDelivery).where(VerificationDelivery.user_id == user_id))
     await session.execute(update(AuthSession).where(AuthSession.user_id == user_id).values(revoked_at=now))
     await session.execute(update(AuthExchangeCode).where(AuthExchangeCode.user_id == user_id).values(used_at=now))
     await session.execute(update(EmailActionToken).where(EmailActionToken.user_id == user_id).values(used_at=now))
@@ -228,6 +230,9 @@ async def cancel_deletion(
     if user.deletion_due_at is None:
         raise ValidationError("No account deletion is scheduled")
 
+    from papyrus.services.auth.verification import require_verified
+
+    await require_verified(session, user)
     user.deletion_requested_at = None
     user.deletion_due_at = None
     user.disabled_at = None
