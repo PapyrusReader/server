@@ -30,7 +30,8 @@ def mail_configuration(monkeypatch):
 )
 async def test_legacy_jwt_cannot_access_application(client, auth_user, auth_headers, db_session, path, method, body):
     user = await db_session.get(User, UUID(auth_user["user_id"]))
-    user.verified_email = "old@example.com"
+    user.email_verified_at = None
+    user.email_verification_source = None
     await db_session.commit()
     response = await client.request(method, path, headers=auth_headers, json=body)
     assert response.status_code == 403, response.text
@@ -41,7 +42,8 @@ async def test_legacy_jwt_cannot_access_application(client, auth_user, auth_head
 
 async def test_logout_remains_available_for_unverified_session(client, auth_user, auth_headers, db_session):
     user = await db_session.get(User, UUID(auth_user["user_id"]))
-    user.verified_email = None
+    user.email_verified_at = None
+    user.email_verification_source = None
     await db_session.commit()
     assert (await client.post("/v1/auth/logout", headers=auth_headers)).status_code == 204
     await db_session.refresh(user)

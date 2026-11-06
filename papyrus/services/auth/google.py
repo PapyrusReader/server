@@ -27,6 +27,7 @@ from papyrus.services.auth._core import (
     _normalize_email,
     _now,
 )
+from papyrus.services.auth.email_flows import change_primary_email
 from papyrus.services.auth.types import GOOGLE_PROVIDER, GoogleIdentity
 from papyrus.services.auth.verification import (
     cancel_verification_deliveries,
@@ -261,7 +262,7 @@ async def _resolve_google_login_user(session: AsyncSession, identity: GoogleIden
             if await _get_user_by_email(session, identity.email) is not None:
                 return None, "account_exists"
 
-            user.primary_email = identity.email
+            user = await change_primary_email(session, user.user_id, identity.email)
 
         existing_identity.last_used_at = _now()
         existing_identity.email_at_provider = identity.email
@@ -278,7 +279,6 @@ async def _resolve_google_login_user(session: AsyncSession, identity: GoogleIden
             display_name=_default_display_name(identity, identity.email),
             avatar_url=identity.avatar_url,
             primary_email=identity.email,
-            primary_email_verified=False,
         )
 
         session.add(user)
@@ -297,7 +297,7 @@ async def _resolve_google_login_user(session: AsyncSession, identity: GoogleIden
         )
 
     if identity.email == user.primary_email and _google_is_authoritative(identity) and not user.email_verified:
-        record_verification(user, "google", identity.subject)
+        record_verification(user, "google")
         await cancel_verification_deliveries(session, user)
 
     if not user.email_verified:
@@ -461,8 +461,7 @@ async def complete_google_link(session: AsyncSession, user_id: UUID, code: str) 
     )
 
     if user.primary_email is None and exchange_code.email_at_provider is not None:
-        user.primary_email = exchange_code.email_at_provider
-        user.primary_email_verified = False
+        user = await change_primary_email(session, user.user_id, exchange_code.email_at_provider)
 
     if user.avatar_url is None and exchange_code.avatar_url is not None:
         user.avatar_url = exchange_code.avatar_url

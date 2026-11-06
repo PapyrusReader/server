@@ -64,7 +64,7 @@ async def test_pending_denial_and_explicit_verification(test_session_maker):
         assert await session.scalar(select(AuthSession)) is None
         result = await auth.login_user(session, LoginRequest(email=user.primary_email, password="SecureP@ss123"), None)
         assert result.user.email_verified
-        assert result.user.verification_source == "papyrus_email"
+        assert result.user.email_verification_source == "papyrus_email"
         assert await session.scalar(select(VerificationDelivery)) is None
 
 
@@ -158,12 +158,14 @@ async def test_delivery_failure_retries_same_secret_without_extending_expiry(tes
     async with test_session_maker() as session:
         await register(session)
         job = await session.scalar(select(VerificationDelivery))
-        original_token, original_expiry = job.token, job.expires_at
+        action = await session.get(EmailActionToken, job.token_id)
+        original_token, original_expiry = job.token, action.expires_at
         assert await verification.deliver_pending_verifications(session) == 0
         await session.refresh(job)
+        await session.refresh(action)
         assert job.attempts == 1
         assert job.next_attempt_at > datetime.now(UTC)
-        assert job.token == original_token and job.expires_at == original_expiry
+        assert job.token == original_token and action.expires_at == original_expiry
         assert original_token not in caplog.text
         assert "SMTP secret" not in caplog.text
         job.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
@@ -181,7 +183,7 @@ async def test_expired_delivery_removed_without_smtp(test_session_maker, monkeyp
 
     async with test_session_maker() as session:
         await register(session)
-        await session.execute(update(VerificationDelivery).values(expires_at=datetime.now(UTC) - timedelta(seconds=1)))
+        await session.execute(update(EmailActionToken).values(expires_at=datetime.now(UTC) - timedelta(seconds=1)))
         await session.commit()
         assert await verification.deliver_pending_verifications(session) == 0
         assert await session.scalar(select(VerificationDelivery)) is None
@@ -237,7 +239,7 @@ async def test_google_authority_and_pending_handoff(test_session_maker, monkeypa
         if eligible:
             result = await auth.exchange_login_code(session, OAuthExchangeRequest(code=code), None)
             assert result.user.email_verified
-            assert result.user.verification_subject == "subject"
+            assert stored.provider_subject == "subject"
         else:
             job = await session.scalar(select(VerificationDelivery))
             await auth.verify_email_token(session, job.token)
@@ -284,7 +286,8 @@ async def test_google_missing_email_and_delivery_outage(test_session_maker, monk
 async def test_legacy_refresh_revocation_commits_and_rotation_serializes(test_session_maker, auth_user):
     async with test_session_maker() as session:
         user = await session.scalar(select(User))
-        user.verified_email = None
+        user.email_verified_at = None
+        user.email_verification_source = None
         await session.commit()
 
         with pytest.raises(VerificationRequiredError):
@@ -321,7 +324,8 @@ async def test_recovery_requires_evidence_without_consuming_authorization(test_s
         )
         await account_deletion.schedule_deletion(session, proof.authorization_token)
         user = await session.scalar(select(User))
-        user.verified_email = None
+        user.email_verified_at = None
+        user.email_verification_source = None
         await session.commit()
         proof = await account_deletion.authenticate_password(
             session, AccountPasswordRequest(email="user@example.com", password=auth_user["password"])
@@ -386,7 +390,8 @@ async def test_linked_google_preserves_owner_and_primary_email(
             assert await session.scalar(select(AuthExchangeCode)) is None
         elif expected == "pending":
             job = await session.scalar(select(VerificationDelivery))
-            assert job.recipient == primary
+            action = await session.get(EmailActionToken, job.token_id)
+            assert action.email == primary
             assert stored.primary_email == primary
             assert not stored.email_verified
         else:
@@ -437,3 +442,167 @@ async def test_new_account_cannot_commit_without_its_delivery_during_recipient_c
         assert await session.scalar(select(User)) is None
         assert await session.scalar(select(EmailActionToken)) is None
         assert await session.scalar(select(VerificationDelivery)) is None
+
+
+async def test_email_change_clears_evidence_and_revokes_credentials_without_touching_library(
+    test_session_maker, auth_user
+):
+    from uuid import UUID
+
+    from papyrus.models import SyncBook
+    from papyrus.services.auth import _core
+    from papyrus.services.auth.email_flows import change_primary_email
+
+    user_id = UUID(auth_user["user_id"])
+
+    async with test_session_maker() as session:
+        session.add(SyncBook(owner_user_id=user_id, title="Durable library", current_cfi="epub:0:42"))
+        reset_token = await _core._issue_email_action_token(session, user_id, auth.PASSWORD_RESET_ACTION, 60)
+        handoff = await _core._create_exchange_code(session, user_id=user_id, purpose="login", redirect_uri="")
+        await session.commit()
+        user = await change_primary_email(session, user_id, "Replacement@Example.com")
+        await session.commit()
+        assert user.primary_email == "replacement@example.com"
+        assert user.email_verified_at is None
+        assert user.email_verification_source is None
+        assert not user.email_verified
+        assert await session.scalar(select(AuthSession).where(AuthSession.revoked_at.is_(None))) is None
+        assert await session.scalar(select(EmailActionToken).where(EmailActionToken.used_at.is_(None))) is None
+        assert await session.scalar(select(AuthExchangeCode).where(AuthExchangeCode.used_at.is_(None))) is None
+        assert (
+            await session.scalar(select(SyncBook.current_cfi).where(SyncBook.owner_user_id == user_id)) == "epub:0:42"
+        )
+
+        with pytest.raises(AppError):
+            await auth.reset_password(session, reset_token, "NewSecureP@ss123")
+
+        with pytest.raises(AppError):
+            await auth.exchange_login_code(session, OAuthExchangeRequest(code=handoff), None)
+
+
+async def test_email_change_away_and_back_cannot_reactivate_old_verification(test_session_maker):
+    from papyrus.services.auth.email_flows import change_primary_email
+
+    async with test_session_maker() as session:
+        user = await register(session)
+        user_id = user.user_id
+        token = await session.scalar(select(VerificationDelivery.token))
+        await change_primary_email(session, user_id, "replacement@example.com")
+        await session.commit()
+        assert await session.scalar(select(VerificationDelivery)) is None
+        await change_primary_email(session, user_id, "reader@example.com")
+        await session.commit()
+
+        with pytest.raises(VerificationTokenInvalidError):
+            await auth.verify_email_token(session, token)
+
+        assert not user.email_verified
+
+
+async def test_email_change_noop_and_rollback_preserve_verified_access(test_session_maker, auth_user):
+    from uuid import UUID
+
+    from papyrus.services.auth.email_flows import change_primary_email
+
+    user_id = UUID(auth_user["user_id"])
+
+    async with test_session_maker() as session:
+        user = await change_primary_email(session, user_id, " USER@EXAMPLE.COM ")
+        await session.commit()
+        assert user.email_verified
+        assert await session.scalar(select(AuthSession).where(AuthSession.revoked_at.is_(None))) is not None
+        await change_primary_email(session, user_id, "replacement@example.com")
+        await session.rollback()
+
+    async with test_session_maker() as session:
+        user = await session.get(User, user_id)
+        assert user.primary_email == "user@example.com"
+        assert user.email_verified
+        assert await session.scalar(select(AuthSession).where(AuthSession.revoked_at.is_(None))) is not None
+
+
+async def test_email_change_serializes_with_waiting_verification(test_session_maker, monkeypatch):
+    from papyrus.services.auth import email_flows
+
+    async with test_session_maker() as session:
+        user = await register(session)
+        user_id = user.user_id
+        token = await session.scalar(select(VerificationDelivery.token))
+
+    locked = asyncio.Event()
+    resume = asyncio.Event()
+    revoke = email_flows._revoke_credentials
+
+    async def pause_before_revocation(session, owner_id):
+        locked.set()
+        await resume.wait()
+        await revoke(session, owner_id)
+
+    monkeypatch.setattr(email_flows, "_revoke_credentials", pause_before_revocation)
+
+    async with test_session_maker() as changing, test_session_maker() as confirming, test_session_maker() as monitor:
+        changing_pid = await changing.scalar(select(func.pg_backend_pid()))
+        confirming_pid = await confirming.scalar(select(func.pg_backend_pid()))
+
+        async def change():
+            await email_flows.change_primary_email(changing, user_id, "replacement@example.com")
+            await changing.commit()
+
+        async def confirm():
+            with pytest.raises(VerificationTokenInvalidError):
+                await auth.verify_email_token(confirming, token)
+
+        change_task = asyncio.create_task(change())
+        confirm_task = None
+
+        try:
+            await asyncio.wait_for(locked.wait(), timeout=5)
+            confirm_task = asyncio.create_task(confirm())
+
+            async with asyncio.timeout(5):
+                while changing_pid not in await monitor.scalar(select(func.pg_blocking_pids(confirming_pid))):
+                    await asyncio.sleep(0.01)
+
+            resume.set()
+            await asyncio.wait_for(asyncio.gather(change_task, confirm_task), timeout=5)
+        finally:
+            resume.set()
+            tasks = [task for task in (change_task, confirm_task) if task is not None]
+
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async with test_session_maker() as session:
+        user = await session.get(User, user_id)
+        assert user.primary_email == "replacement@example.com"
+        assert not user.email_verified
+        assert await session.scalar(select(VerificationDelivery)) is None
+
+
+@pytest.mark.parametrize(
+    "address,timestamp,source",
+    [
+        (None, True, "papyrus_email"),
+        ("reader@example.com", True, None),
+        ("reader@example.com", False, "papyrus_email"),
+        ("reader@example.com", True, "unknown"),
+    ],
+)
+async def test_database_rejects_inconsistent_verification_evidence(test_session_maker, address, timestamp, source):
+    from sqlalchemy.exc import IntegrityError
+
+    async with test_session_maker() as session:
+        session.add(
+            User(
+                display_name="Reader",
+                primary_email=address,
+                email_verified_at=datetime.now(UTC) if timestamp else None,
+                email_verification_source=source,
+            )
+        )
+
+        with pytest.raises(IntegrityError):
+            await session.flush()

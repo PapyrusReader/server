@@ -21,10 +21,17 @@ async def test_verification_migration_preserves_trustworthy_evidence_and_data(db
     revision = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(revision)
 
+    simplify_path = path.with_name("d2f3456789ab_simplify_verification_state.py")
+    simplify_spec = importlib.util.spec_from_file_location("simplification_revision", simplify_path)
+    simplification = importlib.util.module_from_spec(simplify_spec)
+    simplify_spec.loader.exec_module(simplification)
     await db_session.execute(text("DROP TABLE verification_deliveries, verification_recipients"))
+    await db_session.execute(text("ALTER TABLE users DROP CONSTRAINT ck_users_email_verification"))
 
-    for column in ("verified_email", "verification_source", "verification_subject", "verified_at"):
+    for column in ("email_verified_at", "email_verification_source"):
         await db_session.execute(text(f"ALTER TABLE users DROP COLUMN {column}"))
+
+    await db_session.execute(text("ALTER TABLE users ADD COLUMN primary_email_verified boolean NOT NULL DEFAULT false"))
 
     for table in ("user_identities", "auth_exchange_codes"):
         await db_session.execute(text(f"ALTER TABLE {table} DROP COLUMN hosted_domain"))
@@ -92,16 +99,80 @@ async def test_verification_migration_preserves_trustworthy_evidence_and_data(db
     )
     await db_session.execute(text("ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE SELECT ON TABLES FROM PUBLIC"))
     await db_session.execute(text(f'DROP ROLE "{reader_role}"'))
+    token_id = uuid4()
+
+    await db_session.execute(
+        text(
+            "INSERT INTO email_action_tokens (token_id, user_id, email, action_type, token_hash, expires_at) "
+            "VALUES (:token, :owner, 'reader1@example.com', 'verify_email', 'preserved-hash', now() + interval '1 day')"
+        ),
+        {"token": token_id, "owner": identifiers[1]},
+    )
+
+    await db_session.execute(
+        text(
+            "INSERT INTO verification_deliveries (token_id, user_id, recipient, token, attempts, next_attempt_at, expires_at) "
+            "SELECT token_id, user_id, email, 'preserved-secret', 2, now(), expires_at FROM email_action_tokens WHERE token_id = :token"
+        ),
+        {"token": token_id},
+    )
+
+    before = (
+        await db_session.execute(
+            text("SELECT user_id, email, expires_at FROM email_action_tokens WHERE token_id = :token"),
+            {"token": token_id},
+        )
+    ).one()
+
+    await db_session.execute(
+        text(
+            "UPDATE users SET primary_email_verified = true, verified_email = 'stale@example.com', "
+            "verification_source = 'papyrus_email', verified_at = now() WHERE user_id = :user"
+        ),
+        {"user": identifiers[3]},
+    )
+
+    verified_at = await db_session.scalar(
+        text("SELECT verified_at FROM users WHERE user_id = :user"),
+        {"user": identifiers[0]},
+    )
+
+    def simplify(session):
+        with Operations.context(MigrationContext.configure(session.connection())):
+            simplification.upgrade()
+
+    await db_session.run_sync(simplify)
+    assert (
+        await db_session.scalar(
+            text("SELECT email_verified_at FROM users WHERE user_id = :user"),
+            {"user": identifiers[0]},
+        )
+        == verified_at
+    )
+    after = (
+        await db_session.execute(
+            text("SELECT user_id, email, expires_at FROM email_action_tokens WHERE token_id = :token"),
+            {"token": token_id},
+        )
+    ).one()
+    assert after == before
+    assert (await db_session.execute(text("SELECT token, attempts FROM verification_deliveries"))).one() == (
+        "preserved-secret",
+        2,
+    )
+
     rows = (
         await db_session.execute(
-            text("SELECT primary_email_verified, verified_email, verification_source FROM users ORDER BY primary_email")
+            text(
+                "SELECT email_verified_at IS NOT NULL, primary_email, email_verification_source FROM users ORDER BY primary_email"
+            )
         )
     ).all()
     assert rows == [
         (True, "reader0@example.com", "papyrus_email"),
-        (False, None, None),
-        (False, None, None),
-        (False, None, None),
+        (False, "reader1@example.com", None),
+        (False, "reader2@example.com", None),
+        (False, "reader3@example.com", None),
         (True, "reader4@gmail.com", "google"),
     ]
     assert await db_session.scalar(text("SELECT count(*) FROM users")) == 5
@@ -115,7 +186,7 @@ async def test_verification_migration_preserves_trustworthy_evidence_and_data(db
     assert await db_session.scalar(text("SELECT count(*) FROM auth_sessions WHERE revoked_at IS NULL")) == 2
     assert (
         await db_session.scalar(
-            text("SELECT verification_subject FROM users WHERE primary_email = 'reader4@gmail.com'"),
+            text("SELECT provider_subject FROM user_identities WHERE email_at_provider = 'reader4@gmail.com'"),
         )
         == "4"
     )

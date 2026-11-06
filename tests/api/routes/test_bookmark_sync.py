@@ -154,7 +154,8 @@ async def test_bookmark_rejects_foreign_book_and_rolls_back(client, auth_headers
     owner = User(
         display_name="Other",
         primary_email="bookmark-owner@example.com",
-        primary_email_verified=True,
+        email_verified_at=datetime.now(UTC),
+        email_verification_source="papyrus_email",
         last_login_at=datetime.now(UTC),
     )
 
@@ -188,7 +189,8 @@ async def test_bookmark_rejects_foreign_entity_mutations(client, auth_headers, d
     owner = User(
         display_name="Other",
         primary_email="bookmark-entity@example.com",
-        primary_email_verified=True,
+        email_verified_at=datetime.now(UTC),
+        email_verification_source="papyrus_email",
         last_login_at=datetime.now(UTC),
     )
 

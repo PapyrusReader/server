@@ -142,7 +142,9 @@ async def test_register_duplicate_email_returns_conflict(client: AsyncClient):
 
 
 async def verify_and_login(client, db_session, email="test@example.com"):
-    delivery = await db_session.scalar(select(VerificationDelivery).where(VerificationDelivery.recipient == email))
+    delivery = await db_session.scalar(
+        select(VerificationDelivery).join(EmailActionToken).where(EmailActionToken.email == email)
+    )
     assert (await client.post("/v1/auth/verify-email", json={"token": delivery.token})).status_code == 200
     response = await client.post("/v1/auth/login", json={"email": email, "password": "SecureP@ss123"})
     assert response.status_code == 200

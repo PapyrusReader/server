@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.config import get_settings
-from papyrus.core.exceptions import ValidationError, VerificationTokenInvalidError, VerificationUnavailableError
+from papyrus.core.exceptions import (
+    NotFoundError,
+    ValidationError,
+    VerificationTokenInvalidError,
+    VerificationUnavailableError,
+)
 from papyrus.core.security import hash_password
 from papyrus.models import PasswordCredential, User
 from papyrus.services import email as email_service
@@ -15,10 +22,12 @@ from papyrus.services.auth._core import (
     _consume_email_action_token,
     _get_user_by_email,
     _issue_email_action_token,
+    _lock_credential_owner,
     _normalize_email,
     _now,
     _password_reset_email_body,
     _password_reset_email_html,
+    _revoke_credentials,
     _revoke_user_sessions,
 )
 from papyrus.services.auth.types import EMAIL_VERIFICATION_ACTION, PASSWORD_RESET_ACTION
@@ -29,6 +38,31 @@ from papyrus.services.auth.verification import (
     record_verification,
     require_delivery_configuration,
 )
+
+
+async def change_primary_email(session: AsyncSession, user_id: UUID, email: str | None) -> User:
+    """Change an existing address and invalidate its evidence and credentials atomically.
+
+    The caller commits the transaction. Initial account creation may assign the
+    address directly because it has no prior evidence or credentials to invalidate.
+    """
+    await _lock_credential_owner(session, user_id)
+    user = await session.get(User, user_id)
+
+    if user is None:
+        raise NotFoundError("User not found")
+
+    normalized_email = _normalize_email(email) if email is not None else None
+
+    if user.primary_email == normalized_email:
+        return user
+
+    user.primary_email = normalized_email
+    user.email_verified_at = None
+    user.email_verification_source = None
+    await _revoke_credentials(session, user.user_id)
+    await session.flush()
+    return user
 
 
 async def resend_verification_email(session: AsyncSession, email: str) -> str:

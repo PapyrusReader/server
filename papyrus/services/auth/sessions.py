@@ -61,7 +61,6 @@ async def register_user(
         user = User(
             display_name=request.display_name,
             primary_email=normalized_email,
-            primary_email_verified=False,
         )
 
         session.add(user)

@@ -4,6 +4,7 @@ import asyncio
 import logging
 import math
 from datetime import timedelta
+from typing import Literal
 from urllib.parse import urlsplit
 
 from sqlalchemy import delete, select, update
@@ -41,12 +42,12 @@ def accepts_verification(user: User) -> bool:
     return user.disabled_at is None
 
 
-def record_verification(user: User, source: str, subject: str | None = None) -> None:
-    user.primary_email_verified = True
-    user.verified_email = user.primary_email
-    user.verification_source = source
-    user.verification_subject = subject
-    user.verified_at = _now()
+def record_verification(user: User, source: Literal["papyrus_email", "google"]) -> None:
+    if user.primary_email is None:
+        raise ValueError("Verification requires a primary email")
+
+    user.email_verification_source = source
+    user.email_verified_at = _now()
 
 
 async def require_verified(session: AsyncSession, user: User) -> None:
@@ -59,7 +60,9 @@ async def verification_required(session: AsyncSession, user: User) -> Verificati
     remaining = 0
 
     if recipient is not None:
-        remaining = max(0, math.ceil((recipient.last_queued_at + timedelta(seconds=60) - _now()).total_seconds()))
+        remaining = max(
+            0, math.ceil((recipient.last_queued_at + timedelta(seconds=COOLDOWN_SECONDS) - _now()).total_seconds())
+        )
 
     return VerificationRequiredError(user.primary_email, remaining)
 
@@ -104,11 +107,8 @@ async def queue_verification(session: AsyncSession, user: User) -> bool:
     session.add(
         VerificationDelivery(
             token_id=action.token_id,
-            user_id=user.user_id,
-            recipient=user.primary_email,
             token=token,
             next_attempt_at=now,
-            expires_at=expires_at,
         ),
     )
 
@@ -117,21 +117,17 @@ async def queue_verification(session: AsyncSession, user: User) -> bool:
 
 
 async def cancel_verification_deliveries(session: AsyncSession, user: User) -> None:
-    await session.execute(
-        delete(VerificationDelivery).where(
-            VerificationDelivery.user_id == user.user_id,
-            VerificationDelivery.recipient == user.primary_email,
-        ),
+    tokens = select(EmailActionToken.token_id).where(
+        EmailActionToken.user_id == user.user_id,
+        EmailActionToken.email == user.primary_email,
+        EmailActionToken.action_type == EMAIL_VERIFICATION_ACTION,
     )
+
+    await session.execute(delete(VerificationDelivery).where(VerificationDelivery.token_id.in_(tokens)))
 
     await session.execute(
         update(EmailActionToken)
-        .where(
-            EmailActionToken.user_id == user.user_id,
-            EmailActionToken.email == user.primary_email,
-            EmailActionToken.action_type == EMAIL_VERIFICATION_ACTION,
-            EmailActionToken.used_at.is_(None),
-        )
+        .where(EmailActionToken.token_id.in_(tokens), EmailActionToken.used_at.is_(None))
         .values(used_at=_now()),
     )
 
@@ -153,7 +149,7 @@ async def deliver_pending_verifications(session: AsyncSession) -> int:
 
     await session.execute(
         delete(VerificationDelivery).where(
-            (VerificationDelivery.expires_at <= _now()) | VerificationDelivery.token_id.not_in(valid_token),
+            VerificationDelivery.token_id.not_in(valid_token),
         ),
     )
 
@@ -175,28 +171,33 @@ async def deliver_pending_verifications(session: AsyncSession) -> int:
     for _ in range(100):
         now = _now()
 
-        job = await session.scalar(
-            select(VerificationDelivery)
-            .where(VerificationDelivery.next_attempt_at <= now, VerificationDelivery.expires_at > now)
+        result = await session.execute(
+            select(VerificationDelivery, EmailActionToken)
+            .join(EmailActionToken, EmailActionToken.token_id == VerificationDelivery.token_id)
+            .where(VerificationDelivery.next_attempt_at <= now, EmailActionToken.expires_at > now)
             .order_by(VerificationDelivery.next_attempt_at)
-            .with_for_update(skip_locked=True)
+            .with_for_update(of=VerificationDelivery, skip_locked=True)
             .limit(1),
         )
 
-        if job is None:
+        delivery = result.one_or_none()
+
+        if delivery is None:
             await session.rollback()
             break
 
+        job, action = delivery
+        assert action.email is not None
         job.attempts += 1
-        job.next_attempt_at = min(now + timedelta(minutes=5), job.expires_at)
+        job.next_attempt_at = min(now + timedelta(minutes=5), action.expires_at)
         await session.commit()
         url = _build_app_url("/verify-email", {"token": job.token})
         body = f"Verify your Papyrus email address.\n\n{url}\n\nThis link expires 24 hours after it was requested."
 
         try:
-            await asyncio.to_thread(email.send_email, job.recipient, "Verify your Papyrus email address", body)
+            await asyncio.to_thread(email.send_email, action.email, "Verify your Papyrus email address", body)
         except Exception:
-            retry_at = min(_now() + timedelta(seconds=min(60 * 2 ** min(job.attempts - 1, 6), 3600)), job.expires_at)
+            retry_at = min(_now() + timedelta(seconds=min(60 * 2 ** min(job.attempts - 1, 6), 3600)), action.expires_at)
 
             await session.execute(
                 update(VerificationDelivery)

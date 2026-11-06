@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -41,7 +42,8 @@ async def test_smtp_password_reset_smoke(
             User(
                 display_name="SMTP Smoke",
                 primary_email=recipient,
-                primary_email_verified=True,
+                email_verified_at=datetime.now(UTC),
+                email_verification_source="papyrus_email",
             )
         )
 

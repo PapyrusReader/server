@@ -107,7 +107,7 @@ def render_account_email(display_name: str, deletion_due_at: datetime | None) ->
 
 async def queue_account_notification(session: AsyncSession, user: User) -> None:
     """Keep a notice for each committed lifecycle event, including rapid deletion and recovery."""
-    if not user.primary_email or not user.primary_email_verified:
+    if not user.primary_email or not user.email_verified:
         return
 
     content = render_account_email(user.display_name, user.deletion_due_at)

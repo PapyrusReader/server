@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.config import get_settings
@@ -16,7 +16,7 @@ from papyrus.core.security import (
     generate_opaque_token,
     hash_opaque_token,
 )
-from papyrus.models import AuthExchangeCode, AuthSession, EmailActionToken, User
+from papyrus.models import AuthExchangeCode, AuthSession, EmailActionToken, User, VerificationDelivery
 from papyrus.services.auth.types import AuthResult, GoogleIdentity
 from papyrus.services.email import render_email_html
 
@@ -114,6 +114,16 @@ async def _revoke_user_sessions(session: AsyncSession, user_id: UUID) -> None:
 
     for auth_session in result.scalars():
         auth_session.revoked_at = _now()
+
+
+async def _revoke_credentials(session: AsyncSession, user_id: UUID) -> None:
+    """Invalidate credentials under the owner's lock without discarding durable account data."""
+    tokens = select(EmailActionToken.token_id).where(EmailActionToken.user_id == user_id)
+    now = _now()
+    await session.execute(delete(VerificationDelivery).where(VerificationDelivery.token_id.in_(tokens)))
+    await session.execute(update(AuthSession).where(AuthSession.user_id == user_id).values(revoked_at=now))
+    await session.execute(update(AuthExchangeCode).where(AuthExchangeCode.user_id == user_id).values(used_at=now))
+    await session.execute(update(EmailActionToken).where(EmailActionToken.user_id == user_id).values(used_at=now))
 
 
 async def _create_exchange_code(

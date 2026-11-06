@@ -58,7 +58,8 @@ async def _create_user_with_password(
     user = User(
         display_name=display_name,
         primary_email=email,
-        primary_email_verified=True,
+        email_verified_at=datetime.now(UTC),
+        email_verification_source="papyrus_email",
         disabled_at=datetime.now(UTC) if disabled else None,
     )
 
@@ -82,7 +83,9 @@ def verification_configuration(monkeypatch):
 
 async def register_verified(session, request, user_agent):
     await auth_service.register_user(session, request, user_agent)
-    delivery = await session.scalar(select(VerificationDelivery).where(VerificationDelivery.recipient == request.email))
+    delivery = await session.scalar(
+        select(VerificationDelivery).join(EmailActionToken).where(EmailActionToken.email == request.email)
+    )
     await auth_service.verify_email_token(session, delivery.token)
     return await auth_service.login_user(
         session, LoginRequest(email=request.email, password=request.password), user_agent
@@ -270,7 +273,8 @@ async def test_google_login_reuses_existing_identity(
         user = User(
             display_name="Google User",
             primary_email="google@example.com",
-            primary_email_verified=True,
+            email_verified_at=datetime.now(UTC),
+            email_verification_source="papyrus_email",
         )
 
         record_verification(user, "papyrus_email")
