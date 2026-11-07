@@ -88,7 +88,7 @@ Use `.env.example`, `tests/api/routes/test_auth.py`, and
 See `README.md` for current auth/sync routes, local sandbox entry points and test lanes.
 
 For client/server contracts, use the workspace's `papyrus-sync-contract` skill and
-`../.agents/skills/papyrus-sync-contract/references/contract-map.md` when developing
+`../.agents/skills/papyrus-sync-contract/references/CONTRACT_MAP.md` when developing
 inside the Papyrus workspace.
 
 To build the dev sandbox assets without the Vite dev server:
