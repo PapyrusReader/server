@@ -170,16 +170,19 @@ async def test_delivery_failure_retries_same_secret_without_extending_expiry(tes
         assert "SMTP secret" not in caplog.text
         job.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
         await session.commit()
-        monkeypatch.setattr(email, "send_email", lambda *args: sent.append(args))
+        monkeypatch.setattr(email, "send_email", lambda *args, **kwargs: sent.append((*args, kwargs["html_body"])))
         assert await verification.deliver_pending_verifications(session) == 1
-        assert f"https://app.example.test/reader/verify-email?token={original_token}" in sent[0][2]
+        url = f"https://app.example.test/reader/verify-email?token={original_token}"
+        assert url in sent[0][2]
+        assert f'href="{url}"' in sent[0][3]
+        assert "Verify email</a>" in sent[0][3]
         assert await session.scalar(select(VerificationDelivery)) is None
         token = await session.scalar(select(EmailActionToken))
         assert token.expires_at == original_expiry
 
 
 async def test_expired_delivery_removed_without_smtp(test_session_maker, monkeypatch):
-    monkeypatch.setattr(email, "send_email", lambda *args: pytest.fail("expired mail sent"))
+    monkeypatch.setattr(email, "send_email", lambda *args, **kwargs: pytest.fail("expired mail sent"))
 
     async with test_session_maker() as session:
         await register(session)
@@ -401,7 +404,7 @@ async def test_linked_google_preserves_owner_and_primary_email(
 
 async def test_delivery_lease_prevents_two_workers_sending_the_same_job(test_session_maker, monkeypatch):
     sent = []
-    monkeypatch.setattr(email, "send_email", lambda *args: sent.append(args))
+    monkeypatch.setattr(email, "send_email", lambda *args, **kwargs: sent.append((*args, kwargs["html_body"])))
 
     async with test_session_maker() as session:
         await register(session)
