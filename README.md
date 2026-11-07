@@ -49,9 +49,10 @@ provider-backed tests require explicit SMTP/Google configuration.
 [Managed acquisition routes](papyrus/api/routes/acquisition.py) use owner-scoped
 endpoints, jobs and rules. Provider adapters, job lifecycle and release tokens
 live in [the acquisition service](papyrus/services/acquisition/). The monitor
-imports selected media and handles retry/cancellation. [OPDS relay setup](docs/opds-relay.md)
-describes catalog transport and origin restrictions.
-See [in-app support setup](docs/support.md) for GitHub issue submission configuration.
+imports selected media and handles retry/cancellation. See the
+[deployment guide](deploy/README.md#optional-services) for OPDS relay and support
+submission setup. Wire schemas are defined by the generated API reference; sync
+validation lives beside its service code and regression tests.
 
 ## Verification
 
