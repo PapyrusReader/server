@@ -192,10 +192,24 @@ async def deliver_pending_verifications(session: AsyncSession) -> int:
         job.next_attempt_at = min(now + timedelta(minutes=5), action.expires_at)
         await session.commit()
         url = _build_app_url("/verify-email", {"token": job.token})
+        subject = "Verify your Papyrus email address"
         body = f"Verify your Papyrus email address.\n\n{url}\n\nThis link expires 24 hours after it was requested."
 
         try:
-            await asyncio.to_thread(email.send_email, action.email, "Verify your Papyrus email address", body)
+            html = email.render_email_html(
+                subject=subject,
+                preheader="Verify your email address to sign in to Papyrus.",
+                category="ACCOUNT SECURITY",
+                heading="Verify your email address",
+                greeting="Hello,",
+                summary="Verify your email address to sign in to Papyrus.",
+                guidance="This link expires 24 hours after it was requested and can only be used once.",
+                security_note="If you didn't request this email, you can ignore it.",
+                action_label="Verify email",
+                action_url=url,
+            )
+
+            await asyncio.to_thread(email.send_email, action.email, subject, body, html_body=html)
         except Exception:
             retry_at = min(_now() + timedelta(seconds=min(60 * 2 ** min(job.attempts - 1, 6), 3600)), action.expires_at)
 

@@ -708,8 +708,17 @@ async def test_resend_verification_sends_email_when_configured(
     recipient, subject, body, html = configured_email_delivery[0]
     assert recipient == "test@example.com"
     assert subject == "Verify your Papyrus email address"
-    assert "/verify-email?token=" in body
-    assert html is None
+    url = next(line for line in body.splitlines() if "/verify-email?token=" in line)
+    assert html is not None
+    assert "<!doctype html>" in html
+    assert "This is an automatic account notification from Papyrus." in html
+    assert f'href="{url}"' in html
+    assert "Verify email</a>" in html
+    assert "24 hours after it was requested" in body
+    assert "24 hours after it was requested" in html
+    token = parse_qs(urlparse(url).query)["token"][0]
+    verified = await client.post("/v1/auth/verify-email", json={"token": token})
+    assert verified.status_code == 200
 
 
 async def test_forgot_password_returns_configuration_message(
