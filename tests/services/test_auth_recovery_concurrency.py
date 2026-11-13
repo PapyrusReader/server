@@ -4,6 +4,7 @@ import asyncio
 from uuid import UUID
 
 import pytest
+from fastapi import Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -13,7 +14,7 @@ from papyrus.core.security import hash_opaque_token
 from papyrus.models import AuthSession, EmailActionToken, User
 from papyrus.schemas.account_deletion import AccountPasswordRequest
 from papyrus.schemas.auth import OAuthExchangeRequest
-from papyrus.services import account_deletion, auth
+from papyrus.services import account_deletion, auth, sync
 from papyrus.services.auth import _core
 
 
@@ -33,8 +34,11 @@ async def test_authentication_reads_share_owner_lock_and_block_credential_change
         first_pid = await first.scalar(select(func.pg_backend_pid()))
         second_pid = await second.scalar(select(func.pg_backend_pid()))
         transition_pid = await transition.scalar(select(func.pg_backend_pid()))
-        await get_revocable_auth_session(payload, first)
-        session = await asyncio.wait_for(get_revocable_auth_session(payload, second), timeout=5)
+        await get_revocable_auth_session(Request({"type": "http", "method": "GET"}), payload, first)
+        session = await asyncio.wait_for(
+            get_revocable_auth_session(Request({"type": "http", "method": "GET"}), payload, second), timeout=5
+        )
+
         assert session.user_id == user_id
         changing = asyncio.create_task(transition.scalar(select(User).where(User.user_id == user_id).with_for_update()))
 
@@ -62,6 +66,42 @@ async def test_authentication_reads_share_owner_lock_and_block_credential_change
                 changing.cancel()
 
             await asyncio.gather(changing, return_exceptions=True)
+
+
+async def test_authenticated_mutations_serialize_without_lock_upgrade_deadlock(
+    test_session_maker: async_sessionmaker[AsyncSession],
+    auth_user: dict[str, str],
+) -> None:
+    payload = {"sub": auth_user["user_id"], "sid": auth_user["session_id"]}
+    user_id = UUID(auth_user["user_id"])
+    request = Request({"type": "http", "method": "POST"})
+
+    async with (
+        test_session_maker() as first,
+        test_session_maker() as second,
+        test_session_maker() as monitor,
+    ):
+        first_pid = await first.scalar(select(func.pg_backend_pid()))
+        second_pid = await second.scalar(select(func.pg_backend_pid()))
+        await get_revocable_auth_session(request, payload, first)
+        waiting = asyncio.create_task(get_revocable_auth_session(request, payload, second))
+
+        try:
+            async with asyncio.timeout(5):
+                while first_pid not in await monitor.scalar(select(func.pg_blocking_pids(second_pid))):
+                    await asyncio.sleep(0.01)
+
+            await asyncio.wait_for(sync.lock_owner_mutations(first, user_id), timeout=5)
+            await first.commit()
+            authenticated = await asyncio.wait_for(waiting, timeout=5)
+            assert authenticated.user_id == user_id
+            await asyncio.wait_for(sync.lock_owner_mutations(second, user_id), timeout=5)
+            await second.commit()
+        finally:
+            if not waiting.done():
+                waiting.cancel()
+
+            await asyncio.gather(waiting, return_exceptions=True)
 
 
 @pytest.mark.parametrize("flow", ["google", "password_reset", "verification"])
