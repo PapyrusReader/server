@@ -164,10 +164,11 @@ async def test_notices_roll_back_expire_and_cascade_with_account(db_session, aut
     assert await db_session.scalar(select(func.count()).select_from(AccountNotification)) == 0
 
 
-@pytest.mark.parametrize("verified,email_address", [(False, "reader@example.test"), (True, None)])
-async def test_only_verified_contact_addresses_receive_notices(db_session, auth_user, verified, email_address):
+@pytest.mark.parametrize("email_address", ["reader@example.test", None])
+async def test_only_verified_contact_addresses_receive_notices(db_session, auth_user, email_address):
     user = await db_session.get(User, UUID(auth_user["user_id"]))
-    user.primary_email_verified = verified
+    user.email_verified_at = None
+    user.email_verification_source = None
     user.primary_email = email_address
     await account_notifications.queue_account_notification(db_session, user)
     await db_session.commit()

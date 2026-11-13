@@ -259,7 +259,8 @@ async def test_powersync_upload_rejects_cross_user_book_mutation(
     other_user = User(
         display_name="Other User",
         primary_email="other-sync@example.com",
-        primary_email_verified=True,
+        email_verified_at=datetime.now(UTC),
+        email_verification_source="papyrus_email",
         last_login_at=datetime.now(UTC),
     )
 

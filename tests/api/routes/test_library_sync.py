@@ -180,7 +180,8 @@ async def test_foreign_reference_rolls_back_mixed_batch(client, auth_headers, db
     other = User(
         display_name="Other",
         primary_email="other-library@example.com",
-        primary_email_verified=True,
+        email_verified_at=datetime.now(UTC),
+        email_verification_source="papyrus_email",
         last_login_at=datetime.now(UTC),
     )
 

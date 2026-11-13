@@ -23,7 +23,8 @@ async def _seed_user_with_session(
     user = User(
         display_name="Example User",
         primary_email=email,
-        primary_email_verified=True,
+        email_verified_at=datetime.now(UTC),
+        email_verification_source="papyrus_email",
         last_login_at=datetime.now(UTC),
     )
 

@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from papyrus.config import get_settings
@@ -16,7 +16,7 @@ from papyrus.core.security import (
     generate_opaque_token,
     hash_opaque_token,
 )
-from papyrus.models import AuthExchangeCode, AuthSession, EmailActionToken, User
+from papyrus.models import AuthExchangeCode, AuthSession, EmailActionToken, User, VerificationDelivery
 from papyrus.services.auth.types import AuthResult, GoogleIdentity
 from papyrus.services.email import render_email_html
 
@@ -57,6 +57,13 @@ async def _create_session_for_user(
     device_label: str | None,
     user_agent: str | None,
 ) -> AuthResult:
+    from papyrus.services.auth.verification import require_verified
+
+    await require_verified(session, user)
+
+    if user.disabled_at is not None or user.deletion_due_at is not None:
+        raise ForbiddenError("User account is disabled")
+
     refresh_token = generate_opaque_token()
     refresh_token_hash = hash_opaque_token(refresh_token)
     normalized_client_type, normalized_device_label = _get_client_metadata(client_type, device_label, user_agent)
@@ -109,6 +116,16 @@ async def _revoke_user_sessions(session: AsyncSession, user_id: UUID) -> None:
         auth_session.revoked_at = _now()
 
 
+async def _revoke_credentials(session: AsyncSession, user_id: UUID) -> None:
+    """Invalidate credentials under the owner's lock without discarding durable account data."""
+    tokens = select(EmailActionToken.token_id).where(EmailActionToken.user_id == user_id)
+    now = _now()
+    await session.execute(delete(VerificationDelivery).where(VerificationDelivery.token_id.in_(tokens)))
+    await session.execute(update(AuthSession).where(AuthSession.user_id == user_id).values(revoked_at=now))
+    await session.execute(update(AuthExchangeCode).where(AuthExchangeCode.user_id == user_id).values(used_at=now))
+    await session.execute(update(EmailActionToken).where(EmailActionToken.user_id == user_id).values(used_at=now))
+
+
 async def _create_exchange_code(
     session: AsyncSession,
     *,
@@ -118,6 +135,7 @@ async def _create_exchange_code(
     provider: str | None = None,
     provider_subject: str | None = None,
     email_at_provider: str | None = None,
+    hosted_domain: str | None = None,
     email_verified_at_provider: datetime | None = None,
     display_name: str | None = None,
     avatar_url: str | None = None,
@@ -133,6 +151,7 @@ async def _create_exchange_code(
             provider=provider,
             provider_subject=provider_subject,
             email_at_provider=email_at_provider,
+            hosted_domain=hosted_domain,
             email_verified_at_provider=email_verified_at_provider,
             display_name=display_name,
             avatar_url=avatar_url,
@@ -156,10 +175,10 @@ async def _lock_credential_owner(session: AsyncSession, user_id: UUID | None) ->
     )
 
 
-async def _consume_exchange_code(session: AsyncSession, code: str, purpose: str) -> AuthExchangeCode:
+async def _consume_exchange_code(session: AsyncSession, code: str, purpose: str | tuple[str, ...]) -> AuthExchangeCode:
     query = select(AuthExchangeCode).where(
         AuthExchangeCode.code_hash == hash_opaque_token(code),
-        AuthExchangeCode.purpose == purpose,
+        AuthExchangeCode.purpose.in_((purpose,) if isinstance(purpose, str) else purpose),
         AuthExchangeCode.used_at.is_(None),
     )
 
@@ -227,17 +246,6 @@ def _default_display_name(identity: GoogleIdentity | None = None, email: str | N
     return "Papyrus User"
 
 
-def _build_api_url(path: str) -> str | None:
-    public_base_url = get_settings().public_base_url
-
-    if public_base_url is None:
-        return None
-
-    base = public_base_url.rstrip("/")
-    prefix = get_settings().api_prefix
-    return f"{base}{prefix}{path}"
-
-
 def _build_app_url(path: str, query: dict[str, str] | None = None) -> str | None:
     app_public_base_url = get_settings().app_public_base_url
 
@@ -252,26 +260,6 @@ def _build_app_url(path: str, query: dict[str, str] | None = None) -> str | None
         return f"{url}?{urlencode(query)}"
 
     return url
-
-
-def _verification_email_body(token: str) -> str:
-    verify_url = _build_api_url("/auth/verify-email")
-
-    lines = [
-        "Verify your Papyrus email address.",
-        "",
-        f"Verification token: {token}",
-    ]
-
-    if verify_url is not None:
-        lines.extend(
-            [
-                "",
-                f"Submit this token to: {verify_url}",
-            ]
-        )
-
-    return "\n".join(lines)
 
 
 def _password_reset_email_body(token: str) -> str:

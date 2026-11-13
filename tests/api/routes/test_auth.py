@@ -17,9 +17,10 @@ from papyrus.core import security as security_module
 from papyrus.core.exceptions import ServiceUnavailableError
 from papyrus.core.rate_limit import limiter
 from papyrus.core.security import generate_opaque_token, hash_opaque_token
-from papyrus.models import AuthExchangeCode, EmailActionToken, User, UserIdentity
+from papyrus.models import AuthExchangeCode, EmailActionToken, User, UserIdentity, VerificationDelivery
 from papyrus.services import auth as auth_service
 from papyrus.services import email as email_service
+from papyrus.services.auth.verification import deliver_pending_verifications, record_verification
 
 
 @pytest.fixture
@@ -79,7 +80,7 @@ def unconfigured_powersync(monkeypatch: pytest.MonkeyPatch) -> None:
     security_module._get_powersync_public_key.cache_clear()
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def configured_email_delivery(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str, str, str | None]]:
     settings = get_settings()
     monkeypatch.setattr(settings, "email_delivery_enabled", True)
@@ -103,7 +104,7 @@ def unconfigured_email_delivery(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "smtp_from_email", None)
 
 
-async def test_register_user_returns_tokens(client: AsyncClient):
+async def test_register_user_returns_pending_verification(client: AsyncClient):
     """Test user registration endpoint."""
     response = await client.post(
         "/v1/auth/register",
@@ -117,10 +118,13 @@ async def test_register_user_returns_tokens(client: AsyncClient):
 
     assert response.status_code == 201
     data = response.json()
-    assert "access_token" in data
-    assert "refresh_token" in data
-    assert data["user"]["email"] == "test@example.com"
-    assert data["user"]["display_name"] == "Test User"
+    assert data == {
+        "status": "verification_required",
+        "email": "test@example.com",
+        "message": "Check your email to verify your account, then sign in.",
+        "resend_after": 60,
+    }
+    assert response.headers["cache-control"] == "no-store"
 
 
 async def test_register_duplicate_email_returns_conflict(client: AsyncClient):
@@ -137,7 +141,17 @@ async def test_register_duplicate_email_returns_conflict(client: AsyncClient):
     assert second_response.status_code == 409
 
 
-async def test_login_user(client: AsyncClient):
+async def verify_and_login(client, db_session, email="test@example.com"):
+    delivery = await db_session.scalar(
+        select(VerificationDelivery).join(EmailActionToken).where(EmailActionToken.email == email)
+    )
+    assert (await client.post("/v1/auth/verify-email", json={"token": delivery.token})).status_code == 200
+    response = await client.post("/v1/auth/login", json={"email": email, "password": "SecureP@ss123"})
+    assert response.status_code == 200
+    return response
+
+
+async def test_login_user(client: AsyncClient, db_session: AsyncSession):
     """Test user login endpoint."""
     register_response = await client.post(
         "/v1/auth/register",
@@ -149,6 +163,7 @@ async def test_login_user(client: AsyncClient):
     )
 
     assert register_response.status_code == 201
+    register_response = await verify_and_login(client, db_session)
 
     response = await client.post(
         "/v1/auth/login",
@@ -191,7 +206,7 @@ async def test_login_user_rejects_invalid_password(client: AsyncClient):
     assert response.status_code == 401
 
 
-async def test_refresh_token_rotates_and_invalidates_previous_token(client: AsyncClient):
+async def test_refresh_token_rotates_and_invalidates_previous_token(client: AsyncClient, db_session: AsyncSession):
     """Test refresh token rotation endpoint."""
     register_response = await client.post(
         "/v1/auth/register",
@@ -203,6 +218,7 @@ async def test_refresh_token_rotates_and_invalidates_previous_token(client: Asyn
     )
 
     assert register_response.status_code == 201
+    register_response = await verify_and_login(client, db_session)
     refresh_token = register_response.json()["refresh_token"]
     refresh_response = await client.post("/v1/auth/refresh", json={"refresh_token": refresh_token})
     assert refresh_response.status_code == 200
@@ -212,7 +228,7 @@ async def test_refresh_token_rotates_and_invalidates_previous_token(client: Asyn
     assert invalidated_response.status_code == 401
 
 
-async def test_logout_current_session_revokes_refresh_token(client: AsyncClient):
+async def test_logout_current_session_revokes_refresh_token(client: AsyncClient, db_session: AsyncSession):
     """Test user logout revokes the current session refresh token."""
     register_response = await client.post(
         "/v1/auth/register",
@@ -224,6 +240,7 @@ async def test_logout_current_session_revokes_refresh_token(client: AsyncClient)
     )
 
     assert register_response.status_code == 201
+    register_response = await verify_and_login(client, db_session)
     auth_payload = register_response.json()
 
     logout_response = await client.post(
@@ -267,11 +284,11 @@ async def test_login_is_rate_limited(client: AsyncClient):
         for _ in range(6)
     ]
 
-    assert [response.status_code for response in responses[:5]] == [200] * 5
+    assert [response.status_code for response in responses[:5]] == [403] * 5
     assert responses[5].status_code == 429
 
 
-async def test_logout_all_revokes_other_sessions(client: AsyncClient):
+async def test_logout_all_revokes_other_sessions(client: AsyncClient, db_session: AsyncSession):
     """Test logout-all revokes all refresh-token backed sessions."""
     register_response = await client.post(
         "/v1/auth/register",
@@ -283,6 +300,7 @@ async def test_logout_all_revokes_other_sessions(client: AsyncClient):
     )
 
     assert register_response.status_code == 201
+    register_response = await verify_and_login(client, db_session)
     first_auth = register_response.json()
 
     login_response = await client.post(
@@ -351,6 +369,7 @@ async def test_google_oauth_flow_creates_user_and_exchanges_code(
             subject="google-sub-1",
             email="google_user@example.com",
             email_verified=True,
+            hosted_domain="example.com",
             display_name="Google User",
             avatar_url="https://example.com/avatar.png",
         ),
@@ -624,6 +643,7 @@ async def test_verify_email(client: AsyncClient, db_session: AsyncSession):
         EmailActionToken(
             user_id=user.user_id,
             action_type=auth_service.EMAIL_VERIFICATION_ACTION,
+            email=user.primary_email,
             token_hash=hash_opaque_token(plain_token),
             expires_at=datetime.now(UTC) + timedelta(hours=1),
         )
@@ -646,6 +666,7 @@ async def test_verify_email_rejects_expired_token(client: AsyncClient, db_sessio
         EmailActionToken(
             user_id=user.user_id,
             action_type=auth_service.EMAIL_VERIFICATION_ACTION,
+            email=user.primary_email,
             token_hash=hash_opaque_token(plain_token),
             expires_at=datetime.now(UTC) - timedelta(minutes=1),
         )
@@ -654,11 +675,12 @@ async def test_verify_email_rejects_expired_token(client: AsyncClient, db_sessio
     await db_session.commit()
     response = await client.post("/v1/auth/verify-email", json={"token": plain_token})
     assert response.status_code == 400
-    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert response.json()["error"]["code"] == "VERIFICATION_TOKEN_INVALID"
 
 
 async def test_resend_verification_sends_email_when_configured(
     client: AsyncClient,
+    db_session: AsyncSession,
     configured_email_delivery: list[tuple[str, str, str, str | None]],
 ):
     """Test resend verification sends an email when SMTP is configured."""
@@ -680,33 +702,34 @@ async def test_resend_verification_sends_email_when_configured(
 
     assert response.status_code == 200
     assert response.json()["message"] == "If the email is registered, a verification link has been sent"
+    assert configured_email_delivery == []
+    assert await deliver_pending_verifications(db_session) == 1
     assert len(configured_email_delivery) == 1
     recipient, subject, body, html = configured_email_delivery[0]
     assert recipient == "test@example.com"
     assert subject == "Verify your Papyrus email address"
-    assert "Verification token:" in body
-    assert html is None
+    url = next(line for line in body.splitlines() if "/verify-email?token=" in line)
+    assert html is not None
+    assert "<!doctype html>" in html
+    assert "This is an automatic account notification from Papyrus." in html
+    assert f'href="{url}"' in html
+    assert "Verify email</a>" in html
+    assert "24 hours after it was requested" in body
+    assert "24 hours after it was requested" in html
+    token = parse_qs(urlparse(url).query)["token"][0]
+    verified = await client.post("/v1/auth/verify-email", json={"token": token})
+    assert verified.status_code == 200
 
 
 async def test_forgot_password_returns_configuration_message(
     client: AsyncClient,
     unconfigured_email_delivery: None,
+    auth_user: dict[str, str],
 ):
     """Test forgot password endpoint without SMTP configuration."""
-    register_response = await client.post(
-        "/v1/auth/register",
-        json={
-            "email": "test@example.com",
-            "password": "SecureP@ss123",
-            "display_name": "Test User",
-        },
-    )
-
-    assert register_response.status_code == 201
-
     response = await client.post(
         "/v1/auth/forgot-password",
-        json={"email": "test@example.com"},
+        json={"email": "user@example.com"},
     )
 
     assert response.status_code == 200
@@ -826,6 +849,7 @@ async def test_forgot_password_send_failure_returns_service_unavailable(
 async def test_reset_password(client: AsyncClient, db_session: AsyncSession):
     """Test password reset endpoint."""
     user = User(display_name="Resettable User", primary_email="reset@example.com")
+    record_verification(user, "papyrus_email")
     db_session.add(user)
     await db_session.flush()
     plain_token = generate_opaque_token()
@@ -899,6 +923,7 @@ async def test_reset_password_revokes_existing_access_token(
 async def test_reset_password_rejects_expired_token(client: AsyncClient, db_session: AsyncSession):
     """Test password reset rejects expired tokens."""
     user = User(display_name="Resettable User", primary_email="reset@example.com")
+    record_verification(user, "papyrus_email")
     db_session.add(user)
     await db_session.flush()
     plain_token = generate_opaque_token()

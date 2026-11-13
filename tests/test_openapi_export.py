@@ -27,5 +27,8 @@ def test_export_ignores_environment_and_dev_routes(tmp_path: Path) -> None:
     schema = json.loads(baseline)
     assert all(not path.startswith("/__dev") for path in schema["paths"])
     assert {"/v1/books", "/v1/auth/login", "/v1/opds/relay", "/v1/sync/powersync-upload"} <= schema["paths"].keys()
+    registration = schema["paths"]["/v1/auth/register"]["post"]["responses"]["201"]
+    assert registration["content"]["application/json"]["schema"]["$ref"].endswith("/PendingVerificationResponse")
+    assert "access_token" not in schema["components"]["schemas"]["PendingVerificationResponse"]["properties"]
     assert schema["info"]["contact"]["url"] == "https://github.com/PapyrusReader/papyrus"
     subprocess.run([*command, "--check"], check=True)

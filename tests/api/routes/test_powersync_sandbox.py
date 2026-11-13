@@ -179,7 +179,8 @@ async def test_powersync_demo_items_only_lists_owned_rows(
     other_user = User(
         display_name="Other User",
         primary_email="other@example.com",
-        primary_email_verified=True,
+        email_verified_at=datetime.now(UTC),
+        email_verification_source="papyrus_email",
         last_login_at=datetime.now(UTC),
     )
 
@@ -265,7 +266,8 @@ async def test_powersync_upload_rejects_mutating_other_users_rows(
     other_user = User(
         display_name="Other User",
         primary_email="other-owner@example.com",
-        primary_email_verified=True,
+        email_verified_at=datetime.now(UTC),
+        email_verification_source="papyrus_email",
         last_login_at=datetime.now(UTC),
     )
 

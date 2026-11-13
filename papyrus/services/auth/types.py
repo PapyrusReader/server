@@ -31,3 +31,4 @@ class GoogleIdentity:
     display_name: str | None
     avatar_url: str | None
     nonce: str | None = None
+    hosted_domain: str | None = None

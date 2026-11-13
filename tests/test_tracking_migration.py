@@ -32,7 +32,8 @@ async def test_tracking_upgrade_preserves_library_and_matches_metadata(db_sessio
         user_id=uuid4(),
         display_name="Reader",
         primary_email="migration@example.com",
-        primary_email_verified=True,
+        email_verified_at=datetime.now(UTC),
+        email_verification_source="papyrus_email",
         last_login_at=datetime.now(UTC),
     )
 

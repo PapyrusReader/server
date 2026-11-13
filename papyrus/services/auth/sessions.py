@@ -6,11 +6,12 @@ from datetime import timedelta
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from papyrus.config import get_settings
-from papyrus.core.exceptions import ConflictError, ForbiddenError, UnauthorizedError
+from papyrus.core.exceptions import ConflictError, ForbiddenError, UnauthorizedError, VerificationUnavailableError
 from papyrus.core.security import (
     create_access_token,
     generate_opaque_token,
@@ -19,57 +20,73 @@ from papyrus.core.security import (
     verify_password,
 )
 from papyrus.models import AuthSession, PasswordCredential, User
-from papyrus.schemas.auth import LoginRequest, OAuthExchangeRequest, RefreshTokenRequest, RegisterRequest
+from papyrus.schemas.auth import (
+    LoginRequest,
+    OAuthExchangeRequest,
+    PendingVerificationResponse,
+    RefreshTokenRequest,
+    RegisterRequest,
+)
 from papyrus.services.auth._core import (
     _consume_exchange_code,
     _create_session_for_user,
     _expires_in_seconds,
     _get_active_user,
     _get_user_by_email,
+    _lock_credential_owner,
     _normalize_email,
     _now,
     _revoke_user_sessions,
 )
 from papyrus.services.auth.types import AuthResult
+from papyrus.services.auth.verification import (
+    queue_verification,
+    require_delivery_configuration,
+    verification_required,
+)
 
 
 async def register_user(
     session: AsyncSession,
     request: RegisterRequest,
     user_agent: str | None,
-) -> AuthResult:
+) -> PendingVerificationResponse:
+    require_delivery_configuration()
     normalized_email = _normalize_email(request.email)
 
-    if await _get_user_by_email(session, normalized_email) is not None:
-        raise ConflictError("An account with this email already exists")
+    try:
+        if await _get_user_by_email(session, normalized_email) is not None:
+            raise ConflictError("An account with this email already exists")
 
-    user = User(
-        display_name=request.display_name,
-        primary_email=normalized_email,
-        primary_email_verified=False,
-    )
-
-    session.add(user)
-    await session.flush()
-
-    session.add(
-        PasswordCredential(
-            user_id=user.user_id,
-            password_hash=hash_password(request.password),
+        user = User(
+            display_name=request.display_name,
+            primary_email=normalized_email,
         )
-    )
 
-    result = await _create_session_for_user(
-        session,
-        user,
-        client_type=request.client_type,
-        device_label=request.device_label,
-        user_agent=user_agent,
-    )
+        session.add(user)
+        await session.flush()
 
-    await session.commit()
-    await session.refresh(user)
-    return result
+        session.add(
+            PasswordCredential(user_id=user.user_id, password_hash=hash_password(request.password)),
+        )
+
+        if not await queue_verification(session, user):
+            await session.rollback()
+            raise VerificationUnavailableError()
+
+        await session.commit()
+    except IntegrityError as error:
+        await session.rollback()
+
+        if await _get_user_by_email(session, normalized_email) is not None:
+            raise ConflictError("An account with this email already exists") from error
+
+        raise VerificationUnavailableError() from error
+    except SQLAlchemyError as error:
+        await session.rollback()
+        raise VerificationUnavailableError() from error
+
+    return PendingVerificationResponse(email=normalized_email)
 
 
 async def login_user(
@@ -81,6 +98,8 @@ async def login_user(
         select(User)
         .options(selectinload(User.password_credential))
         .where(User.primary_email == _normalize_email(request.email))
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
 
     user = result.scalar_one_or_none()
@@ -96,7 +115,7 @@ async def login_user(
 
         await require_account_recovery(session, user.user_id)
 
-    if user.disabled_at is not None:
+    if user.disabled_at is not None or user.deletion_due_at is not None:
         raise ForbiddenError("User account is disabled")
 
     auth_result = await _create_session_for_user(
@@ -116,10 +135,12 @@ async def refresh_tokens(
     session: AsyncSession,
     request: RefreshTokenRequest,
 ) -> AuthResult:
+    query = select(AuthSession).where(AuthSession.refresh_token_hash == hash_opaque_token(request.refresh_token))
+    user_id = await session.scalar(query.with_only_columns(AuthSession.user_id))
+    await _lock_credential_owner(session, user_id)
+
     result = await session.execute(
-        select(AuthSession)
-        .options(selectinload(AuthSession.user))
-        .where(AuthSession.refresh_token_hash == hash_opaque_token(request.refresh_token))
+        query.options(selectinload(AuthSession.user)).with_for_update().execution_options(populate_existing=True),
     )
 
     auth_session = result.scalar_one_or_none()
@@ -129,8 +150,14 @@ async def refresh_tokens(
 
     user = auth_session.user
 
-    if user.disabled_at is not None:
+    if user.disabled_at is not None or user.deletion_due_at is not None:
         raise ForbiddenError("User account is disabled")
+
+    if not user.email_verified:
+        error = await verification_required(session, user)
+        await _revoke_user_sessions(session, user.user_id)
+        await session.commit()
+        raise error
 
     new_refresh_token = generate_opaque_token()
     auth_session.refresh_token_hash = hash_opaque_token(new_refresh_token)
@@ -173,7 +200,7 @@ async def exchange_login_code(
     request: OAuthExchangeRequest,
     user_agent: str | None,
 ) -> AuthResult:
-    exchange_code = await _consume_exchange_code(session, request.code, purpose="login")
+    exchange_code = await _consume_exchange_code(session, request.code, purpose=("login", "login_pending_verification"))
 
     if exchange_code.user_id is None:
         raise UnauthorizedError("Exchange code is missing a user")
@@ -186,6 +213,11 @@ async def exchange_login_code(
         await require_account_recovery(session, user.user_id)
 
     user = await _get_active_user(session, exchange_code.user_id)
+
+    if exchange_code.purpose == "login_pending_verification" or not user.email_verified:
+        error = await verification_required(session, user)
+        await session.commit()
+        raise error
 
     auth_result = await _create_session_for_user(
         session,

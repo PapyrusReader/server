@@ -142,13 +142,35 @@ sign-in, book/media upload and sync from a Play-installed Android build. Monitor
 PowerSync replication slots: a 1 GB WAL retention cap protects disk but an
 extended outage can invalidate a slot and require a controlled resync.
 
-## Updating and recovery
+## Optional services
 
-The initial testing baseline is `0.0.1`. Its release workflow removes the unused
-`1.0.0` container by its exact manifest digest after publishing the replacement.
-It preserves shared manifests and refuses to delete versions with unrelated tags.
-The package itself stays public. This cleanup uses the publishing repository's
-package admin access through `GITHUB_TOKEN` and only runs for `0.0.1`.
+### OPDS relay
+
+`OPDS_RELAY_ENABLED` enables catalog transport, including anonymous browsing.
+Restrict it with `OPDS_RELAY_ALLOWED_HOSTS`, a JSON array of exact hostnames;
+include any required redirect and cover-image hosts. An empty array permits all
+public hosts. Private/LAN destinations remain blocked even when listed.
+
+Use HTTPS and allow the web app's origin in `CORS_ORIGINS`. The selected backend
+receives protected catalog credentials, so do not log relay request bodies or
+credential-bearing URLs. The relay does not upload guest libraries. Rate and
+concurrency limits are per API worker; apply aggregate limits before scaling out.
+
+### Support submissions
+
+Set `SUPPORT_GITHUB_TOKEN` to a fine-grained PAT restricted to the target repository
+with Issues read/write and organization Projects read/write permissions. Attachment
+uploads also require the token owner to have repository write access; GitHub App
+installation tokens cannot upload them. Keep this token on the server. An empty
+token disables submissions. Routing settings are listed in `production.env.example`.
+
+Reports and attachments become public on GitHub. A timeout can leave a created
+issue or uploaded attachment without a confirmed client response; check GitHub
+before retrying. Project routing failures are logged with the issue number and
+need manual reconciliation; they are not persisted for retry. A project's visible
+`viewerCanUpdate` value alone does not prove the PAT has Projects write permission.
+
+## Updating and recovery
 
 Deploy the backward-compatible server first, then roll out the client. Update
 `PAPYRUS_VERSION`, check out the corresponding source/config and install the web
@@ -178,8 +200,8 @@ docker compose --env-file production.env -f compose.yml logs --tail 100 api powe
 ```
 
 Do not expose logs containing tokens or environment values when asking for help.
-The first release still needs public DNS, SMTP/OAuth setup, credentials and a
-real-device sync/auth test; local container compilation is not a deployment test.
+Verify public DNS, SMTP/OAuth, credentials and real-device sync/auth after
+deployment; local container compilation is not a deployment test.
 
 References:
 - [Hetzner Cloud firewalls](https://docs.hetzner.com/cloud/firewalls/overview/)
