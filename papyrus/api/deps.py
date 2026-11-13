@@ -40,10 +40,15 @@ async def get_current_access_token_payload(
 
 
 async def get_revocable_auth_session(
+    request: Request,
     payload: Annotated[dict[str, Any], Depends(get_current_access_token_payload)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> AuthSession:
-    """Load and validate the current authenticated session from the database."""
+    """Validate credentials while holding the owner lock for this request.
+
+    Safe requests share the lock. Mutations acquire it exclusively before
+    reading credentials, avoiding shared-to-exclusive lock upgrade deadlocks.
+    """
     user_id = payload.get("sub")
     session_id = payload.get("sid")
 
@@ -62,12 +67,14 @@ async def get_revocable_auth_session(
             detail={"code": "INVALID_TOKEN", "message": "Token contains malformed identifiers"},
         ) from exc
 
-    await db.scalar(
-        select(User)
-        .where(User.user_id == user_uuid)
-        .with_for_update(key_share=True)
-        .execution_options(populate_existing=True),
-    )
+    owner_query = select(User).where(User.user_id == user_uuid)
+
+    if request.method in {"GET", "HEAD", "OPTIONS"}:
+        owner_query = owner_query.with_for_update(read=True, key_share=True)
+    else:
+        owner_query = owner_query.with_for_update()
+
+    await db.scalar(owner_query.execution_options(populate_existing=True))
 
     result = await db.execute(
         select(AuthSession).options(selectinload(AuthSession.user)).where(AuthSession.session_id == session_uuid)
