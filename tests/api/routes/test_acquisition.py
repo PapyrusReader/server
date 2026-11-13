@@ -383,7 +383,7 @@ async def test_single_submission_wraps_the_token_only_batch_service(
     )
 
     db_session.add(job)
-    await db_session.flush()
+    await db_session.commit()
 
     async def submit_release_batch(
         session: AsyncSession,
