@@ -65,7 +65,7 @@ async def get_revocable_auth_session(
     await db.scalar(
         select(User)
         .where(User.user_id == user_uuid)
-        .with_for_update(key_share=True)
+        .with_for_update(read=True, key_share=True)
         .execution_options(populate_existing=True),
     )
 

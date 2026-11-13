@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from papyrus.api.deps import get_revocable_auth_session
 from papyrus.core.exceptions import UnauthorizedError, ValidationError
 from papyrus.core.security import hash_opaque_token
 from papyrus.models import AuthSession, EmailActionToken, User
@@ -14,6 +15,53 @@ from papyrus.schemas.account_deletion import AccountPasswordRequest
 from papyrus.schemas.auth import OAuthExchangeRequest
 from papyrus.services import account_deletion, auth
 from papyrus.services.auth import _core
+
+
+async def test_authentication_reads_share_owner_lock_and_block_credential_changes(
+    test_session_maker: async_sessionmaker[AsyncSession],
+    auth_user: dict[str, str],
+) -> None:
+    payload = {"sub": auth_user["user_id"], "sid": auth_user["session_id"]}
+    user_id = UUID(auth_user["user_id"])
+
+    async with (
+        test_session_maker() as first,
+        test_session_maker() as second,
+        test_session_maker() as transition,
+        test_session_maker() as monitor,
+    ):
+        first_pid = await first.scalar(select(func.pg_backend_pid()))
+        second_pid = await second.scalar(select(func.pg_backend_pid()))
+        transition_pid = await transition.scalar(select(func.pg_backend_pid()))
+        await get_revocable_auth_session(payload, first)
+        session = await asyncio.wait_for(get_revocable_auth_session(payload, second), timeout=5)
+        assert session.user_id == user_id
+        changing = asyncio.create_task(transition.scalar(select(User).where(User.user_id == user_id).with_for_update()))
+
+        try:
+            async with asyncio.timeout(5):
+                while True:
+                    blockers = await monitor.scalar(select(func.pg_blocking_pids(transition_pid)))
+
+                    if first_pid in blockers or second_pid in blockers:
+                        break
+
+                    await asyncio.sleep(0.01)
+
+            await first.rollback()
+
+            async with asyncio.timeout(5):
+                while second_pid not in await monitor.scalar(select(func.pg_blocking_pids(transition_pid))):
+                    await asyncio.sleep(0.01)
+
+            assert not changing.done()
+            await second.rollback()
+            assert await asyncio.wait_for(changing, timeout=5) is not None
+        finally:
+            if not changing.done():
+                changing.cancel()
+
+            await asyncio.gather(changing, return_exceptions=True)
 
 
 @pytest.mark.parametrize("flow", ["google", "password_reset", "verification"])

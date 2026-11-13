@@ -70,9 +70,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cleanup_task = asyncio.create_task(
         account_deletion.run_cleanup(async_session_maker), name="account-deletion-cleanup"
     )
+
     verification_task = asyncio.create_task(
         verification.run_delivery(async_session_maker), name="verification-delivery"
     )
+
     monitor_task: asyncio.Task[None] | None = None
 
     if settings.acquisition_enabled and settings.acquisition_import_root is not None:
