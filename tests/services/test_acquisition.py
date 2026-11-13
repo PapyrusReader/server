@@ -84,8 +84,12 @@ def test_release_token_rejects_expired_or_tampered_values() -> None:
     with pytest.raises(HTTPException) as expired:
         acquisition.decode_release_token(token, endpoint.owner_user_id, now=issued_at + timedelta(minutes=6))
 
+    middle = len(token) // 2
+    replacement = "A" if token[middle] != "A" else "B"
+    altered = token[:middle] + replacement + token[middle + 1 :]
+
     with pytest.raises(HTTPException) as tampered:
-        acquisition.decode_release_token(f"{token[:-1]}x", endpoint.owner_user_id, now=issued_at)
+        acquisition.decode_release_token(altered, endpoint.owner_user_id, now=issued_at)
 
     assert expired.value.status_code == 400
     assert expired.value.detail == "Release token is invalid or expired"
