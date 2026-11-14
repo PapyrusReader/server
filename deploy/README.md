@@ -233,3 +233,29 @@ Do not publish it on the host or add a public Caddy route. Applying this YAML
 change only requires restarting PowerSync, followed by its readiness check.
 The `PapyrusReader/observability` repository owns dashboards, collection, alerts,
 and the bootstrap for restricted `papyrus_monitor` database roles.
+
+## Google Books metadata
+
+Set `GOOGLE_BOOKS_API_KEY` in the VM's `production.env` to enable Google Books
+searches. Keep the key out of Flutter build definitions and client CI secrets.
+Restrict it to the Books API in Google Cloud; a production-only key can also be
+restricted to the server's outbound IP address. Recreate the API container after
+changing its environment. Deploy the server endpoint before releasing clients
+that use it. Self-hosted servers supply their own key; missing configuration
+returns 503 and readers can select Open Library instead.
+
+`GET /v1/metadata/google-books?q=...&page=1&isbn=false` is available to guests
+with limits of 10 requests/minute and 60/hour per IP. Signed-in clients use
+`/v1/metadata/google-books/authenticated`, which validates the existing session
+and allows 30/minute and 300/hour per user. Both routes share
+`METADATA_DAILY_REQUEST_LIMIT` (default 1000 requests/day, including cache hits).
+Set this conservatively relative to the project's Google quota and other users
+of that key. No automatic upstream retries consume extra quota.
+
+Each page has 10 results. Public results are cached in memory for five minutes,
+with a maximum of 256 pages; failures are not cached. Cache and rate-limit state
+are process-local and reset on restart, matching the current single-process
+server deployment. Multiple workers or replicas need shared rate-limit storage
+before relying on this as a deployment-wide budget. Search terms are sent to the
+selected Papyrus server and Google; no library records or user credentials are
+forwarded to Google. Open Library searches remain direct from the client.
