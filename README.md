@@ -93,3 +93,11 @@ See [the deployment runbook](deploy/README.md) for version-triggered GHCR images
 and the separate production Compose stack, HTTPS, PowerSync, migrations and
 persistent database/media backups. API version metadata follows the installed
 package version in `pyproject.toml`.
+
+### Google Books metadata searches
+
+Set `GOOGLE_BOOKS_API_KEY` in the ignored `.env` file and restart the local API.
+The Flutter client uses its configured Papyrus API URL for Google Books searches;
+no Google key belongs in `.dart_defines`. Open Library continues to work directly.
+See [deployment configuration](deploy/README.md#google-books-metadata) for endpoint,
+quota, caching, and production setup details.
