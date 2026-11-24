@@ -203,6 +203,47 @@ Do not expose logs containing tokens or environment values when asking for help.
 Verify public DNS, SMTP/OAuth, credentials and real-device sync/auth after
 deployment; local container compilation is not a deployment test.
 
+### Unattended release job
+
+Install `release_job.py` and a launcher on the deployment host to allow the
+workspace release runner to invoke this deployment. The release's `compose.yml`
+must support `PAPYRUS_SERVER_IMAGE` for both the API and migrations. The server
+checkout must have access to `origin/master` and the published GHCR image. Use
+the existing production checkout containing the ignored `deploy/production.env`,
+secrets, and active web layout.
+
+If production is populated from copied release files, keep a separate source
+checkout and pass the live path as `--deployment-root`. The job compares the live
+Compose, deployment scripts, and PowerSync files with the commit running in the
+API container. It stops on local changes before replacing any release files.
+
+Install the job and an executable launcher outside that checkout. For example,
+`/usr/local/bin/papyrus-release-server` could contain:
+
+```sh
+#!/bin/sh
+exec python3 /opt/papyrus/release_job.py \
+  --checkout /srv/papyrus/server \
+  --backup-check /opt/papyrus/backup-and-restore-check \
+  >> /var/log/papyrus-release.log 2>&1
+```
+
+Point `--backup-check` at the host's executable backup procedure. It runs in the
+current deployment directory before checkout, configuration changes, or migrations.
+It receives the requested version, revision, and pinned image as JSON on standard
+input. It must exit successfully only after taking the documented encrypted off-host
+backup and checking restoration in an isolated environment. A nonzero exit aborts
+the deployment. Keep the host log private and accessible to the release operator.
+
+Use the launcher's absolute path in the workspace runner's `--deploy-server`
+option. The runner uses the configured deployment SSH target. The host job locks
+the deployment, checks the requested commit against `origin/master`, pulls and
+checks the published image, and uses the release's `deploy.sh` with that digest.
+It records the new `PAPYRUS_VERSION` in `production.env`. The workspace runner
+checks the live API, container digest and revision, package version, and migration
+heads after the job returns. If the SSH job fails, inspect the host log and current
+deployment state before retrying or restoring service.
+
 References:
 - [Hetzner Cloud firewalls](https://docs.hetzner.com/cloud/firewalls/overview/)
 - [Docker Compose deployment](https://docs.docker.com/compose/how-tos/production/)
