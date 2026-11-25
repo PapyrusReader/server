@@ -1,9 +1,12 @@
 """User-related schemas."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, HttpUrl
+
+AccountRole = Literal["user", "admin"]
 
 
 class User(BaseModel):
@@ -12,6 +15,7 @@ class User(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     user_id: UUID
+    role: AccountRole
     email: EmailStr | None = None
     display_name: str
     avatar_url: HttpUrl | str | None = None
