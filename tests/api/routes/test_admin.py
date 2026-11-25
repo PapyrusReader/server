@@ -102,3 +102,70 @@ async def test_directory_counts_storage_and_session_creation(client, db_session,
         }
 
     assert (await client.get("/v1/admin/users?limit=101", headers=auth_headers)).status_code == 422
+
+
+async def test_directory_sorts_before_pagination(client, db_session, auth_headers, auth_user):
+    owner = UUID(auth_user["user_id"])
+    await set_role(db_session, owner, "admin")
+    now = datetime.now(UTC)
+    alpha = User(user_id=UUID(int=1), display_name="alpha", created_at=now + timedelta(days=1))
+    zeta = User(
+        user_id=UUID(int=2),
+        display_name="Zeta",
+        primary_email="a@example.com",
+        disabled_at=now,
+        created_at=now - timedelta(days=1),
+    )
+
+    db_session.add_all([alpha, zeta])
+    await db_session.flush()
+
+    for user, count, size in [(alpha, 4, 5), (zeta, 2, 3)]:
+        books = [SyncBook(owner_user_id=user.user_id, title=str(index)) for index in range(count)]
+        db_session.add_all(books)
+        await db_session.flush()
+
+        db_session.add(
+            MediaAsset(
+                owner_user_id=user.user_id,
+                book_id=books[0].book_id,
+                kind="book_file",
+                size_bytes=size,
+                original_filename="test",
+                extension="test",
+                content_type="test",
+                sha256="test",
+                storage_path="test",
+            )
+        )
+
+    await db_session.commit()
+    admin = "Example User"
+
+    for field, ascending, descending in [
+        ("display_name", ["alpha", admin, "Zeta"], ["Zeta", admin, "alpha"]),
+        ("email", ["Zeta", admin, "alpha"], [admin, "Zeta", "alpha"]),
+        ("role", [admin, "alpha", "Zeta"], ["alpha", "Zeta", admin]),
+        ("status", [admin, "alpha", "Zeta"], ["Zeta", "alpha", admin]),
+        ("created_at", ["Zeta", admin, "alpha"], ["alpha", admin, "Zeta"]),
+        ("last_sign_in_at", [admin, "alpha", "Zeta"], [admin, "alpha", "Zeta"]),
+        ("book_count", [admin, "Zeta", "alpha"], ["alpha", "Zeta", admin]),
+        ("used_bytes", [admin, "Zeta", "alpha"], ["alpha", "Zeta", admin]),
+        ("average_bytes", ["alpha", "Zeta", admin], ["Zeta", "alpha", admin]),
+    ]:
+        for reverse, expected in [(False, ascending), (True, descending)]:
+            names = []
+
+            for page in (1, 2):
+                response = await client.get(
+                    "/v1/admin/users",
+                    params={"sort_by": field, "descending": reverse, "page": page, "limit": 2},
+                    headers=auth_headers,
+                )
+
+                assert response.status_code == 200
+                names.extend(row["display_name"] for row in response.json()["users"])
+
+            assert names == expected, (field, reverse)
+
+    assert (await client.get("/v1/admin/users?sort_by=unknown", headers=auth_headers)).status_code == 422

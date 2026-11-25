@@ -7,6 +7,18 @@ from pydantic import BaseModel
 from papyrus.schemas.common import Pagination
 from papyrus.schemas.user import AccountRole
 
+DirectorySort = Literal[
+    "display_name",
+    "email",
+    "role",
+    "status",
+    "created_at",
+    "last_sign_in_at",
+    "book_count",
+    "used_bytes",
+    "average_bytes",
+]
+
 
 class DirectoryUser(BaseModel):
     user_id: UUID

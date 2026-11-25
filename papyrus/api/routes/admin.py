@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from papyrus.api.deps import get_current_auth_session
 from papyrus.core.database import get_db
 from papyrus.models import AuthSession
-from papyrus.schemas.admin import UserDirectory
+from papyrus.schemas.admin import DirectorySort, UserDirectory
 from papyrus.services import admin
 
 
@@ -26,6 +26,8 @@ async def list_users(
     db: Annotated[AsyncSession, Depends(get_db)],
     page: Annotated[int, Query(ge=1)] = 1,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    sort_by: DirectorySort = "created_at",
+    descending: bool = True,
 ) -> UserDirectory:
     response.headers["Cache-Control"] = "private, no-store"
-    return await admin.list_users(db, page, limit)
+    return await admin.list_users(db, page, limit, sort_by, descending)
