@@ -13,7 +13,9 @@ fi
 : "${POWERSYNC_SOURCE_ROLE:?POWERSYNC_SOURCE_ROLE is required}"
 : "${POWERSYNC_SOURCE_PASSWORD:?POWERSYNC_SOURCE_PASSWORD is required}"
 
-docker compose exec -T database env PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" <<SQL
+database=${1:-$POSTGRES_DB}
+docker compose exec -T database env PGPASSWORD="$POSTGRES_PASSWORD" \
+  psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$database" <<SQL
 DO \$\$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${POWERSYNC_SOURCE_ROLE}') THEN
