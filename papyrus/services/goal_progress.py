@@ -178,7 +178,7 @@ def project_goal(goal: GoalDefinition, ledger: list[Activity], now: datetime) ->
         fractional = value
 
     return {
-        "current_value": value,
+        "current_value": min(value, rule.target),
         "progress_percentage": min(100, fractional / rule.target * 100),
         "target_value": rule.target,
         "title": rule.title,
