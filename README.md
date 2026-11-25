@@ -112,7 +112,7 @@ the configured server environment. Use the account UUID returned by
 uv run --locked papyrus-admin set-role <account-uuid> admin
 ```
 
-Open **Settings → Administration** in the client to inspect users, sign-ins and
+Open **Administration → Users** in the client’s main menu to inspect users, sign-ins and
 server library usage. Sign in again to pick up a new role immediately. Book
 counts include all synced books. The storage bar counts uploaded files and
 covers against the server's per-account quota.
