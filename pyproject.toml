@@ -36,6 +36,7 @@ dev = [
 ]
 
 [project.scripts]
+papyrus-admin = "papyrus.admin:main"
 papyrus-server = "papyrus.main:run"
 
 [build-system]

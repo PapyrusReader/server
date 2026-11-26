@@ -101,3 +101,22 @@ The Flutter client uses its configured Papyrus API URL for Google Books searches
 no Google key belongs in `.dart_defines`. Open Library continues to work directly.
 See [deployment configuration](deploy/README.md#google-books-metadata) for endpoint,
 quota, caching, and production setup details.
+
+## Admin user directory
+
+Apply the database migrations, then assign the role to an existing account from
+the configured server environment. Use the account UUID returned by
+`GET /users/me` (under the configured API prefix).
+
+```sh
+uv run --locked papyrus-admin set-role <account-uuid> admin
+```
+
+Open **Administration → Users** in the client’s main menu to inspect users, sign-ins and
+server library usage. Sign in again to pick up a new role immediately. Book
+counts include all synced books. The storage bar counts uploaded files and
+covers against the server's per-account quota.
+
+To revoke access, run `uv run --locked papyrus-admin set-role <account-uuid> user`.
+The next directory request checks the updated role. Inside the runtime container,
+invoke `papyrus-admin` directly.
