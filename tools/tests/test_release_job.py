@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import subprocess
@@ -8,7 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "deploy"))
-from release_job import RELEASE_FILES, JobError, deploy  # noqa: E402
+from release_job import RELEASE_FILES, JobError, check_release, deploy  # noqa: E402
 
 
 class ReleaseJobTests(unittest.TestCase):
@@ -115,6 +116,46 @@ class ReleaseJobTests(unittest.TestCase):
                 deploy(self.checkout, self.backup, self.request | overrides)
 
         self.assertFalse((self.directory / "job.log").exists())
+
+    def test_workspace_master_authorizes_only_its_pinned_revision_and_version(self) -> None:
+        workspace = self.checkout.parent / "workspace"
+        workspace.mkdir()
+
+        def workspace_git(*args: str) -> str:
+            return subprocess.check_output(["git", *args], cwd=workspace, text=True).strip()
+
+        workspace_git("init", "--quiet", "-b", "master")
+        workspace_git("config", "user.name", "Release Test")
+        workspace_git("config", "user.email", "test@example.test")
+        workspace_git("config", "commit.gpgsign", "false")
+        (workspace / "release.json").write_text(json.dumps({"version": "1.0.1", "orchestrator": "octopus"}))
+        workspace_git("add", "release.json")
+        revision = self.request["revision"]
+        workspace_git("update-index", "--add", "--cacheinfo", f"160000,{revision},server")
+        workspace_git("commit", "-qm", "Authorize selected server")
+        manifest = workspace_git("rev-parse", "HEAD")
+
+        with patch.dict(
+            os.environ,
+            {
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": f"url.{workspace.as_uri()}.insteadOf",
+                "GIT_CONFIG_VALUE_0": "https://github.com/PapyrusReader/papyrus.git",
+            },
+        ):
+            check_release(self.checkout, revision, "1.0.1", manifest)
+
+            for wrong_revision, wrong_version in ((self.previous, "1.0.1"), (revision, "1.0.2")):
+                with self.assertRaisesRegex(JobError, "approved workspace manifest"):
+                    check_release(self.checkout, wrong_revision, wrong_version, manifest)
+
+            workspace_git("commit", "--allow-empty", "-qm", "Unrelated workspace work")
+            check_release(self.checkout, revision, "1.0.1", manifest)
+            (workspace / "release.json").write_text(json.dumps({"version": "1.0.2", "orchestrator": "octopus"}))
+            workspace_git("commit", "-qam", "Supersede release")
+
+            with self.assertRaisesRegex(JobError, "no longer authorizes"):
+                check_release(self.checkout, revision, "1.0.1", manifest)
 
     def test_registry_image_must_label_the_requested_revision(self) -> None:
         with (
