@@ -1,4 +1,5 @@
 production.env
 secrets/
 web/
+.release-job.lock
 backups/

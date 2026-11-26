@@ -5,6 +5,7 @@ from fastapi import APIRouter, FastAPI
 from papyrus.api.routes import (
     account_deletion,
     acquisition,
+    admin,
     annotations,
     auth,
     bookmarks,
@@ -14,6 +15,7 @@ from papyrus.api.routes import (
     files,
     goals,
     media,
+    metadata,
     notes,
     opds,
     progress,
@@ -29,6 +31,8 @@ from papyrus.api.routes import (
 )
 
 api_router = APIRouter()
+
+api_router.include_router(admin.router, prefix="/admin", tags=["Administration"])
 
 api_router.include_router(account_deletion.router, prefix="/account-deletion", tags=["Account deletion"])
 
@@ -50,6 +54,7 @@ api_router.include_router(progress.router, prefix="/progress", tags=["Progress"]
 api_router.include_router(goals.router, prefix="/goals", tags=["Goals"])
 api_router.include_router(sync.router, prefix="/sync", tags=["Sync"])
 api_router.include_router(media.router, prefix="/media", tags=["Media"])
+api_router.include_router(metadata.router, prefix="/metadata", tags=["Metadata"])
 api_router.include_router(storage.router, prefix="/storage", tags=["Storage"])
 api_router.include_router(files.router, prefix="/files", tags=["Files"])
 api_router.include_router(reading_profiles.router, prefix="/reading-profiles", tags=["Reading Profiles"])

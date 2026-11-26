@@ -16,6 +16,7 @@ class User(Base):
 
     __tablename__ = "users"
     __table_args__ = (
+        CheckConstraint("role IN ('user', 'admin')", name="ck_users_role"),
         CheckConstraint(
             "(email_verified_at IS NULL AND email_verification_source IS NULL) OR "
             "(primary_email IS NOT NULL AND email_verified_at IS NOT NULL "
@@ -26,6 +27,7 @@ class User(Base):
     )
 
     user_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    role: Mapped[str] = mapped_column(String(5), nullable=False, server_default="user")
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     avatar_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     primary_email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)

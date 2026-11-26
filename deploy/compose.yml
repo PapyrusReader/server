@@ -1,7 +1,7 @@
 name: papyrus-production
 
 x-api: &api
-  image: ghcr.io/papyrusreader/server:${PAPYRUS_VERSION:?Set PAPYRUS_VERSION to the release number}
+  image: ${PAPYRUS_SERVER_IMAGE:-ghcr.io/papyrusreader/server:${PAPYRUS_VERSION:?Set PAPYRUS_VERSION to the release number}}
   env_file: production.env
   environment:
     DEBUG: 'false'

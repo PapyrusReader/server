@@ -90,6 +90,7 @@ def test_auth_models_are_registered_with_metadata() -> None:
     assert set(users_table.columns.keys()) == {
         "user_id",
         "display_name",
+        "role",
         "avatar_url",
         "primary_email",
         "email_verified_at",

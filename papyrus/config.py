@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     rate_limit_general: int
     rate_limit_upload: int
     rate_limit_batch: int
+    google_books_api_key: SecretStr | None = None
+    metadata_daily_request_limit: int = Field(default=1000, ge=1)
     support_github_token: SecretStr | None = None
 
     support_github_repository: str = Field(

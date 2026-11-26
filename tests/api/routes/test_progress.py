@@ -110,6 +110,49 @@ async def test_manual_session_retry_and_real_statistics(client, auth_headers, bo
     assert stats["pages_read"] == 15
 
 
+async def test_completed_page_goal_stays_capped_while_statistics_include_later_sessions(client, auth_headers, book_id):
+    today = datetime.now(UTC).date()
+    end_date = today + timedelta(days=1)
+
+    created = await client.post(
+        "/v1/goals",
+        headers=auth_headers,
+        json={
+            "title": "Read ten pages",
+            "goal_type": "pages_count",
+            "target_value": 10,
+            "time_period": "custom",
+            "start_date": today.isoformat(),
+            "end_date": end_date.isoformat(),
+        },
+    )
+
+    assert created.status_code == 201
+    goal_id = created.json()["goal_id"]
+
+    for pages in (12, 5):
+        session = await client.post(
+            "/v1/progress/sessions",
+            headers=auth_headers,
+            json={"book_id": book_id, "start_time": datetime.now(UTC).isoformat(), "pages_read": pages},
+        )
+
+        assert session.status_code == 200
+        goal = (await client.get(f"/v1/goals/{goal_id}", headers=auth_headers)).json()
+        assert goal["current_value"] == goal["target_value"] == 10
+        assert goal["is_completed"] is True
+        assert goal["progress_percentage"] == 100
+
+    stats = await client.get(
+        "/v1/progress/statistics",
+        headers=auth_headers,
+        params={"start_date": today.isoformat(), "end_date": end_date.isoformat()},
+    )
+
+    assert stats.status_code == 200
+    assert stats.json()["totals"]["pages_read"] == 17
+
+
 async def test_missing_book_is_rejected(client, auth_headers):
     response = await client.post(
         "/v1/progress/sessions",
