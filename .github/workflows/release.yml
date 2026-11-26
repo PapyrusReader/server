@@ -1,16 +1,19 @@
 name: Release container
 
+run-name: Build server ${{ inputs.manifest }}
 on:
-  push:
-    branches: [master]
-    paths: ['pyproject.toml']
   workflow_dispatch:
+    inputs:
+      manifest:
+        description: 'Approved Papyrus workspace master commit'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: server-release-${{ github.ref }}
+  group: server-release-${{ inputs.manifest }}
   cancel-in-progress: false
 
 jobs:
@@ -18,12 +21,27 @@ jobs:
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     outputs:
+      revision: ${{ steps.source.outputs.revision }}
       release: ${{ steps.version.outputs.release }}
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
     steps:
+      - name: Resolve source from protected workspace master
+        id: source
+        env:
+          MANIFEST: ${{ inputs.manifest }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$MANIFEST" =~ ^[0-9a-f]{40}$ ]]
+          test "$(gh api repos/PapyrusReader/papyrus/git/ref/heads/master --jq .object.sha)" = "$MANIFEST"
+          gh api -H 'Accept: application/vnd.github.raw+json' "repos/PapyrusReader/papyrus/contents/release.json?ref=$MANIFEST" | jq -e '.orchestrator == "octopus"' >/dev/null
+          revision=$(gh api "repos/PapyrusReader/papyrus/git/trees/$MANIFEST" --jq '.tree[] | select(.path == "server" and .mode == "160000") | .sha')
+          [[ "$revision" =~ ^[0-9a-f]{40}$ ]]
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         with:
+          ref: ${{ steps.source.outputs.revision }}
           fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
@@ -31,15 +49,8 @@ jobs:
       - run: python -m unittest discover -s tools/tests -v
       - name: Check committed version
         id: version
-        env:
-          BEFORE: ${{ github.event.before }}
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          if [ "$EVENT_NAME" = workflow_dispatch ]; then
-            python tools/release_gate.py server --manual
-          else
-            python tools/release_gate.py server --base "$BEFORE"
-          fi
+        run: python tools/release_gate.py server --manual
+
   image:
     needs: version
     if: needs.version.outputs.release == 'true'
@@ -49,6 +60,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.revision }}
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
@@ -64,11 +77,11 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: |
             ghcr.io/papyrusreader/server:${{ needs.version.outputs.version }}
-            ghcr.io/papyrusreader/server:sha-${{ github.sha }}
+            ghcr.io/papyrusreader/server:sha-${{ needs.version.outputs.revision }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.version=${{ needs.version.outputs.version }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ needs.version.outputs.revision }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Record published digest
@@ -79,13 +92,6 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ needs.version.outputs.revision }}
           generate_release_notes: true
           files: image.txt
-      - name: Remove superseded initial container
-        if: needs.version.outputs.version == '0.0.1'
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python tools/remove_superseded_release.py

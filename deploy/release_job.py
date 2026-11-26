@@ -90,6 +90,53 @@ def check_master(checkout: Path, revision: str) -> None:
         raise JobError("Published revision is no longer the server master tip")
 
 
+def check_release(checkout: Path, revision: str, version: str, manifest: str | None) -> None:
+    if manifest is None:
+        check_master(checkout, revision)
+        return
+
+    if not isinstance(manifest, str) or not re.fullmatch(r"[0-9a-f]{40}", manifest):
+        raise JobError("Expected a full workspace manifest revision")
+
+    workspace_ref = "refs/papyrus/workspace-master"
+
+    subprocess.run(
+        [
+            "git",
+            "fetch",
+            "--quiet",
+            "--no-tags",
+            "--no-recurse-submodules",
+            "https://github.com/PapyrusReader/papyrus.git",
+            f"+refs/heads/master:{workspace_ref}",
+        ],
+        cwd=checkout,
+        check=True,
+    )
+
+    def read(*args: str) -> str:
+        return subprocess.check_output(["git", *args], cwd=checkout, text=True).strip()
+
+    if read("rev-parse", workspace_ref) != manifest:
+        raise JobError("Workspace master no longer authorizes this release")
+
+    settings = json.loads(read("show", f"{manifest}:release.json"))
+    entry = read("ls-tree", manifest, "server")
+
+    if (
+        settings.get("orchestrator") != "octopus"
+        or settings.get("version") != version
+        or entry != f"160000 commit {revision}\tserver"
+    ):
+        raise JobError("Server revision or version differs from the approved workspace manifest")
+
+    subprocess.run(
+        ["git", "fetch", "--quiet", "--no-tags", "--no-recurse-submodules", "origin", revision],
+        cwd=checkout,
+        check=True,
+    )
+
+
 def require_clean_checkout(checkout: Path) -> None:
     dirty = subprocess.check_output(
         ["git", "status", "--porcelain", "--untracked-files=no"],
@@ -127,6 +174,7 @@ def deploy(
     container: str = "papyrus-production-api-1",
 ) -> None:
     version, revision, image = request_fields(request)
+    manifest = request.get("manifest") if isinstance(request, dict) else None
     directory = (deployment or checkout) / "deploy"
     settings = directory / "production.env"
 
@@ -143,7 +191,7 @@ def deploy(
             raise JobError("Another server deployment job is running") from error
 
         require_clean_checkout(checkout)
-        check_master(checkout, revision)
+        check_release(checkout, revision, version, manifest)
 
         if deployment is not None:
             verify_copied_files(checkout, deployment, container)
@@ -171,7 +219,7 @@ def deploy(
             pass_fds=(lock.fileno(),),
         )
         require_clean_checkout(checkout)
-        check_master(checkout, revision)
+        check_release(checkout, revision, version, manifest)
 
         if deployment is not None:
             verify_copied_files(checkout, deployment, container)
