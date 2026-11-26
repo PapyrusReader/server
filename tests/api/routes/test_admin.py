@@ -86,7 +86,7 @@ async def test_directory_counts_storage_and_session_creation(client, db_session,
     assert by_name["Pending"]["status"] == "pending_deletion"
     assert by_name["Pending"]["book_count"] == 0
     assert by_name["Pending"]["last_sign_in_at"] is None
-    expected_ids = sorted(str(user.user_id) for user in (awaiting, disabled, pending)) + [str(owner)]
+    expected_ids = [str(awaiting.user_id), str(disabled.user_id), str(owner), str(pending.user_id)]
 
     for page in (1, 2):
         response = await client.get("/v1/admin/users", params={"page": page, "limit": 2}, headers=auth_headers)

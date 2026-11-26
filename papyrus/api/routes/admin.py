@@ -26,8 +26,8 @@ async def list_users(
     db: Annotated[AsyncSession, Depends(get_db)],
     page: Annotated[int, Query(ge=1)] = 1,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    sort_by: DirectorySort = "created_at",
-    descending: bool = True,
+    sort_by: DirectorySort = "display_name",
+    descending: bool = False,
 ) -> UserDirectory:
     response.headers["Cache-Control"] = "private, no-store"
     return await admin.list_users(db, page, limit, sort_by, descending)
