@@ -5,7 +5,7 @@ Cloud. It is separate from the local `docker-compose.yml`. Nothing here provisio
 or changes a live server automatically.
 
 The API and migration job use `ghcr.io/papyrusreader/server:<version>`, built for
-amd64 and arm64 when the committed server version changes on `master`. API version
+amd64 and arm64 when Octopus dispatches the server build on `master`. API version
 metadata comes from the installed Python package. GitHub releases record the
 image digest; deploy a recorded digest instead of a mutable tag when stronger
 artifact pinning is needed. The runtime uses UID/GID 10001, not root.
@@ -13,12 +13,11 @@ artifact pinning is needed. The runtime uses UID/GID 10001, not root.
 ## Branch workflow
 
 Feature/fix PRs target the default `development` branch and leave versions
-unchanged. CI checks integration work without publishing a container. When ready,
-prepare the coordinated version bump on `development`, then promote it to
-`master` with a release PR using **Create a merge commit**. The existing version
-gate publishes only from `master`. Bring `master` back into `development` after
-the release, and deploy additive server changes before a client that needs them.
-See the workspace `RELEASING.md` for coordination and merge order.
+unchanged. CI checks integration work without publishing a container. Octopus pins
+the versioned server commit in a protected workspace manifest and dispatches
+the build with the approved manifest SHA. It deploys the resulting image by
+digest before publishing client downloads. See the
+[workspace release guide](https://github.com/PapyrusReader/papyrus/blob/development/RELEASING.md).
 
 ## Host and domains
 
@@ -208,7 +207,7 @@ deployment; local container compilation is not a deployment test.
 Install `release_job.py` and a launcher on the deployment host to allow the
 workspace release runner to invoke this deployment. The release's `compose.yml`
 must support `PAPYRUS_SERVER_IMAGE` for both the API and migrations. The server
-checkout must have access to `origin/master` and the published GHCR image. Use
+checkout must have access to workspace `master`, the pinned server commit, and the published GHCR image. Use
 the existing production checkout containing the ignored `deploy/production.env`,
 secrets, and active web layout.
 
@@ -230,14 +229,13 @@ exec python3 /opt/papyrus/release_job.py \
 
 Point `--backup-check` at the host's executable backup procedure. It runs in the
 current deployment directory before checkout, configuration changes, or migrations.
-It receives the requested version, revision, and pinned image as JSON on standard
+It receives the workspace manifest SHA, requested version, revision, and pinned image as JSON on standard
 input. It must exit successfully only after taking the documented encrypted off-host
 backup and checking restoration in an isolated environment. A nonzero exit aborts
 the deployment. Keep the host log private and accessible to the release operator.
 
-Use the launcher's absolute path in the workspace runner's `--deploy-server`
-option. The runner uses the configured deployment SSH target. The host job locks
-the deployment, checks the requested commit against `origin/master`, pulls and
+Octopus calls the launcher over the configured deployment SSH connection. The host job locks
+the deployment, checks the requested commit against the approved workspace manifest, pulls and
 checks the published image, and uses the release's `deploy.sh` with that digest.
 It records the new `PAPYRUS_VERSION` in `production.env`. The workspace runner
 checks the live API, container digest and revision, package version, and migration

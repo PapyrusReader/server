@@ -54,6 +54,18 @@ class ReleaseJobTests(unittest.TestCase):
         self.git("checkout", "--quiet", "--detach", self.previous)
         image = "ghcr.io/papyrusreader/server@sha256:" + "a" * 64
         self.request = {"version": "1.0.1", "revision": revision, "image": image}
+        workspace = self.checkout.parent / "workspace"
+        workspace.mkdir()
+
+        self.workspace_git("init", "--quiet", "-b", "master")
+        self.workspace_git("config", "user.name", "Release Test")
+        self.workspace_git("config", "user.email", "test@example.test")
+        self.workspace_git("config", "commit.gpgsign", "false")
+        (workspace / "release.json").write_text(json.dumps({"version": "1.0.1", "orchestrator": "octopus"}))
+        self.workspace_git("add", "release.json")
+        self.workspace_git("update-index", "--add", "--cacheinfo", f"160000,{revision},server")
+        self.workspace_git("commit", "-qm", "Authorize selected server")
+        self.request["manifest"] = self.workspace_git("rev-parse", "HEAD")
         self.backup = root / "backup-check"
         self.backup.write_text(
             "#!/bin/sh\nset -eu\ngrep -qx PAPYRUS_VERSION=1.0.0 production.env\n"
@@ -81,10 +93,16 @@ class ReleaseJobTests(unittest.TestCase):
                 "FIXTURE_NEW_REVISION": revision,
                 "FIXTURE_IMAGE": image,
                 "FIXTURE_CHECKOUT": str(self.checkout),
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": f"url.{workspace.as_uri()}.insteadOf",
+                "GIT_CONFIG_VALUE_0": "https://github.com/PapyrusReader/papyrus.git",
             },
         )
         environment.start()
         self.addCleanup(environment.stop)
+
+    def workspace_git(self, *args: str) -> str:
+        return subprocess.check_output(["git", *args], cwd=self.checkout.parent / "workspace", text=True).strip()
 
     def git(self, *args: str) -> str:
         return subprocess.check_output(["git", *args], cwd=self.checkout, text=True).strip()
@@ -109,7 +127,8 @@ class ReleaseJobTests(unittest.TestCase):
 
     def test_wrong_revision_and_mutable_image_fail_before_backup(self) -> None:
         for overrides, message in (
-            ({"revision": self.previous}, "no longer the server master tip"),
+            ({"revision": self.previous}, "approved workspace manifest"),
+            ({"manifest": None}, "full workspace manifest"),
             ({"image": "ghcr.io/papyrusreader/server:1.0.1"}, "image digest"),
         ):
             with self.subTest(overrides=overrides), self.assertRaisesRegex(JobError, message):
@@ -118,44 +137,22 @@ class ReleaseJobTests(unittest.TestCase):
         self.assertFalse((self.directory / "job.log").exists())
 
     def test_workspace_master_authorizes_only_its_pinned_revision_and_version(self) -> None:
-        workspace = self.checkout.parent / "workspace"
-        workspace.mkdir()
-
-        def workspace_git(*args: str) -> str:
-            return subprocess.check_output(["git", *args], cwd=workspace, text=True).strip()
-
-        workspace_git("init", "--quiet", "-b", "master")
-        workspace_git("config", "user.name", "Release Test")
-        workspace_git("config", "user.email", "test@example.test")
-        workspace_git("config", "commit.gpgsign", "false")
-        (workspace / "release.json").write_text(json.dumps({"version": "1.0.1", "orchestrator": "octopus"}))
-        workspace_git("add", "release.json")
         revision = self.request["revision"]
-        workspace_git("update-index", "--add", "--cacheinfo", f"160000,{revision},server")
-        workspace_git("commit", "-qm", "Authorize selected server")
-        manifest = workspace_git("rev-parse", "HEAD")
+        manifest = self.request["manifest"]
+        workspace = self.checkout.parent / "workspace"
+        check_release(self.checkout, revision, "1.0.1", manifest)
 
-        with patch.dict(
-            os.environ,
-            {
-                "GIT_CONFIG_COUNT": "1",
-                "GIT_CONFIG_KEY_0": f"url.{workspace.as_uri()}.insteadOf",
-                "GIT_CONFIG_VALUE_0": "https://github.com/PapyrusReader/papyrus.git",
-            },
-        ):
+        for wrong_revision, wrong_version in ((self.previous, "1.0.1"), (revision, "1.0.2")):
+            with self.assertRaisesRegex(JobError, "approved workspace manifest"):
+                check_release(self.checkout, wrong_revision, wrong_version, manifest)
+
+        self.workspace_git("commit", "--allow-empty", "-qm", "Unrelated workspace work")
+        check_release(self.checkout, revision, "1.0.1", manifest)
+        (workspace / "release.json").write_text(json.dumps({"version": "1.0.2", "orchestrator": "octopus"}))
+        self.workspace_git("commit", "-qam", "Supersede release")
+
+        with self.assertRaisesRegex(JobError, "no longer authorizes"):
             check_release(self.checkout, revision, "1.0.1", manifest)
-
-            for wrong_revision, wrong_version in ((self.previous, "1.0.1"), (revision, "1.0.2")):
-                with self.assertRaisesRegex(JobError, "approved workspace manifest"):
-                    check_release(self.checkout, wrong_revision, wrong_version, manifest)
-
-            workspace_git("commit", "--allow-empty", "-qm", "Unrelated workspace work")
-            check_release(self.checkout, revision, "1.0.1", manifest)
-            (workspace / "release.json").write_text(json.dumps({"version": "1.0.2", "orchestrator": "octopus"}))
-            workspace_git("commit", "-qam", "Supersede release")
-
-            with self.assertRaisesRegex(JobError, "no longer authorizes"):
-                check_release(self.checkout, revision, "1.0.1", manifest)
 
     def test_registry_image_must_label_the_requested_revision(self) -> None:
         with (

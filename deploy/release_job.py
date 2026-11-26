@@ -70,31 +70,7 @@ def replace_file(path: Path, content: bytes) -> None:
             written.unlink(missing_ok=True)
 
 
-def check_master(checkout: Path, revision: str) -> None:
-    subprocess.run(
-        [
-            "git",
-            "fetch",
-            "--quiet",
-            "--no-tags",
-            "--no-recurse-submodules",
-            "origin",
-            "+refs/heads/master:refs/remotes/origin/master",
-        ],
-        cwd=checkout,
-        check=True,
-    )
-    result = subprocess.check_output(["git", "rev-parse", "origin/master"], cwd=checkout, text=True)
-
-    if result.strip() != revision:
-        raise JobError("Published revision is no longer the server master tip")
-
-
 def check_release(checkout: Path, revision: str, version: str, manifest: str | None) -> None:
-    if manifest is None:
-        check_master(checkout, revision)
-        return
-
     if not isinstance(manifest, str) or not re.fullmatch(r"[0-9a-f]{40}", manifest):
         raise JobError("Expected a full workspace manifest revision")
 
