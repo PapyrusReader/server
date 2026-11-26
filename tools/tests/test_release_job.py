@@ -149,7 +149,10 @@ class ReleaseJobTests(unittest.TestCase):
                 with self.assertRaisesRegex(JobError, "approved workspace manifest"):
                     check_release(self.checkout, wrong_revision, wrong_version, manifest)
 
-            workspace_git("commit", "--allow-empty", "-qm", "Advance workspace")
+            workspace_git("commit", "--allow-empty", "-qm", "Unrelated workspace work")
+            check_release(self.checkout, revision, "1.0.1", manifest)
+            (workspace / "release.json").write_text(json.dumps({"version": "1.0.2", "orchestrator": "octopus"}))
+            workspace_git("commit", "-qam", "Supersede release")
 
             with self.assertRaisesRegex(JobError, "no longer authorizes"):
                 check_release(self.checkout, revision, "1.0.1", manifest)

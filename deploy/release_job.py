@@ -117,7 +117,13 @@ def check_release(checkout: Path, revision: str, version: str, manifest: str | N
     def read(*args: str) -> str:
         return subprocess.check_output(["git", *args], cwd=checkout, text=True).strip()
 
-    if read("rev-parse", workspace_ref) != manifest:
+    ancestry = subprocess.run(["git", "merge-base", "--is-ancestor", manifest, workspace_ref], cwd=checkout)
+    changed = subprocess.run(
+        ["git", "diff", "--quiet", manifest, workspace_ref, "--", "release.json", "client", "server", "reader"],
+        cwd=checkout,
+    )
+
+    if ancestry.returncode or changed.returncode:
         raise JobError("Workspace master no longer authorizes this release")
 
     settings = json.loads(read("show", f"{manifest}:release.json"))
